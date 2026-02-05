@@ -67,15 +67,21 @@ systemctl enable apache2
 systemctl start apache2
 
 # =====================================================
-# USUÁRIO DO BOT
+# USUÁRIO E GRUPOS
 # =====================================================
-echo "👤 Criando usuário do bot..."
+echo "👤 Configurando usuários e grupos..."
 if ! id "$BOT_USER" &>/dev/null; then
   useradd -r -s /bin/false -d "$BOT_DIR" "$BOT_USER"
 fi
 
-# Adicionar usuário botzap ao grupo www-data para acesso compartilhado
-usermod -a -G "$WEB_GROUP" "$BOT_USER"
+# Criar grupo compartilhado se não existir
+if ! getent group "botwww" >/dev/null; then
+  groupadd "botwww"
+fi
+
+# Adicionar usuários ao grupo compartilhado
+usermod -a -G "botwww" "$BOT_USER"
+usermod -a -G "botwww" "$WEB_GROUP"
 
 # =====================================================
 # DIRETÓRIOS
@@ -85,11 +91,24 @@ mkdir -p "$BOT_DIR"
 mkdir -p "$WEB_DIR"
 
 # =====================================================
-# CONFIGURAR PERMISSÕES DA PASTA /opt/whatsapp-bot
+# PERMISSÕES COMPARTILHADAS
 # =====================================================
-echo "🔐 Configurando permissões do diretório do bot..."
-chown -R "$BOT_USER:$WEB_GROUP" "$BOT_DIR"
-chmod 755 "$BOT_DIR"
+echo "🔐 Configurando permissões compartilhadas..."
+
+# 1. Diretório principal do bot - ACESSO COMPARTILHADO
+chown "$BOT_USER:botwww" "$BOT_DIR"
+chmod 775 "$BOT_DIR"
+
+# 2. Node_modules - ACESSO COMPARTILHADO
+mkdir -p "$BOT_DIR/node_modules"
+chown -R "$BOT_USER:botwww" "$BOT_DIR/node_modules"
+find "$BOT_DIR/node_modules" -type d -exec chmod 775 {} \;
+find "$BOT_DIR/node_modules" -type f -exec chmod 664 {} \;
+
+# 3. Auth_info - PRIVADO (apenas botzap)
+mkdir -p "$BOT_DIR/auth_info"
+chown "$BOT_USER:$BOT_USER" "$BOT_DIR/auth_info"
+chmod 700 "$BOT_DIR/auth_info"
 
 # =====================================================
 # PACKAGE.JSON E DEPENDÊNCIAS
@@ -114,9 +133,9 @@ cat > "$BOT_DIR/package.json" <<'PKGEOF'
 }
 PKGEOF
 
-# Definir permissões do package.json conforme especificado
+# Package.json - privado do bot
 chown "$BOT_USER:$BOT_USER" "$BOT_DIR/package.json"
-chmod 750 "$BOT_DIR/package.json"
+chmod 640 "$BOT_DIR/package.json"
 
 # =====================================================
 # INSTALAR DEPENDÊNCIAS NPM
@@ -125,25 +144,18 @@ echo "📥 Instalando dependências Node.js..."
 cd "$BOT_DIR"
 sudo -u "$BOT_USER" npm install
 
-# Ajustar permissões da node_modules após instalação
-chown -R "$BOT_USER:$WEB_GROUP" "$BOT_DIR/node_modules"
-find "$BOT_DIR/node_modules" -type d -exec chmod 755 {} \;
-find "$BOT_DIR/node_modules" -type f -exec chmod 644 {} \;
+# Ajustar permissões do package-lock.json
+if [ -f "$BOT_DIR/package-lock.json" ]; then
+    chown "$BOT_USER:$BOT_USER" "$BOT_DIR/package-lock.json"
+    chmod 640 "$BOT_DIR/package-lock.json"
+fi
 
 # =====================================================
-# AUTH_INFO (PERMISSÕES RESTRITAS)
-# =====================================================
-echo "🔒 Configurando diretório auth_info..."
-mkdir -p "$BOT_DIR/auth_info"
-chown "$BOT_USER:$BOT_USER" "$BOT_DIR/auth_info"
-chmod 700 "$BOT_DIR/auth_info"
-
-# =====================================================
-# ARQUIVOS DE CONFIGURAÇÃO DO BOT
+# ARQUIVOS DE CONFIGURAÇÃO - PERMISSÕES CORRIGIDAS
 # =====================================================
 echo "⚙️ Criando arquivos de configuração..."
 
-# 1. config.json
+# 1. config.json - COMPARTILHADO (bot escreve, php lê)
 cat > "$BOT_DIR/config.json" <<'CFGEOF'
 {
     "empresa": "WebLine Telecom",
@@ -154,20 +166,20 @@ cat > "$BOT_DIR/config.json" <<'CFGEOF'
     "feriados_ativos": "Sim"
 }
 CFGEOF
-chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/config.json"
-chmod 674 "$BOT_DIR/config.json"
+chown "$BOT_USER:botwww" "$BOT_DIR/config.json"
+chmod 664 "$BOT_DIR/config.json"
 
-# 2. status.json
+# 2. status.json - COMPARTILHADO (bot escreve, php lê)
 cat > "$BOT_DIR/status.json" <<'STATEOF'
 {
   "status": "offline",
   "updated": "$(date -Iseconds)"
 }
 STATEOF
-chown "$BOT_USER:$BOT_USER" "$BOT_DIR/status.json"
-chmod 770 "$BOT_DIR/status.json"
+chown "$BOT_USER:botwww" "$BOT_DIR/status.json"
+chmod 664 "$BOT_DIR/status.json"
 
-# 3. usuarios.json
+# 3. usuarios.json - COMPARTILHADO (bot escreve, php lê)
 cat > "$BOT_DIR/usuarios.json" <<'USEREOF'
 {
   "5583982277238": {
@@ -178,19 +190,18 @@ cat > "$BOT_DIR/usuarios.json" <<'USEREOF'
   }
 }
 USEREOF
-chown "$BOT_USER:$BOT_USER" "$BOT_DIR/usuarios.json"
-chmod 770 "$BOT_DIR/usuarios.json"
+chown "$BOT_USER:botwww" "$BOT_DIR/usuarios.json"
+chmod 664 "$BOT_DIR/usuarios.json"
 
-# 4. qrcode.txt
+# 4. qrcode.txt - COMPARTILHADO (bot escreve, php lê)
 touch "$BOT_DIR/qrcode.txt"
-chown "$BOT_USER:$BOT_USER" "$BOT_DIR/qrcode.txt"
-chmod 644 "$BOT_DIR/qrcode.txt"
+chown "$BOT_USER:botwww" "$BOT_DIR/qrcode.txt"
+chmod 664 "$BOT_DIR/qrcode.txt"
 
-# 5. package-lock.json (se gerado pelo npm install)
-if [ -f "$BOT_DIR/package-lock.json" ]; then
-    chown "$BOT_USER:$BOT_USER" "$BOT_DIR/package-lock.json"
-    chmod 750 "$BOT_DIR/package-lock.json"
-fi
+# 5. bot.js - COMPARTILHADO (será copiado depois)
+touch "$BOT_DIR/bot.js"
+chown "$BOT_USER:botwww" "$BOT_DIR/bot.js"
+chmod 664 "$BOT_DIR/bot.js"
 
 # =====================================================
 # SYSTEMD – SERVIÇO DO BOT
@@ -216,6 +227,9 @@ Environment=NODE_ENV=production
 
 StandardOutput=append:/var/log/botzap.log
 StandardError=append:/var/log/botzap.log
+
+# Adicionar grupo suplementar para acesso a arquivos
+SupplementaryGroups=botwww
 
 LimitNOFILE=65535
 NoNewPrivileges=true
@@ -255,14 +269,10 @@ cat > /etc/logrotate.d/botzap <<'LOGEOF'
 }
 LOGEOF
 
-echo "✅ Logrotate configurado:"
-echo "   - Rotação diária"
-echo "   - Manter 30 dias de logs"
-echo "   - Compactação automática"
-echo "   - Restart do serviço após rotação"
+echo "✅ Logrotate configurado"
 
 # =====================================================
-# CONFIGURAÇÃO WEB (PAINEL DE CONTROLE)
+# CONFIGURAÇÃO WEB
 # =====================================================
 echo "🌐 Configurando diretório web..."
 
@@ -273,8 +283,9 @@ chmod 755 "$WEB_DIR"
 # Configurar VirtualHost do Apache
 cat > /etc/apache2/sites-available/botzap.conf <<'VHOSTEOF'
 <VirtualHost *:80>
-    ServerName botzap.local
-    ServerAdmin webmaster@localhost
+    ServerName botwhatsapp.weblinetelecom.com.br
+    ServerAlias www.botwhatsapp.weblinetelecom.com.br
+    ServerAdmin webmaster@weblinetelecom.com.br
     DocumentRoot /var/www/botzap
     
     <Directory /var/www/botzap>
@@ -290,10 +301,14 @@ VHOSTEOF
 
 a2ensite botzap.conf
 a2dissite 000-default.conf
+
+# Configurar HTTPS (SSL) se necessário
+echo "🔒 Configurando SSL..."
+a2enmod ssl
 systemctl reload apache2
 
 # =====================================================
-# CONFIGURAR FIREWALL (OPCIONAL)
+# CONFIGURAR FIREWALL
 # =====================================================
 echo "🛡️ Configurando firewall..."
 if command -v ufw &> /dev/null; then
@@ -305,26 +320,60 @@ else
 fi
 
 # =====================================================
-# VERIFICAR PERMISSÕES
+# TESTAR PERMISSÕES
 # =====================================================
-echo "🔍 Verificando permissões configuradas..."
+echo "🧪 Testando permissões de acesso..."
+
+echo "1. Testando acesso do bot (botzap):"
+if sudo -u "$BOT_USER" ls -la "$BOT_DIR/" > /dev/null 2>&1; then
+    echo "✅ botzap pode acessar diretório"
+else
+    echo "❌ botzap NÃO pode acessar diretório"
+fi
+
+if sudo -u "$BOT_USER" cat "$BOT_DIR/status.json" > /dev/null 2>&1; then
+    echo "✅ botzap pode ler status.json"
+else
+    echo "❌ botzap NÃO pode ler status.json"
+fi
+
 echo ""
-echo "📁 PERMISSÕES CONFIGURADAS:"
+echo "2. Testando acesso do PHP (www-data):"
+if sudo -u "$WEB_GROUP" ls -la "$BOT_DIR/" > /dev/null 2>&1; then
+    echo "✅ www-data pode acessar diretório"
+else
+    echo "❌ www-data NÃO pode acessar diretório"
+fi
+
+if sudo -u "$WEB_GROUP" cat "$BOT_DIR/status.json" > /dev/null 2>&1; then
+    echo "✅ www-data pode ler status.json"
+else
+    echo "❌ www-data NÃO pode ler status.json"
+fi
+
+if sudo -u "$WEB_GROUP" cat "$BOT_DIR/qrcode.txt" > /dev/null 2>&1; then
+    echo "✅ www-data pode ler qrcode.txt"
+else
+    echo "❌ www-data NÃO pode ler qrcode.txt"
+fi
+
+echo ""
+echo "3. Verificando grupos:"
+echo "   botzap grupos: $(id -Gn $BOT_USER 2>/dev/null || echo 'usuário não existe')"
+echo "   www-data grupos: $(id -Gn $WEB_GROUP 2>/dev/null || echo 'grupo não existe')"
+
+# =====================================================
+# VERIFICAR PERMISSÕES FINAIS
+# =====================================================
+echo ""
+echo "🔍 PERMISSÕES CONFIGURADAS:"
 echo "==========================="
 echo "📍 $BOT_DIR/"
 ls -ld "$BOT_DIR" | awk '{print "  • " $1 " " $3 ":" $4 " " $9}'
 
 echo ""
-echo "📁 $BOT_DIR/auth_info/"
-ls -ld "$BOT_DIR/auth_info" | awk '{print "  • " $1 " " $3 ":" $4 " " $9}'
-
-echo ""
-echo "📁 $BOT_DIR/node_modules/"
-ls -ld "$BOT_DIR/node_modules" 2>/dev/null | awk '{print "  • " $1 " " $3 ":" $4 " " $9}' || echo "  • (não existe ainda)"
-
-echo ""
 echo "📄 ARQUIVOS EM $BOT_DIR/:"
-for file in config.json package.json status.json usuarios.json qrcode.txt package-lock.json bot.js; do
+for file in config.json package.json status.json usuarios.json qrcode.txt bot.js; do
     if [ -f "$BOT_DIR/$file" ]; then
         ls -l "$BOT_DIR/$file" | awk '{print "  • " $1 " " $3 ":" $4 " " $9}'
     fi
@@ -340,55 +389,37 @@ ls -ld "$WEB_DIR" | awk '{print "  • " $1 " " $3 ":" $4 " " $9}'
 echo ""
 echo "🎉 ✅ INSTALAÇÃO CONCLUÍDA COM SUCESSO!"
 echo ""
-echo "📋 RESUMO DA INSTALAÇÃO:"
-echo "========================"
-echo "📁 Bot instalado em: $BOT_DIR"
-echo "📦 Dependências Node.js instaladas"
-echo "👤 Usuário do bot: $BOT_USER (membro do grupo $WEB_GROUP)"
-echo "🌐 Grupo web: $WEB_GROUP"
-echo "📊 Logs do bot: $LOG_FILE"
-echo "⚙️ Serviço systemd: botzap.service"
-echo "🔄 Logrotate configurado (rotação diária, 30 dias)"
+echo "📋 RESUMO:"
+echo "=========="
+echo "📁 Bot: $BOT_DIR"
+echo "👤 Usuário: $BOT_USER"
+echo "🌐 Web: $WEB_GROUP"
+echo "👥 Grupo compartilhado: botwww"
 echo ""
-echo "📁 PERMISSÕES CONFIGURADAS:"
+echo "🔐 PERMISSÕES CONFIGURADAS:"
 echo "=========================="
-echo "• $BOT_DIR/              - 755 - $BOT_USER:$WEB_GROUP"
-echo "• $BOT_DIR/auth_info/    - 700 - $BOT_USER:$BOT_USER"
-echo "• $BOT_DIR/node_modules/ - 755 - $BOT_USER:$WEB_GROUP"
-echo "• $BOT_DIR/config.json   - 674 - $BOT_USER:$WEB_GROUP"
-echo "• $BOT_DIR/package.json  - 750 - $BOT_USER:$BOT_USER"
-echo "• $BOT_DIR/status.json   - 770 - $BOT_USER:$BOT_USER"
-echo "• $BOT_DIR/usuarios.json - 770 - $BOT_USER:$BOT_USER"
-echo "• $BOT_DIR/qrcode.txt    - 644 - $BOT_USER:$BOT_USER"
-echo "• $WEB_DIR/              - 755 - $WEB_GROUP:$WEB_GROUP"
+echo "• Diretórios: 775 (botzap:botwww)"
+echo "• Arquivos compartilhados: 664 (botzap:botwww)"
+echo "• Arquivos privados: 640 (botzap:botzap)"
+echo "• auth_info/: 700 (botzap:botzap)"
 echo ""
 echo "🚀 PRÓXIMOS PASSOS:"
 echo "=================="
-echo "1️⃣ Copie o arquivo bot.js para:"
+echo "1️⃣ Copie o arquivo bot.js (com todas as correções) para:"
 echo "   sudo cp bot.js $BOT_DIR/"
-echo "   sudo chown $BOT_USER:$WEB_GROUP $BOT_DIR/bot.js"
-echo "   sudo chmod 644 $BOT_DIR/bot.js"
+echo "   sudo chown $BOT_USER:botwww $BOT_DIR/bot.js"
+echo "   sudo chmod 664 $BOT_DIR/bot.js"
 echo ""
 echo "2️⃣ Copie os arquivos web para:"
 echo "   sudo cp *.php *.jpg *.png $WEB_DIR/ 2>/dev/null || true"
-echo ""
-echo "3️⃣ Configure as permissões dos arquivos web:"
-echo "   # Arquivos PHP"
 echo "   sudo chown $WEB_GROUP:$WEB_GROUP $WEB_DIR/*.php"
 echo "   sudo chmod 755 $WEB_DIR/*.php"
 echo ""
-echo "   # Arquivos de imagem"
-echo "   sudo chown root:root $WEB_DIR/logo.jpg $WEB_DIR/pix.php 2>/dev/null || true"
-echo "   sudo chmod 644 $WEB_DIR/logo.jpg $WEB_DIR/pix.php 2>/dev/null || true"
-echo ""
-echo "   sudo chown $WEB_GROUP:$WEB_GROUP $WEB_DIR/qrcode_*.png 2>/dev/null || true"
-echo "   sudo chmod 644 $WEB_DIR/qrcode_*.png 2>/dev/null || true"
-echo ""
-echo "4️⃣ Inicie o bot:"
+echo "3️⃣ Inicie o bot:"
 echo "   sudo systemctl start botzap"
 echo ""
-echo "5️⃣ Acesse o painel web:"
-echo "   http://$(hostname -I | awk '{print $1}')/"
+echo "4️⃣ Acesse o painel web:"
+echo "   https://botwhatsapp.weblinetelecom.com.br/"
 echo ""
 echo "⚡ COMANDOS ÚTEIS:"
 echo "================="
@@ -398,24 +429,5 @@ echo "• Parar bot:            sudo systemctl stop botzap"
 echo "• Reiniciar bot:        sudo systemctl restart botzap"
 echo "• Ver logs em tempo:    sudo journalctl -u botzap -f"
 echo "• Ver arquivo de log:   tail -f $LOG_FILE"
-echo "• Monitorar erros:      tail -f /var/log/apache2/botzap_error.log"
 echo ""
-echo "🔧 CONFIGURAÇÕES ESPECIAIS INCLUÍDAS:"
-echo "===================================="
-echo "✅ Permissões exatas conforme especificação"
-echo "✅ Acesso compartilhado entre botzap e www-data"
-echo "✅ Logs com data/hora formatada"
-echo "✅ Limpeza automática de usuários inativos"
-echo "✅ Rotação automática de logs (30 dias)"
-echo "✅ Restart automático do serviço após rotação"
-echo "✅ Suporte a feriados nacionais"
-echo "✅ Controle de horário comercial"
-echo ""
-echo "⚠️ IMPORTANTE:"
-echo "============="
-echo "• O arquivo bot.js deve ser copiado manualmente após instalação"
-echo "• Arquivos PHP devem ter permissão 755 (www-data:www-data)"
-echo "• Imagens estáticas devem ter permissão 644"
-echo "• O botzap tem acesso a config.json (674) para leitura/escrita"
-echo ""
-echo "🎯 Sistema pronto para receber os arquivos!"
+echo "✅ Sistema configurado com permissões compartilhadas funcionais!"
