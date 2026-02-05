@@ -74,14 +74,8 @@ if ! id "$BOT_USER" &>/dev/null; then
   useradd -r -s /bin/false -d "$BOT_DIR" "$BOT_USER"
 fi
 
-# Criar grupo compartilhado se não existir
-if ! getent group "botwww" >/dev/null; then
-  groupadd "botwww"
-fi
-
-# Adicionar usuários ao grupo compartilhado
-usermod -a -G "botwww" "$BOT_USER"
-usermod -a -G "botwww" "$WEB_GROUP"
+# Adicionar usuário botzap ao grupo www-data para acesso a arquivos
+usermod -a -G "$WEB_GROUP" "$BOT_USER"
 
 # =====================================================
 # DIRETÓRIOS
@@ -96,12 +90,12 @@ mkdir -p "$WEB_DIR"
 echo "🔐 Configurando permissões compartilhadas..."
 
 # 1. Diretório principal do bot - ACESSO COMPARTILHADO
-chown "$BOT_USER:botwww" "$BOT_DIR"
+chown -R "$BOT_USER:$WEB_GROUP" "$BOT_DIR"
 chmod 775 "$BOT_DIR"
 
-# 2. Node_modules - ACESSO COMPARTILHADO
+# 2. Node_modules
 mkdir -p "$BOT_DIR/node_modules"
-chown -R "$BOT_USER:botwww" "$BOT_DIR/node_modules"
+chown -R "$BOT_USER:$WEB_GROUP" "$BOT_DIR/node_modules"
 find "$BOT_DIR/node_modules" -type d -exec chmod 775 {} \;
 find "$BOT_DIR/node_modules" -type f -exec chmod 664 {} \;
 
@@ -155,7 +149,7 @@ fi
 # =====================================================
 echo "⚙️ Criando arquivos de configuração..."
 
-# 1. config.json - COMPARTILHADO (bot escreve, php lê)
+# 1. config.json - COMPARTILHADO (bot e php podem ler/escrever)
 cat > "$BOT_DIR/config.json" <<'CFGEOF'
 {
     "empresa": "WebLine Telecom",
@@ -166,7 +160,7 @@ cat > "$BOT_DIR/config.json" <<'CFGEOF'
     "feriados_ativos": "Sim"
 }
 CFGEOF
-chown "$BOT_USER:botwww" "$BOT_DIR/config.json"
+chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/config.json"
 chmod 664 "$BOT_DIR/config.json"
 
 # 2. status.json - COMPARTILHADO (bot escreve, php lê)
@@ -176,7 +170,7 @@ cat > "$BOT_DIR/status.json" <<'STATEOF'
   "updated": "$(date -Iseconds)"
 }
 STATEOF
-chown "$BOT_USER:botwww" "$BOT_DIR/status.json"
+chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/status.json"
 chmod 664 "$BOT_DIR/status.json"
 
 # 3. usuarios.json - COMPARTILHADO (bot escreve, php lê)
@@ -190,17 +184,17 @@ cat > "$BOT_DIR/usuarios.json" <<'USEREOF'
   }
 }
 USEREOF
-chown "$BOT_USER:botwww" "$BOT_DIR/usuarios.json"
+chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/usuarios.json"
 chmod 664 "$BOT_DIR/usuarios.json"
 
 # 4. qrcode.txt - COMPARTILHADO (bot escreve, php lê)
 touch "$BOT_DIR/qrcode.txt"
-chown "$BOT_USER:botwww" "$BOT_DIR/qrcode.txt"
+chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/qrcode.txt"
 chmod 664 "$BOT_DIR/qrcode.txt"
 
 # 5. bot.js - COMPARTILHADO (será copiado depois)
 touch "$BOT_DIR/bot.js"
-chown "$BOT_USER:botwww" "$BOT_DIR/bot.js"
+chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/bot.js"
 chmod 664 "$BOT_DIR/bot.js"
 
 # =====================================================
@@ -229,7 +223,7 @@ StandardOutput=append:/var/log/botzap.log
 StandardError=append:/var/log/botzap.log
 
 # Adicionar grupo suplementar para acesso a arquivos
-SupplementaryGroups=botwww
+SupplementaryGroups=www-data
 
 LimitNOFILE=65535
 NoNewPrivileges=true
@@ -345,16 +339,19 @@ else
     echo "❌ www-data NÃO pode acessar diretório"
 fi
 
-if sudo -u "$WEB_GROUP" cat "$BOT_DIR/status.json" > /dev/null 2>&1; then
-    echo "✅ www-data pode ler status.json"
+if sudo -u "$WEB_GROUP" cat "$BOT_DIR/config.json" > /dev/null 2>&1; then
+    echo "✅ www-data pode ler config.json"
 else
-    echo "❌ www-data NÃO pode ler status.json"
+    echo "❌ www-data NÃO pode ler config.json"
 fi
 
-if sudo -u "$WEB_GROUP" cat "$BOT_DIR/qrcode.txt" > /dev/null 2>&1; then
-    echo "✅ www-data pode ler qrcode.txt"
+# Teste de escrita no config.json
+if sudo -u "$WEB_GROUP" bash -c "echo '// teste' >> $BOT_DIR/config.json 2>/dev/null"; then
+    echo "✅ www-data pode ESCREVER em config.json"
+    # Limpar teste
+    sudo sed -i '$ d' "$BOT_DIR/config.json"
 else
-    echo "❌ www-data NÃO pode ler qrcode.txt"
+    echo "❌ www-data NÃO pode escrever em config.json"
 fi
 
 echo ""
@@ -394,12 +391,11 @@ echo "=========="
 echo "📁 Bot: $BOT_DIR"
 echo "👤 Usuário: $BOT_USER"
 echo "🌐 Web: $WEB_GROUP"
-echo "👥 Grupo compartilhado: botwww"
 echo ""
 echo "🔐 PERMISSÕES CONFIGURADAS:"
 echo "=========================="
-echo "• Diretórios: 775 (botzap:botwww)"
-echo "• Arquivos compartilhados: 664 (botzap:botwww)"
+echo "• Diretório bot: 775 (botzap:www-data)"
+echo "• Arquivos compartilhados: 664 (botzap:www-data)"
 echo "• Arquivos privados: 640 (botzap:botzap)"
 echo "• auth_info/: 700 (botzap:botzap)"
 echo ""
@@ -407,7 +403,7 @@ echo "🚀 PRÓXIMOS PASSOS:"
 echo "=================="
 echo "1️⃣ Copie o arquivo bot.js (com todas as correções) para:"
 echo "   sudo cp bot.js $BOT_DIR/"
-echo "   sudo chown $BOT_USER:botwww $BOT_DIR/bot.js"
+echo "   sudo chown $BOT_USER:$WEB_GROUP $BOT_DIR/bot.js"
 echo "   sudo chmod 664 $BOT_DIR/bot.js"
 echo ""
 echo "2️⃣ Copie os arquivos web para:"
