@@ -23,7 +23,8 @@ echo "🌐 CONFIGURAÇÃO DE DOMÍNIO"
 echo "=========================="
 echo "Digite o domínio completo para o bot (ex: bot.weblinetelecom.com.br)"
 echo "Deixe em branco para usar o padrão: botwhatsapp.weblinetelecom.com.br"
-read -p "Domínio: " BOT_DOMAIN
+echo -n "Domínio: "
+read BOT_DOMAIN
 
 # Se não digitou nada, usar padrão
 if [ -z "$BOT_DOMAIN" ]; then
@@ -55,13 +56,15 @@ echo "Configure o usuário e senha para acesso ao painel web"
 echo ""
 
 # Solicitar nome de usuário
-read -p "Digite o nome de usuário [admin]: " WEB_USERNAME
+echo -n "Digite o nome de usuário [admin]: "
+read WEB_USERNAME
 WEB_USERNAME=${WEB_USERNAME:-admin}
 echo "✅ Usuário: $WEB_USERNAME"
 
 # Solicitar senha com verificação
 while true; do
-    read -sp "Digite a senha: " WEB_PASSWORD
+    echo -n "Digite a senha: "
+    read -s WEB_PASSWORD
     echo ""
     
     if [ -z "$WEB_PASSWORD" ]; then
@@ -71,7 +74,8 @@ while true; do
         break
     fi
     
-    read -sp "Confirme a senha: " WEB_PASSWORD_CONFIRM
+    echo -n "Confirme a senha: "
+    read -s WEB_PASSWORD_CONFIRM
     echo ""
     
     if [ "$WEB_PASSWORD" = "$WEB_PASSWORD_CONFIRM" ]; then
@@ -79,10 +83,12 @@ while true; do
         break
     else
         echo "❌ As senhas não coincidem. Tente novamente."
+        echo ""
     fi
 done
 
 # Gerar hash da senha
+echo "🔑 Gerando hash da senha..."
 PASSWORD_HASH=$(php -r "echo password_hash('$WEB_PASSWORD', PASSWORD_DEFAULT);" 2>/dev/null)
 if [ -z "$PASSWORD_HASH" ]; then
     echo "⚠️  Não foi possível gerar hash da senha, usando hash padrão"
