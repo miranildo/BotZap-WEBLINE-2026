@@ -17,6 +17,35 @@ LOG_FILE="/var/log/botzap.log"
 REPO_URL="https://raw.githubusercontent.com/miranildo/BotZap-WEBLINE-2026/main"
 
 # =====================================================
+# SOLICITAR URL DO BOT
+# =====================================================
+echo "🌐 CONFIGURAÇÃO DE DOMÍNIO"
+echo "=========================="
+echo "Digite o domínio completo para o bot (ex: bot.weblinetelecom.com.br)"
+echo "Deixe em branco para usar o padrão: botwhatsapp.weblinetelecom.com.br"
+read -p "Domínio: " BOT_DOMAIN
+
+# Se não digitou nada, usar padrão
+if [ -z "$BOT_DOMAIN" ]; then
+    BOT_DOMAIN="botwhatsapp.weblinetelecom.com.br"
+    echo "✅ Usando domínio padrão: $BOT_DOMAIN"
+else
+    # Remover http:// ou https:// se o usuário digitou
+    BOT_DOMAIN=$(echo "$BOT_DOMAIN" | sed 's|^https://||; s|^http://||')
+    echo "✅ Domínio configurado: $BOT_DOMAIN"
+fi
+
+# Extrair apenas o domínio base (sem www)
+DOMAIN_BASE=$(echo "$BOT_DOMAIN" | sed 's|^www\.||')
+
+echo ""
+echo "📋 Resumo da configuração:"
+echo "   • Domínio principal: $BOT_DOMAIN"
+echo "   • Domínio base: $DOMAIN_BASE"
+echo "   • www.$DOMAIN_BASE também será configurado"
+echo ""
+
+# =====================================================
 # VERIFICA ROOT
 # =====================================================
 if [ "$EUID" -ne 0 ]; then
@@ -264,31 +293,34 @@ for FILE in "${WEB_FILES[@]}"; do
         # Criar versões básicas para arquivos essenciais
         case "$FILE" in
             "index.php")
-                cat > "$FILE" <<'EOF'
+                cat > "$FILE" <<EOF
 <?php
 session_start();
 
 // Simples verificação de login para teste
 if (!isset($_SESSION['loggedin'])) {
-    $_SESSION['loggedin'] = true;
-    $_SESSION['username'] = 'admin';
+    header('Location: login.php');
+    exit;
 }
 
 // Carregar configurações do bot
-$config_file = '/opt/whatsapp-bot/config.json';
-$status_file = '/opt/whatsapp-bot/status.json';
-$qrcode_file = '/opt/whatsapp-bot/qrcode.txt';
+\$config_file = '/opt/whatsapp-bot/config.json';
+\$status_file = '/opt/whatsapp-bot/status.json';
+\$qrcode_file = '/opt/whatsapp-bot/qrcode.txt';
 
-$config = file_exists($config_file) ? json_decode(file_get_contents($config_file), true) : ['empresa' => 'WebLine Telecom'];
-$status = file_exists($status_file) ? json_decode(file_get_contents($status_file), true) : ['status' => 'offline', 'updated' => date('c')];
-$qrcode = file_exists($qrcode_file) ? file_get_contents($qrcode_file) : '';
+\$config = file_exists(\$config_file) ? json_decode(file_get_contents(\$config_file), true) : ['empresa' => 'WebLine Telecom'];
+\$status = file_exists(\$status_file) ? json_decode(file_get_contents(\$status_file), true) : ['status' => 'offline', 'updated' => date('c')];
+\$qrcode = file_exists(\$qrcode_file) ? file_get_contents(\$qrcode_file) : '';
+
+// Dominio atual
+\$dominio = \$_SERVER['HTTP_HOST'] ?? '$BOT_DOMAIN';
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bot WhatsApp - <?php echo htmlspecialchars($config['empresa']); ?></title>
+    <title>Bot WhatsApp - <?php echo htmlspecialchars(\$config['empresa']); ?></title>
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
         .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
@@ -298,27 +330,35 @@ $qrcode = file_exists($qrcode_file) ? file_get_contents($qrcode_file) : '';
         .offline { background: #f8d7da; color: #721c24; }
         .qrcode-container { text-align: center; margin: 20px 0; }
         .qrcode-img { max-width: 300px; }
+        .info-box { background: #e9ecef; padding: 15px; border-radius: 5px; margin: 20px 0; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🤖 Bot WhatsApp - <?php echo htmlspecialchars($config['empresa']); ?></h1>
-            <p>Painel de Controle</p>
+            <h1>🤖 Bot WhatsApp - <?php echo htmlspecialchars(\$config['empresa']); ?></h1>
+            <p>Painel de Controle | Domínio: <?php echo htmlspecialchars(\$dominio); ?></p>
         </div>
         
-        <div class="status <?php echo $status['status']; ?>">
-            Status: <strong><?php echo strtoupper($status['status']); ?></strong>
-            <br>Atualizado: <?php echo $status['updated']; ?>
+        <div class="info-box">
+            <p><strong>📋 Informações do Sistema:</strong></p>
+            <p>• Domínio configurado: <code><?php echo htmlspecialchars(\$dominio); ?></code></p>
+            <p>• Diretório web: <code>/var/www/botzap</code></p>
+            <p>• Usuário do bot: <code>botzap</code></p>
+        </div>
+        
+        <div class="status <?php echo \$status['status']; ?>">
+            Status: <strong><?php echo strtoupper(\$status['status']); ?></strong>
+            <br>Atualizado: <?php echo \$status['updated']; ?>
         </div>
         
         <div class="qrcode-container">
             <h3>QR Code para Login</h3>
-            <?php if (!empty($qrcode) && $status['status'] === 'offline'): ?>
-                <img src="data:image/png;base64,<?php echo base64_encode($qrcode); ?>" 
+            <?php if (!empty(\$qrcode) && \$status['status'] === 'offline'): ?>
+                <img src="data:image/png;base64,<?php echo base64_encode(\$qrcode); ?>" 
                      alt="QR Code" class="qrcode-img">
                 <p>Escaneie com o WhatsApp</p>
-            <?php elseif ($status['status'] === 'online'): ?>
+            <?php elseif (\$status['status'] === 'online'): ?>
                 <p>✅ Bot conectado e pronto!</p>
             <?php else: ?>
                 <p>⏳ Aguardando QR Code...</p>
@@ -372,6 +412,9 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
     exit;
 }
 
+// Obter domínio atual para exibição
+$dominio = $_SERVER['HTTP_HOST'] ?? 'botwhatsapp.weblinetelecom.com.br';
+
 $error = '';
 
 // Processar login
@@ -404,11 +447,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         input[type="text"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
         button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
         .error { color: #dc3545; text-align: center; margin-bottom: 15px; }
+        .domain-info { text-align: center; margin-bottom: 20px; color: #666; font-size: 14px; }
     </style>
 </head>
 <body>
     <div class="login-box">
-        <h2>🔐 Login</h2>
+        <h2>🔐 Login Bot WhatsApp</h2>
+        
+        <div class="domain-info">
+            Domínio: <strong><?php echo htmlspecialchars($dominio); ?></strong>
+        </div>
         
         <?php if ($error): ?>
             <div class="error"><?php echo $error; ?></div>
@@ -510,13 +558,15 @@ echo "📝 Criando arquivos básicos faltantes..."
 
 # Criar status.php se não existe
 if [ ! -f "$WEB_DIR/status.php" ]; then
-    cat > "$WEB_DIR/status.php" <<'EOF'
+    cat > "$WEB_DIR/status.php" <<EOF
 <?php
 session_start();
-if (!isset($_SESSION['loggedin'])) {
+if (!isset(\$_SESSION['loggedin'])) {
     header('Location: login.php');
     exit;
 }
+
+\$dominio = \$_SERVER['HTTP_HOST'] ?? '$BOT_DOMAIN';
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -529,13 +579,21 @@ if (!isset($_SESSION['loggedin'])) {
         .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
         .header { text-align: center; margin-bottom: 30px; }
         .back-link { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 5px; }
+        .info-box { background: #e9ecef; padding: 15px; border-radius: 5px; margin: 20px 0; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>📊 Status do Sistema</h1>
-            <p>Informações do bot WhatsApp</p>
+            <p>Informações do bot WhatsApp | Domínio: <?php echo htmlspecialchars(\$dominio); ?></p>
+        </div>
+        
+        <div class="info-box">
+            <p><strong>📋 Configuração do Sistema:</strong></p>
+            <p>• Domínio: <code><?php echo htmlspecialchars(\$dominio); ?></code></p>
+            <p>• Diretório web: <code>/var/www/botzap</code></p>
+            <p>• Diretório bot: <code>/opt/whatsapp-bot</code></p>
         </div>
         
         <h2>Status do Bot</h2>
@@ -553,6 +611,10 @@ if (!isset($_SESSION['loggedin'])) {
             <li>Apache: ✅ Executando</li>
             <li>Bot WhatsApp: ⚠️ Verifique manualmente</li>
         </ul>
+        
+        <h2>VirtualHost Apache</h2>
+        <p>Configurado em: <code>/etc/apache2/sites-available/botzap.conf</code></p>
+        <p>Domínio configurado: <code><?php echo htmlspecialchars(\$dominio); ?></code></p>
         
         <a href="index.php" class="back-link">← Voltar ao Painel</a>
     </div>
@@ -635,11 +697,11 @@ echo "🌐 Configurando Apache com VirtualHost..."
 # Desabilitar site padrão
 a2dissite 000-default.conf 2>/dev/null || true
 
-# Criar VirtualHost conforme sua configuração
-cat > /etc/apache2/sites-available/botzap.conf <<'VHOSTEOF'
+# Criar VirtualHost com o domínio configurado
+cat > /etc/apache2/sites-available/botzap.conf <<EOF
 <VirtualHost *:80>
-    ServerName botwhatsapp.weblinetelecom.com.br
-    ServerAlias www.botwhatsapp.weblinetelecom.com.br
+    ServerName $BOT_DOMAIN
+    ServerAlias www.$DOMAIN_BASE
     DocumentRoot /var/www/botzap
 
     <Directory /var/www/botzap>
@@ -656,10 +718,10 @@ cat > /etc/apache2/sites-available/botzap.conf <<'VHOSTEOF'
         Require all granted
     </Directory>
 
-    ErrorLog ${APACHE_LOG_DIR}/botzap_error.log
-    CustomLog ${APACHE_LOG_DIR}/botzap_access.log combined
+    ErrorLog \${APACHE_LOG_DIR}/botzap_error.log
+    CustomLog \${APACHE_LOG_DIR}/botzap_access.log combined
 </VirtualHost>
-VHOSTEOF
+EOF
 
 # Habilitar o site
 a2ensite botzap.conf
@@ -670,7 +732,8 @@ a2enmod headers
 
 # Recarregar Apache
 systemctl reload apache2
-echo "✅ Apache configurado com VirtualHost para botwhatsapp.weblinetelecom.com.br"
+echo "✅ Apache configurado com VirtualHost para $BOT_DOMAIN"
+echo "✅ Também configurado alias: www.$DOMAIN_BASE"
 
 # =====================================================
 # CONFIGURAR PHP (CORRIGIDO)
@@ -777,6 +840,21 @@ LOGEOF
 echo "✅ Logrotate configurado"
 
 # =====================================================
+# CONFIGURAR HOSTS LOCAL (PARA TESTE)
+# =====================================================
+echo ""
+echo "🌐 Configurando hosts local para teste..."
+# Remover entradas antigas se existirem
+sed -i '/botwhatsapp\.weblinetelecom\.com\.br/d' /etc/hosts
+sed -i "/$DOMAIN_BASE/d" /etc/hosts
+
+# Adicionar nova entrada
+echo "127.0.0.1 $BOT_DOMAIN www.$DOMAIN_BASE" >> /etc/hosts
+echo "✅ Hosts local configurado:"
+echo "   127.0.0.1 $BOT_DOMAIN"
+echo "   127.0.0.1 www.$DOMAIN_BASE"
+
+# =====================================================
 # TESTES FINAIS
 # =====================================================
 echo "🧪 Executando testes finais..."
@@ -787,10 +865,12 @@ APACHE_STATUS=$(systemctl is-active apache2)
 echo "   • Apache: $APACHE_STATUS"
 
 echo ""
-echo "2. Testando arquivos:"
-echo "   • VirtualHost: /etc/apache2/sites-available/botzap.conf"
+echo "2. Testando VirtualHost:"
+echo "   • Arquivo: /etc/apache2/sites-available/botzap.conf"
 if [ -f "/etc/apache2/sites-available/botzap.conf" ]; then
-    echo "     ✅ Existe e está configurado"
+    echo "     ✅ Existe"
+    echo "     📋 Configuração:"
+    grep -E "ServerName|ServerAlias" /etc/apache2/sites-available/botzap.conf | sed 's/^/       /'
 else
     echo "     ❌ Não existe!"
 fi
@@ -799,8 +879,8 @@ echo ""
 echo "3. Testando diretório web:"
 if [ -d "$WEB_DIR" ]; then
     echo "   ✅ $WEB_DIR existe"
-    echo "   📁 Conteúdo:"
-    ls -la "$WEB_DIR/" | head -10
+    FILE_COUNT=$(find "$WEB_DIR" -type f | wc -l)
+    echo "   📁 Arquivos encontrados: $FILE_COUNT"
 else
     echo "   ❌ $WEB_DIR não existe!"
 fi
@@ -827,18 +907,6 @@ if [ "$BOT_STATUS" = "active" ]; then
 else
     echo "⚠️  Bot não iniciou automaticamente"
     echo "   Verifique: systemctl status botzap"
-fi
-
-# =====================================================
-# CONFIGURAR HOSTS LOCAL (PARA TESTE)
-# =====================================================
-echo ""
-echo "🌐 Configurando hosts local para teste..."
-if ! grep -q "botwhatsapp.weblinetelecom.com.br" /etc/hosts; then
-    echo "127.0.0.1 botwhatsapp.weblinetelecom.com.br www.botwhatsapp.weblinetelecom.com.br" >> /etc/hosts
-    echo "✅ Hosts local configurado"
-else
-    echo "✅ Hosts local já configurado"
 fi
 
 # =====================================================
@@ -870,15 +938,18 @@ SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 cat << EOF
 📋 RESUMO:
 ---------
+• Domínio configurado:     $BOT_DOMAIN
+• Alias configurado:       www.$DOMAIN_BASE
 • Diretório do bot:       $BOT_DIR
 • Diretório web:          $WEB_DIR
-• VirtualHost:            botwhatsapp.weblinetelecom.com.br
+• VirtualHost:            /etc/apache2/sites-available/botzap.conf
 • Usuário:                $BOT_USER
 • Grupo:                  $WEB_GROUP
 
 🌐 ACESSO:
 ---------
-• URL local:              http://botwhatsapp.weblinetelecom.com.br
+• URL configurada:        http://$BOT_DOMAIN
+• URL alternativa:        http://www.$DOMAIN_BASE
 • URL por IP:             http://$SERVER_IP
 • Login:                  admin / admin123
 
@@ -888,27 +959,37 @@ cat << EOF
 • Logs do bot:            journalctl -u botzap -f
 • Reiniciar Apache:       systemctl reload apache2
 • Ver logs Apache:        tail -f /var/log/apache2/botzap_error.log
-• Ver site:               curl -I http://localhost/
+• Ver configuração:       cat /etc/apache2/sites-available/botzap.conf
 
 🔧 PRÓXIMOS PASSOS:
 ------------------
-1. Acesse: http://botwhatsapp.weblinetelecom.com.br
+1. Acesse: http://$BOT_DOMAIN
 2. Faça login com: admin / admin123
 3. Vá em "QR Code WhatsApp" para conectar o bot
-4. Configure o domínio real no seu DNS
-5. Instale certificado SSL (Let's Encrypt)
+4. Configure o domínio real no seu DNS (apontar para $SERVER_IP)
+5. Instale certificado SSL (Let's Encrypt):
+   sudo certbot --apache -d $BOT_DOMAIN -d www.$DOMAIN_BASE
 
 ⚠️  IMPORTANTE:
 --------------
 • Altere a senha padrão 'admin123'
 • Configure backup dos arquivos em $BOT_DIR/
 • Monitore os logs regularmente
+• Configure seu DNS para apontar $BOT_DOMAIN para $SERVER_IP
 
-✅ Tudo pronto! O bot está instalado e configurado.
+📝 CONFIGURAÇÃO DO VIRTUALHOST:
+------------------------------
+Arquivo: /etc/apache2/sites-available/botzap.conf
+Conteúdo:
+<VirtualHost *:80>
+    ServerName $BOT_DOMAIN
+    ServerAlias www.$DOMAIN_BASE
+    DocumentRoot /var/www/botzap
+    ...
+</VirtualHost>
+
+✅ Tudo pronto! O bot está instalado e configurado com o domínio $BOT_DOMAIN
 EOF
-
-echo ""
-echo "================================================"
 
 echo ""
 echo "================================================"
