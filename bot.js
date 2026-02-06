@@ -3,6 +3,7 @@
  * Controle de feriados via painel web
  * CORRIGIDO: Suporte para mensagens individuais e grupos
  * ADICIONADO: Data/hora nos logs + Limpeza automática de usuários
+ * CORRIGIDO: Bug CPF/CNPJ apenas números (não confundir com telefone)
  *************************************************/
 
 const {
@@ -291,8 +292,8 @@ function limparUsuariosInativos() {
     }
 }
 
-// ⚠️ IDENTIFICAR OU CRIAR USUÁRIO
-function identificarUsuario(jid, pushName, texto = '') {
+// ⚠️ IDENTIFICAR OU CRIAR USUÁRIO (CORRIGIDA - NÃO CONFUNDE CPF/CNPJ COM TELEFONE)
+function identificarUsuario(jid, pushName, texto = '', ignorarExtracaoNumero = false) {
     if (!jid) {
         console.error(`${formatarDataHora()} ❌ JID não fornecido`);
         return null;
@@ -302,15 +303,19 @@ function identificarUsuario(jid, pushName, texto = '') {
     if (!isIndividualJID(jid)) {
         console.log(`${formatarDataHora()} ⚠️ JID não individual: ${jid} (lista/grupo)`);
         
-        // Tentar extrair número do texto da mensagem se disponível
-        let numeroExtraido = null;
-        if (texto) {
+        // ⚠️ CORREÇÃO: NÃO extrair número se estivermos em aguardando_cpf
+        // (para evitar confundir CPF/CNPJ com número de telefone)
+        if (!ignorarExtracaoNumero && texto) {
             const match = texto.match(/\d{10,}/g);
             if (match && match.length > 0) {
                 const num = match[0].replace(/\D/g, '');
-                if (num.length >= 10) {
-                    numeroExtraido = num.startsWith('55') ? num : '55' + num;
-                    console.log(`${formatarDataHora()} 📱 Número extraído do texto: ${numeroExtraido}`);
+                
+                // ⚠️ CORREÇÃO CRÍTICA: Verificar se não é CPF/CNPJ
+                // CPF tem 11 dígitos, CNPJ tem 14 dígitos
+                // Número de telefone normalmente tem 10-13 dígitos (com país)
+                if (num.length >= 10 && num.length !== 11 && num.length !== 14) {
+                    const numeroExtraido = num.startsWith('55') ? num : '55' + num;
+                    console.log(`${formatarDataHora()} 📱 Número extraído do texto: ${numeroExtraido} (${num.length} dígitos)`);
                     
                     // Verificar se já existe
                     if (usuarioMap[numeroExtraido]) {
@@ -330,6 +335,8 @@ function identificarUsuario(jid, pushName, texto = '') {
                     
                     console.log(`${formatarDataHora()} ✅ Cliente cadastrado via número extraído: ${pushName} -> ${numeroExtraido}`);
                     return novoCliente;
+                } else {
+                    console.log(`${formatarDataHora()} ⚠️ Ignorando extração: parece CPF/CNPJ (${num.length} dígitos)`);
                 }
             }
         }
@@ -558,6 +565,10 @@ Digite o número da opção desejada:`;
 
 // Função auxiliar para enviar mensagem para usuário
 async function enviarMensagemParaUsuario(sock, usuario, mensagem) {
+    console.log(`${formatarDataHora()} 📤 [ENVIAR] Iniciando envio para: ${usuario.numero}`);
+    console.log(`${formatarDataHora()} 📤 [ENVIAR] Usuário temporário? ${usuario?.temporario || 'não'}`);
+    console.log(`${formatarDataHora()} 📤 [ENVIAR] JID original: ${usuario?.jidOriginal || 'não tem'}`);
+    
     try {
         // Verificar se é um usuário temporário (de lista/grupo)
         let jidDestino = null;
@@ -565,22 +576,36 @@ async function enviarMensagemParaUsuario(sock, usuario, mensagem) {
         if (usuario?.temporario && usuario?.jidOriginal) {
             // Para usuários temporários, usar o JID original da lista/grupo
             jidDestino = usuario.jidOriginal;
-            console.log(`${formatarDataHora()} 📨 Enviando para JID original (lista/grupo): ${jidDestino}`);
+            console.log(`${formatarDataHora()} 📤 [ENVIAR] Usando JID original (lista/grupo): ${jidDestino}`);
         } else {
             // Para usuários normais, converter número para JID individual
             jidDestino = getJID(usuario.numero);
+            console.log(`${formatarDataHora()} 📤 [ENVIAR] Convertendo número para JID: ${usuario.numero} -> ${jidDestino}`);
         }
         
         if (jidDestino) {
+            console.log(`${formatarDataHora()} 📤 [ENVIAR] JID final: ${jidDestino}`);
+            console.log(`${formatarDataHora()} 📤 [ENVIAR] Mensagem (primeiros 50 chars): ${mensagem.substring(0, 50)}...`);
+            
+            // ⚠️ TESTE: Verificar se sock está disponível
+            if (!sock || !sock.sendMessage) {
+                console.error(`${formatarDataHora()} 📤 [ENVIAR] ❌ sock ou sendMessage não disponível!`);
+                return false;
+            }
+            
+            console.log(`${formatarDataHora()} 📤 [ENVIAR] Chamando sock.sendMessage...`);
             await sock.sendMessage(jidDestino, { text: mensagem });
-            console.log(`${formatarDataHora()} ✅ Mensagem enviada para ${usuario.pushName || usuario.numero} em ${jidDestino}`);
+            
+            console.log(`${formatarDataHora()} 📤 [ENVIAR] ✅ Mensagem enviada para ${usuario.pushName || usuario.numero}`);
             return true;
         } else {
-            console.error(`${formatarDataHora()} ❌ JID inválido para:`, usuario.numero);
+            console.error(`${formatarDataHora()} 📤 [ENVIAR] ❌ JID inválido para:`, usuario.numero);
+            console.error(`${formatarDataHora()} 📤 [ENVIAR] Detalhes usuário:`, JSON.stringify(usuario, null, 2));
             return false;
         }
     } catch (error) {
-        console.error(`${formatarDataHora()} ❌ Erro ao enviar mensagem:`, error);
+        console.error(`${formatarDataHora()} 📤 [ENVIAR] ❌ ERRO CRÍTICO ao enviar mensagem:`, error);
+        console.error(`${formatarDataHora()} 📤 [ENVIAR] Stack trace:`, error.stack);
         return false;
     }
 }
@@ -674,10 +699,26 @@ async function startBot() {
 
         const pushName = msg.pushName || 'Cliente';
         
-        console.log(`\n${formatarDataHora()} 📨 MENSAGEM DE: ${pushName} (${jidRemetente}) - ${texto}`);
+        console.log(`\n${formatarDataHora()} 📨 MENSAGEM DE: ${pushName} (${jidRemetente}) - "${texto}"`);
 
-        // ⚠️ IDENTIFICAR USUÁRIO usando o JID e texto
-        const usuario = identificarUsuario(jidRemetente, pushName, texto);
+        // ⚠️ IDENTIFICAR USUÁRIO com cuidado para não confundir CPF/CNPJ com telefone
+        // Primeiro precisamos saber o contexto atual do usuário
+        let contextoAtualParaIdentificacao = 'menu';
+        
+        // Tentar encontrar o usuário temporário primeiro
+        let usuarioTemporario = null;
+        for (const [chave, user] of Object.entries(usuarioMap)) {
+            if (user.jidOriginal === jidRemetente && user.temporario) {
+                usuarioTemporario = user;
+                contextoAtualParaIdentificacao = contextos[user.numero] || 'menu';
+                break;
+            }
+        }
+        
+        const ignorarExtracaoNumero = (contextoAtualParaIdentificacao === 'aguardando_cpf');
+        console.log(`${formatarDataHora()} 🔍 Identificando usuário (ignorarExtracao: ${ignorarExtracaoNumero}, contexto: ${contextoAtualParaIdentificacao})`);
+
+        const usuario = identificarUsuario(jidRemetente, pushName, texto, ignorarExtracaoNumero);
         
         if (!usuario) {
             console.log(`${formatarDataHora()} ❌ Usuário não identificado`);
@@ -723,7 +764,7 @@ async function startBot() {
         if (!isAtendente) {
             const contextoAtual = contextos[numeroCliente] || 'menu';
             
-            console.log(`${formatarDataHora()} 📊 Contexto: ${contextoAtual}`);
+            console.log(`${formatarDataHora()} 📊 Contexto atual: ${contextoAtual}`);
 
             // ⚠️ OPÇÃO 0 - ENCERRAR
             if (texto === '0' && (contextoAtual === 'pos_pix' || contextoAtual === 'em_atendimento')) {
@@ -815,40 +856,118 @@ async function startBot() {
                 }
             }
 
-            // ⚠️ AGUARDANDO CPF
+            // ⚠️ AGUARDANDO CPF (CORRIGIDO - NÃO CONFUNDE COM TELEFONE)
             if (contextoAtual === 'aguardando_cpf') {
-                console.log(`${formatarDataHora()} 📄 Aguardando documento`);
+                console.log(`${formatarDataHora()} 📄 [DEBUG] Contexto aguardando_cpf ATIVADO`);
+                console.log(`${formatarDataHora()} 📄 [DEBUG] Texto recebido: "${texto}"`);
+                console.log(`${formatarDataHora()} 📄 [DEBUG] Usuário: ${pushName} (${numeroCliente})`);
                 
                 if (atendimentos[numeroCliente]) {
                     atendimentos[numeroCliente].inicio = Date.now();
+                    console.log(`${formatarDataHora()} 📄 [DEBUG] Atendimento atualizado`);
                 }
                 
                 // Se digitar comando
                 if (texto === '0' || texto === '9' || texto === '1' || texto === '2') {
+                    console.log(`${formatarDataHora()} 📄 [DEBUG] Comando detectado: ${texto}`);
                     delete atendimentos[numeroCliente];
                     contextos[numeroCliente] = 'menu';
                     await enviarMenuPrincipal(sock, usuario, texto);
                     return;
                 }
                 
-                // Processar CPF/CNPJ
+                // ⚠️ LOG DETALHADO DO PROCESSAMENTO
+                console.log(`${formatarDataHora()} 📄 [DEBUG] Iniciando processamento do documento...`);
                 const doc = limparDoc(texto);
+                console.log(`${formatarDataHora()} 📄 [DEBUG] Documento após limpar: "${doc}"`);
+                console.log(`${formatarDataHora()} 📄 [DEBUG] Tamanho do documento: ${doc.length} dígitos`);
                 
-                if ([11,14].includes(doc.length)) {
-                    console.log(`${formatarDataHora()} ✅ Documento válido`);
+                // Testar regex
+                const temApenasNumeros = /^\d+$/.test(doc);
+                console.log(`${formatarDataHora()} 📄 [DEBUG] Tem apenas números? ${temApenasNumeros}`);
+                
+                // Validar CPF (11 dígitos)
+                if (doc.length === 11 && temApenasNumeros) {
+                    console.log(`${formatarDataHora()} 📄 [DEBUG] ✅ CPF VÁLIDO DETECTADO!`);
+                    console.log(`${formatarDataHora()} 📄 [DEBUG] CPF: ${doc}`);
                     
-                    await enviarMensagemParaUsuario(sock, usuario, 
-                        `💠 *Pagamento via PIX*\n\nclique no link abaixo para acessar sua fatura:\n🔗 ${config.boleto_url}?doc=${doc}\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`
-                    );
+                    try {
+                        console.log(`${formatarDataHora()} 📄 [DEBUG] Tentando enviar mensagem com link PIX...`);
+                        
+                        const mensagemPix = `💠 *Pagamento via PIX*\n\nclique no link abaixo para acessar sua fatura:\n🔗 ${config.boleto_url}?doc=${doc}\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                        
+                        // Chamar função de envio DIRETAMENTE para debug
+                        console.log(`${formatarDataHora()} 📄 [DEBUG] Chamando enviarMensagemParaUsuario...`);
+                        const resultado = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
+                        
+                        if (resultado) {
+                            console.log(`${formatarDataHora()} 📄 [DEBUG] ✅ Mensagem enviada com sucesso!`);
+                            delete atendimentos[numeroCliente];
+                            contextos[numeroCliente] = 'pos_pix';
+                            console.log(`${formatarDataHora()} 📄 [DEBUG] Contexto alterado para: pos_pix`);
+                        } else {
+                            console.log(`${formatarDataHora()} 📄 [DEBUG] ❌ Falha ao enviar mensagem!`);
+                            // Tentar enviar mensagem de erro
+                            await enviarMensagemParaUsuario(sock, usuario, 
+                                `❌ Ocorreu um erro ao processar. Tente novamente.`
+                            );
+                        }
+                        
+                    } catch (error) {
+                        console.error(`${formatarDataHora()} 📄 [DEBUG] ❌ ERRO no try/catch:`, error);
+                        console.error(`${formatarDataHora()} 📄 [DEBUG] Stack trace:`, error.stack);
+                    }
+                    return;
                     
-                    delete atendimentos[numeroCliente];
-                    contextos[numeroCliente] = 'pos_pix';
+                // Validar CNPJ (14 dígitos)
+                } else if (doc.length === 14 && temApenasNumeros) {
+                    console.log(`${formatarDataHora()} 📄 [DEBUG] ✅ CNPJ VÁLIDO DETECTADO!`);
+                    console.log(`${formatarDataHora()} 📄 [DEBUG] CNPJ: ${doc}`);
+                    
+                    try {
+                        const mensagemPix = `💠 *Pagamento via PIX*\n\nclique no link abaixo para acessar sua fatura:\n🔗 ${config.boleto_url}?doc=${doc}\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                        
+                        const resultado = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
+                        
+                        if (resultado) {
+                            console.log(`${formatarDataHora()} 📄 [DEBUG] ✅ Mensagem CNPJ enviada!`);
+                            delete atendimentos[numeroCliente];
+                            contextos[numeroCliente] = 'pos_pix';
+                        } else {
+                            console.log(`${formatarDataHora()} 📄 [DEBUG] ❌ Falha ao enviar CNPJ!`);
+                        }
+                        
+                    } catch (error) {
+                        console.error(`${formatarDataHora()} 📄 [DEBUG] ❌ ERRO CNPJ:`, error);
+                    }
+                    return;
                     
                 } else {
-                    await enviarMensagemParaUsuario(sock, usuario, 
-                        `❌ ${pushName}, formato inválido.\n\nCPF: 11 dígitos\nCNPJ: 14 dígitos`
-                    );
+                    // Documento inválido
+                    console.log(`${formatarDataHora()} 📄 [DEBUG] ❌ DOCUMENTO INVÁLIDO`);
+                    console.log(`${formatarDataHora()} 📄 [DEBUG] Razão: length=${doc.length}, apenasNumeros=${temApenasNumeros}`);
+                    
+                    try {
+                        let mensagemErro = `❌ ${pushName}, formato inválido.\n\n`;
+                        
+                        if (doc.length > 0 && !temApenasNumeros) {
+                            mensagemErro += `⚠️ Contém caracteres inválidos.\n`;
+                        }
+                        
+                        mensagemErro += `\n📋 *Formatos aceitos:*\n`;
+                        mensagemErro += `• CPF: 11 dígitos (ex: 12345678901)\n`;
+                        mensagemErro += `• CNPJ: 14 dígitos (ex: 12345678000199)\n\n`;
+                        mensagemErro += `Digite novamente:`;
+                        
+                        console.log(`${formatarDataHora()} 📄 [DEBUG] Enviando mensagem de erro...`);
+                        await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                        
+                    } catch (error) {
+                        console.error(`${formatarDataHora()} 📄 [DEBUG] ❌ ERRO ao enviar mensagem de erro:`, error);
+                    }
                 }
+                
+                console.log(`${formatarDataHora()} 📄 [DEBUG] Fim do processamento aguardando_cpf`);
                 return;
             }
 
