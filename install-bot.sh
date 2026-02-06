@@ -87,14 +87,6 @@ while true; do
     fi
 done
 
-# Gerar hash da senha
-echo "🔑 Gerando hash da senha..."
-PASSWORD_HASH=$(php -r "echo password_hash('$WEB_PASSWORD', PASSWORD_DEFAULT);" 2>/dev/null)
-if [ -z "$PASSWORD_HASH" ]; then
-    echo "⚠️  Não foi possível gerar hash da senha, usando hash padrão"
-    PASSWORD_HASH='$2y$10$ABCDEFGHIJKLMNOPQRSTUVWXYZ123456'
-fi
-
 echo ""
 echo "📋 Resumo das credenciais:"
 echo "   • Usuário: $WEB_USERNAME"
@@ -155,6 +147,17 @@ apt install -y \
 
 systemctl enable apache2
 systemctl start apache2
+
+# =====================================================
+# GERAR HASH DA SENHA AGORA QUE PHP ESTÁ INSTALADO
+# =====================================================
+echo "🔑 Gerando hash da senha..."
+PASSWORD_HASH=$(php -r "echo password_hash('$WEB_PASSWORD', PASSWORD_DEFAULT);" 2>/dev/null)
+if [ -z "$PASSWORD_HASH" ]; then
+    echo "⚠️  Não foi possível gerar hash da senha, usando hash padrão"
+    PASSWORD_HASH='$2y$10$ABCDEFGHIJKLMNOPQRSTUVWXYZ123456'
+fi
+echo "✅ Hash da senha gerado"
 
 # =====================================================
 # USUÁRIO E GRUPOS
