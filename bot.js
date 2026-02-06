@@ -5,6 +5,7 @@
  * ADICIONADO: Data/hora nos logs + Limpeza automática de usuários
  * CORRIGIDO: Bug CPF/CNPJ apenas números (não confundir com telefone)
  * ATUALIZADO: Identificação automática do atendente via conexão QR Code
+ * CORRIGIDO: Captura correta do número do WhatsApp conectado
  *************************************************/
 
 const {
@@ -103,7 +104,9 @@ function extrairNumeroDoJID(jid) {
         const numero = jid.split('@')[0];
         // Garantir que comece com 55
         if (numero && numero.length >= 10) {
-            return numero.startsWith('55') ? numero : `55${numero}`;
+            // ⚠️ CORREÇÃO: Remover caracteres não numéricos
+            const numeroLimpo = numero.replace(/\D/g, '');
+            return numeroLimpo.startsWith('55') ? numeroLimpo : `55${numeroLimpo}`;
         }
     }
     
@@ -637,36 +640,56 @@ async function startBot() {
             fs.writeFileSync(QR_PATH, '');
             setStatus('online');
             
-            // ⚠️ CAPTURAR CREDENCIAIS DO WHATSAPP CONECTADO
+            // ⚠️ CAPTURAR CREDENCIAIS DO WHATSAPP CONECTADO (VERSÃO CORRIGIDA)
             try {
                 const user = sock.user;
                 if (user && user.id) {
                     // Extrair número do ID (removendo @s.whatsapp.net)
                     let numero = user.id.split('@')[0];
-                    // Garantir que comece com 55
-                    if (!numero.startsWith('55')) {
-                        numero = '55' + numero;
+                    
+                    // ⚠️ CORREÇÃO: Remover todos os caracteres não numéricos
+                    numero = numero.replace(/\D/g, '');
+                    
+                    // ⚠️ CORREÇÃO: Verificar se tem comprimento mínimo
+                    if (numero.length >= 10) {
+                        // Garantir que comece com 55
+                        if (!numero.startsWith('55')) {
+                            numero = '55' + numero;
+                        }
+                        
+                        const pushName = user.name || 'Atendente WhatsApp';
+                        
+                        console.log(`${formatarDataHora()} 🔐 WhatsApp conectado como: ${pushName} (${numero})`);
+                        
+                        // ⚠️ CORREÇÃO: Limpar atendentes antigos antes de adicionar o novo
+                        // Remover todos os atendentes existentes
+                        for (const [chave, usuario] of Object.entries(usuarioMap)) {
+                            if (usuario.tipo === 'atendente') {
+                                console.log(`${formatarDataHora()} 🗑️ Removendo atendente antigo: ${usuario.pushName} (${usuario.numero})`);
+                                delete usuarioMap[chave];
+                            }
+                        }
+                        
+                        // Atualizar/registrar como atendente no arquivo usuarios.json
+                        usuarioMap[numero] = {
+                            numero: numero,
+                            tipo: 'atendente',
+                            pushName: pushName,
+                            cadastradoEm: new Date().toISOString()
+                        };
+                        
+                        // Salvar no arquivo
+                        salvarUsuarios();
+                        
+                        console.log(`${formatarDataHora()} ✅ Atendente registrado/atualizado: ${pushName} (${numero})`);
+                        console.log(`${formatarDataHora()} 📊 Total de atendentes: ${Object.values(usuarioMap).filter(u => u.tipo === 'atendente').length}`);
+                    } else {
+                        console.error(`${formatarDataHora()} ❌ Número inválido extraído: ${user.id} -> ${numero}`);
                     }
-                    
-                    const pushName = user.name || 'Atendente WhatsApp';
-                    
-                    console.log(`${formatarDataHora()} 🔐 WhatsApp conectado como: ${pushName} (${numero})`);
-                    
-                    // Atualizar/registrar como atendente no arquivo usuarios.json
-                    usuarioMap[numero] = {
-                        numero: numero,
-                        tipo: 'atendente',
-                        pushName: pushName,
-                        cadastradoEm: new Date().toISOString()
-                    };
-                    
-                    // Salvar no arquivo
-                    salvarUsuarios();
-                    
-                    console.log(`${formatarDataHora()} ✅ Atendente registrado/atualizado: ${pushName} (${numero})`);
                 }
             } catch (error) {
                 console.error(`${formatarDataHora()} ❌ Erro ao capturar credenciais:`, error);
+                console.error(`${formatarDataHora()} ❌ Detalhes do erro:`, error.stack);
             }
             
             console.log(`${formatarDataHora()} ✅ WhatsApp conectado - COM CONTROLE DE FERIADOS`);
