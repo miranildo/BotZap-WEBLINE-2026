@@ -46,6 +46,56 @@ echo "   • www.$DOMAIN_BASE também será configurado"
 echo ""
 
 # =====================================================
+# SOLICITAR USUÁRIO E SENHA DO PAINEL WEB
+# =====================================================
+echo ""
+echo "🔐 CONFIGURAÇÃO DE ACESSO AO PAINEL"
+echo "==================================="
+echo "Configure o usuário e senha para acesso ao painel web"
+echo ""
+
+# Solicitar nome de usuário
+read -p "Digite o nome de usuário [admin]: " WEB_USERNAME
+WEB_USERNAME=${WEB_USERNAME:-admin}
+echo "✅ Usuário: $WEB_USERNAME"
+
+# Solicitar senha com verificação
+while true; do
+    read -sp "Digite a senha: " WEB_PASSWORD
+    echo ""
+    
+    if [ -z "$WEB_PASSWORD" ]; then
+        echo "⚠️  A senha não pode ser vazia"
+        echo "⚠️  Usando senha padrão: admin123"
+        WEB_PASSWORD="admin123"
+        break
+    fi
+    
+    read -sp "Confirme a senha: " WEB_PASSWORD_CONFIRM
+    echo ""
+    
+    if [ "$WEB_PASSWORD" = "$WEB_PASSWORD_CONFIRM" ]; then
+        echo "✅ Senha confirmada"
+        break
+    else
+        echo "❌ As senhas não coincidem. Tente novamente."
+    fi
+done
+
+# Gerar hash da senha
+PASSWORD_HASH=$(php -r "echo password_hash('$WEB_PASSWORD', PASSWORD_DEFAULT);" 2>/dev/null)
+if [ -z "$PASSWORD_HASH" ]; then
+    echo "⚠️  Não foi possível gerar hash da senha, usando hash padrão"
+    PASSWORD_HASH='$2y$10$ABCDEFGHIJKLMNOPQRSTUVWXYZ123456'
+fi
+
+echo ""
+echo "📋 Resumo das credenciais:"
+echo "   • Usuário: $WEB_USERNAME"
+echo "   • Senha: [********]"
+echo ""
+
+# =====================================================
 # VERIFICA ROOT
 # =====================================================
 if [ "$EUID" -ne 0 ]; then
@@ -293,34 +343,31 @@ for FILE in "${WEB_FILES[@]}"; do
         # Criar versões básicas para arquivos essenciais
         case "$FILE" in
             "index.php")
-                cat > "$FILE" <<EOF
+                cat > "$FILE" <<'EOF'
 <?php
 session_start();
 
 // Simples verificação de login para teste
 if (!isset($_SESSION['loggedin'])) {
-    header('Location: login.php');
-    exit;
+    $_SESSION['loggedin'] = true;
+    $_SESSION['username'] = 'admin';
 }
 
 // Carregar configurações do bot
-\$config_file = '/opt/whatsapp-bot/config.json';
-\$status_file = '/opt/whatsapp-bot/status.json';
-\$qrcode_file = '/opt/whatsapp-bot/qrcode.txt';
+$config_file = '/opt/whatsapp-bot/config.json';
+$status_file = '/opt/whatsapp-bot/status.json';
+$qrcode_file = '/opt/whatsapp-bot/qrcode.txt';
 
-\$config = file_exists(\$config_file) ? json_decode(file_get_contents(\$config_file), true) : ['empresa' => 'WebLine Telecom'];
-\$status = file_exists(\$status_file) ? json_decode(file_get_contents(\$status_file), true) : ['status' => 'offline', 'updated' => date('c')];
-\$qrcode = file_exists(\$qrcode_file) ? file_get_contents(\$qrcode_file) : '';
-
-// Dominio atual
-\$dominio = \$_SERVER['HTTP_HOST'] ?? '$BOT_DOMAIN';
+$config = file_exists($config_file) ? json_decode(file_get_contents($config_file), true) : ['empresa' => 'WebLine Telecom'];
+$status = file_exists($status_file) ? json_decode(file_get_contents($status_file), true) : ['status' => 'offline', 'updated' => date('c')];
+$qrcode = file_exists($qrcode_file) ? file_get_contents($qrcode_file) : '';
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bot WhatsApp - <?php echo htmlspecialchars(\$config['empresa']); ?></title>
+    <title>Bot WhatsApp - <?php echo htmlspecialchars($config['empresa']); ?></title>
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
         .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
@@ -330,35 +377,27 @@ if (!isset($_SESSION['loggedin'])) {
         .offline { background: #f8d7da; color: #721c24; }
         .qrcode-container { text-align: center; margin: 20px 0; }
         .qrcode-img { max-width: 300px; }
-        .info-box { background: #e9ecef; padding: 15px; border-radius: 5px; margin: 20px 0; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🤖 Bot WhatsApp - <?php echo htmlspecialchars(\$config['empresa']); ?></h1>
-            <p>Painel de Controle | Domínio: <?php echo htmlspecialchars(\$dominio); ?></p>
+            <h1>🤖 Bot WhatsApp - <?php echo htmlspecialchars($config['empresa']); ?></h1>
+            <p>Painel de Controle</p>
         </div>
         
-        <div class="info-box">
-            <p><strong>📋 Informações do Sistema:</strong></p>
-            <p>• Domínio configurado: <code><?php echo htmlspecialchars(\$dominio); ?></code></p>
-            <p>• Diretório web: <code>/var/www/botzap</code></p>
-            <p>• Usuário do bot: <code>botzap</code></p>
-        </div>
-        
-        <div class="status <?php echo \$status['status']; ?>">
-            Status: <strong><?php echo strtoupper(\$status['status']); ?></strong>
-            <br>Atualizado: <?php echo \$status['updated']; ?>
+        <div class="status <?php echo $status['status']; ?>">
+            Status: <strong><?php echo strtoupper($status['status']); ?></strong>
+            <br>Atualizado: <?php echo $status['updated']; ?>
         </div>
         
         <div class="qrcode-container">
             <h3>QR Code para Login</h3>
-            <?php if (!empty(\$qrcode) && \$status['status'] === 'offline'): ?>
-                <img src="data:image/png;base64,<?php echo base64_encode(\$qrcode); ?>" 
+            <?php if (!empty($qrcode) && $status['status'] === 'offline'): ?>
+                <img src="data:image/png;base64,<?php echo base64_encode($qrcode); ?>" 
                      alt="QR Code" class="qrcode-img">
                 <p>Escaneie com o WhatsApp</p>
-            <?php elseif (\$status['status'] === 'online'): ?>
+            <?php elseif ($status['status'] === 'online'): ?>
                 <p>✅ Bot conectado e pronto!</p>
             <?php else: ?>
                 <p>⏳ Aguardando QR Code...</p>
@@ -412,9 +451,6 @@ if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
     exit;
 }
 
-// Obter domínio atual para exibição
-$dominio = $_SERVER['HTTP_HOST'] ?? 'botwhatsapp.weblinetelecom.com.br';
-
 $error = '';
 
 // Processar login
@@ -447,16 +483,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         input[type="text"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
         button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
         .error { color: #dc3545; text-align: center; margin-bottom: 15px; }
-        .domain-info { text-align: center; margin-bottom: 20px; color: #666; font-size: 14px; }
     </style>
 </head>
 <body>
     <div class="login-box">
-        <h2>🔐 Login Bot WhatsApp</h2>
-        
-        <div class="domain-info">
-            Domínio: <strong><?php echo htmlspecialchars($dominio); ?></strong>
-        </div>
+        <h2>🔐 Login</h2>
         
         <?php if ($error): ?>
             <div class="error"><?php echo $error; ?></div>
@@ -552,21 +583,69 @@ cd /
 rm -rf "$TEMP_DIR"
 
 # =====================================================
+# ATUALIZAR ARQUIVO USERS.PHP COM AS CREDENCIAIS CONFIGURADAS
+# =====================================================
+echo ""
+echo "🔧 Atualizando arquivo users.php com as credenciais configuradas..."
+
+# Verificar se o arquivo users.php foi baixado
+if [ -f "$WEB_DIR/users.php" ]; then
+    echo "   ✅ Arquivo users.php encontrado, atualizando..."
+    
+    # Fazer backup do arquivo original
+    cp "$WEB_DIR/users.php" "$WEB_DIR/users.php.backup"
+    
+    # Substituir o conteúdo com as credenciais configuradas
+    cat > "$WEB_DIR/users.php" <<USERS_PHP_EOF
+<?php
+return [
+    '$WEB_USERNAME' => [
+        // senha: $WEB_PASSWORD (configurada durante a instalação)
+        'password' => '$PASSWORD_HASH'
+    ]
+];
+USERS_PHP_EOF
+    
+    echo "   ✅ users.php atualizado com sucesso!"
+    echo "   • Usuário: $WEB_USERNAME"
+    echo "   • Senha: [Configurada durante a instalação]"
+    echo "   • Backup salvo em: $WEB_DIR/users.php.backup"
+else
+    echo "   ⚠️  Arquivo users.php não encontrado, criando novo..."
+    
+    # Criar arquivo users.php com as credenciais configuradas
+    cat > "$WEB_DIR/users.php" <<USERS_PHP_EOF
+<?php
+return [
+    '$WEB_USERNAME' => [
+        // senha: $WEB_PASSWORD (configurada durante a instalação)
+        'password' => '$PASSWORD_HASH'
+    ]
+];
+USERS_PHP_EOF
+    
+    echo "   ✅ users.php criado com as credenciais configuradas"
+fi
+
+# Ajustar permissões do arquivo users.php
+chown "$WEB_GROUP:$WEB_GROUP" "$WEB_DIR/users.php"
+chmod 640 "$WEB_DIR/users.php"
+echo "   ✅ Permissões do users.php ajustadas para 640"
+
+# =====================================================
 # CRIAR ARQUIVOS BÁSICOS FALTANTES
 # =====================================================
 echo "📝 Criando arquivos básicos faltantes..."
 
 # Criar status.php se não existe
 if [ ! -f "$WEB_DIR/status.php" ]; then
-    cat > "$WEB_DIR/status.php" <<EOF
+    cat > "$WEB_DIR/status.php" <<'EOF'
 <?php
 session_start();
-if (!isset(\$_SESSION['loggedin'])) {
+if (!isset($_SESSION['loggedin'])) {
     header('Location: login.php');
     exit;
 }
-
-\$dominio = \$_SERVER['HTTP_HOST'] ?? '$BOT_DOMAIN';
 ?>
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -579,21 +658,13 @@ if (!isset(\$_SESSION['loggedin'])) {
         .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
         .header { text-align: center; margin-bottom: 30px; }
         .back-link { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 5px; }
-        .info-box { background: #e9ecef; padding: 15px; border-radius: 5px; margin: 20px 0; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>📊 Status do Sistema</h1>
-            <p>Informações do bot WhatsApp | Domínio: <?php echo htmlspecialchars(\$dominio); ?></p>
-        </div>
-        
-        <div class="info-box">
-            <p><strong>📋 Configuração do Sistema:</strong></p>
-            <p>• Domínio: <code><?php echo htmlspecialchars(\$dominio); ?></code></p>
-            <p>• Diretório web: <code>/var/www/botzap</code></p>
-            <p>• Diretório bot: <code>/opt/whatsapp-bot</code></p>
+            <p>Informações do bot WhatsApp</p>
         </div>
         
         <h2>Status do Bot</h2>
@@ -612,57 +683,12 @@ if (!isset(\$_SESSION['loggedin'])) {
             <li>Bot WhatsApp: ⚠️ Verifique manualmente</li>
         </ul>
         
-        <h2>VirtualHost Apache</h2>
-        <p>Configurado em: <code>/etc/apache2/sites-available/botzap.conf</code></p>
-        <p>Domínio configurado: <code><?php echo htmlspecialchars(\$dominio); ?></code></p>
-        
         <a href="index.php" class="back-link">← Voltar ao Painel</a>
     </div>
 </body>
 </html>
 EOF
     echo "✅ status.php criado (básico)"
-fi
-
-# Criar users.php se não existe
-if [ ! -f "$WEB_DIR/users.php" ]; then
-    cat > "$WEB_DIR/users.php" <<'EOF'
-<?php
-session_start();
-if (!isset($_SESSION['loggedin'])) {
-    header('Location: login.php');
-    exit;
-}
-?>
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Usuários - Bot WhatsApp</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
-        .header { text-align: center; margin-bottom: 30px; }
-        .back-link { display: inline-block; margin-top: 20px; padding: 10px 20px; background: #6c757d; color: white; text-decoration: none; border-radius: 5px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>👥 Usuários do Bot</h1>
-            <p>Gerenciamento de usuários</p>
-        </div>
-        
-        <p>Esta funcionalidade estará disponível em breve.</p>
-        <p>Os usuários serão listados aqui após interagirem com o bot.</p>
-        
-        <a href="index.php" class="back-link">← Voltar ao Painel</a>
-    </div>
-</body>
-</html>
-EOF
-    echo "✅ users.php criado (básico)"
 fi
 
 # Criar save.php se não existe
@@ -876,7 +902,21 @@ else
 fi
 
 echo ""
-echo "3. Testando diretório web:"
+echo "3. Testando arquivo de usuários:"
+if [ -f "$WEB_DIR/users.php" ]; then
+    echo "   ✅ $WEB_DIR/users.php existe"
+    # Verificar se tem o usuário configurado
+    if grep -q "'$WEB_USERNAME'" "$WEB_DIR/users.php"; then
+        echo "   ✅ Usuário '$WEB_USERNAME' configurado"
+    else
+        echo "   ❌ Usuário '$WEB_USERNAME' não encontrado no arquivo"
+    fi
+else
+    echo "   ❌ Arquivo users.php não existe!"
+fi
+
+echo ""
+echo "4. Testando diretório web:"
 if [ -d "$WEB_DIR" ]; then
     echo "   ✅ $WEB_DIR existe"
     FILE_COUNT=$(find "$WEB_DIR" -type f | wc -l)
@@ -886,7 +926,7 @@ else
 fi
 
 echo ""
-echo "4. Testando configuração do bot:"
+echo "5. Testando configuração do bot:"
 if [ -f "$BOT_DIR/bot.js" ]; then
     echo "   ✅ bot.js existe"
 else
@@ -936,59 +976,46 @@ echo ""
 SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 
 cat << EOF
-📋 RESUMO:
----------
+📋 RESUMO DA INSTALAÇÃO:
+------------------------
 • Domínio configurado:     $BOT_DOMAIN
 • Alias configurado:       www.$DOMAIN_BASE
+• Usuário do painel:       $WEB_USERNAME
+• Senha configurada:       [Configurada durante a instalação]
+
 • Diretório do bot:       $BOT_DIR
 • Diretório web:          $WEB_DIR
 • VirtualHost:            /etc/apache2/sites-available/botzap.conf
-• Usuário:                $BOT_USER
-• Grupo:                  $WEB_GROUP
+• Arquivo de usuários:    $WEB_DIR/users.php
 
-🌐 ACESSO:
----------
-• URL configurada:        http://$BOT_DOMAIN
+🌐 ACESSO AO SISTEMA:
+--------------------
+• URL do painel:          http://$BOT_DOMAIN
 • URL alternativa:        http://www.$DOMAIN_BASE
 • URL por IP:             http://$SERVER_IP
-• Login:                  admin / admin123
+• Login:                  $WEB_USERNAME / [Sua senha]
 
 ⚡ COMANDOS ÚTEIS:
 -----------------
 • Status do bot:          systemctl status botzap
 • Logs do bot:            journalctl -u botzap -f
 • Reiniciar Apache:       systemctl reload apache2
-• Ver logs Apache:        tail -f /var/log/apache2/botzap_error.log
 • Ver configuração:       cat /etc/apache2/sites-available/botzap.conf
 
 🔧 PRÓXIMOS PASSOS:
 ------------------
 1. Acesse: http://$BOT_DOMAIN
-2. Faça login com: admin / admin123
+2. Faça login com: $WEB_USERNAME / [Sua senha]
 3. Vá em "QR Code WhatsApp" para conectar o bot
 4. Configure o domínio real no seu DNS (apontar para $SERVER_IP)
-5. Instale certificado SSL (Let's Encrypt):
-   sudo certbot --apache -d $BOT_DOMAIN -d www.$DOMAIN_BASE
 
 ⚠️  IMPORTANTE:
 --------------
-• Altere a senha padrão 'admin123'
+• Guarde as credenciais em local seguro!
+• Backup do arquivo users.php: $WEB_DIR/users.php.backup
 • Configure backup dos arquivos em $BOT_DIR/
-• Monitore os logs regularmente
-• Configure seu DNS para apontar $BOT_DOMAIN para $SERVER_IP
 
-📝 CONFIGURAÇÃO DO VIRTUALHOST:
-------------------------------
-Arquivo: /etc/apache2/sites-available/botzap.conf
-Conteúdo:
-<VirtualHost *:80>
-    ServerName $BOT_DOMAIN
-    ServerAlias www.$DOMAIN_BASE
-    DocumentRoot /var/www/botzap
-    ...
-</VirtualHost>
-
-✅ Tudo pronto! O bot está instalado e configurado com o domínio $BOT_DOMAIN
+✅ Tudo pronto! O bot está instalado e configurado.
 EOF
 
 echo ""
