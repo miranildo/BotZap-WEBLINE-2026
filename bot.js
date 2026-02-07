@@ -14,6 +14,7 @@
  * ADICIONADO: Timeout automático para tela PIX (10 minutos)
  * ADICIONADO: Comandos #FECHAR [número] e #FECHAR [nome] para encerrar individualmente
  * ADICIONADO: Comando #CLIENTES para listar atendimentos ativos
+ * CORRIGIDO: Bot NÃO responde em grupos - apenas individualmente
  *************************************************/
 
 const {
