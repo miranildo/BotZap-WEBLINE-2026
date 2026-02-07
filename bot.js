@@ -1,7 +1,7 @@
 /*************************************************
  * BOT WHATSAPP - VERSÃO COMPLETA COM FERIADOS
  * Controle de feriados via painel web
- * CORRIGIDO: Suporte para mensagens individuais e grupos
+ * CORRIGIDO: Bloqueia grupos (@g.us), permite listas (@lid) e individuais (@s.whatsapp.net)
  * ADICIONADO: Data/hora nos logs + Limpeza automática de usuários
  * CORRIGIDO: Bug CPF/CNPJ apenas números (não confundir com telefone)
  * ATUALIZADO: Identificação automática do atendente via conexão QR Code
@@ -407,7 +407,7 @@ function limparUsuariosInativos() {
             }
             
             // Para usuários TEMP (de listas/grupos), remover após 3 dias
-            if (usuario.temporario || usuario.numero.startsWith('TEMP')) {
+            if (usuario.temporario || usuario.numero.startsWith('TEMP') || usuario.numero.startsWith('LISTA')) {
                 const dataCadastro = new Date(usuario.cadastradoEm);
                 const diasInativo = (agora - dataCadastro) / (1000 * 60 * 60 * 24);
                 
@@ -442,33 +442,93 @@ function limparUsuariosInativos() {
     }
 }
 
-// ⚠️ IDENTIFICAR OU CRIAR USUÁRIO (CORRIGIDA - NÃO CONFUNDE CPF/CNPJ COM TELEFONE)
+// ⚠️ IDENTIFICAR OU CRIAR USUÁRIO (CORRIGIDA - BLOQUEIA GRUPOS, PERMITE LISTAS E INDIVIDUAIS)
 function identificarUsuario(jid, pushName, texto = '', ignorarExtracaoNumero = false) {
     if (!jid) {
         console.error(`${formatarDataHora()} ❌ JID não fornecido`);
         return null;
     }
     
-    // Se for lista/grupo, não podemos identificar usuário individual
-    if (!isIndividualJID(jid)) {
-        console.log(`${formatarDataHora()} ⚠️ JID não individual: ${jid} (lista/grupo)`);
+    // ⚠️ CORREÇÃO: Se for grupo (@g.us), ignorar completamente
+    if (isGroupJID(jid)) {
+        console.log(`${formatarDataHora()} 🚫 Ignorando mensagem de GRUPO: ${jid}`);
+        return null;
+    }
+    
+    // ⚠️ PERMITIR: JIDs individuais (@s.whatsapp.net) e listas (@lid)
+    
+    // Se for JID individual (@s.whatsapp.net), extrair número normalmente
+    if (isIndividualJID(jid)) {
+        const numero = extrairNumeroDoJID(jid);
+        if (!numero) {
+            console.error(`${formatarDataHora()} ❌ Não foi possível extrair número do JID:`, jid);
+            return null;
+        }
         
-        // ⚠️ CORREÇÃO: NÃO extrair número se estivermos em aguardando_cpf
-        // (para evitar confundir CPF/CNPJ com número de telefone)
-        if (!ignorarExtracaoNumero && texto) {
+        console.log(`${formatarDataHora()} 🔍 Identificando usuário individual: "${pushName}" (${numero})`);
+        
+        // ⚠️ CORREÇÃO: PRIMEIRO verificar se já é atendente registrado
+        for (const [chave, usuario] of Object.entries(usuarioMap)) {
+            if (usuario.numero === numero && usuario.tipo === 'atendente') {
+                console.log(`${formatarDataHora()} ✅ Este número já é atendente: ${pushName} -> ${numero}`);
+                
+                if (pushName && pushName !== usuario.pushName) {
+                    usuarioMap[chave].pushName = pushName;
+                    salvarUsuarios();
+                }
+                
+                return usuarioMap[chave];
+            }
+        }
+        
+        // 1. Buscar pelo número (chave principal)
+        if (usuarioMap[numero]) {
+            console.log(`${formatarDataHora()} ✅ Usuário conhecido: ${pushName} -> ${numero}`);
+            
+            if (pushName && pushName !== usuarioMap[numero].pushName) {
+                usuarioMap[numero].pushName = pushName;
+                salvarUsuarios();
+            }
+            
+            return usuarioMap[numero];
+        }
+        
+        // 2. NOVO CLIENTE
+        console.log(`${formatarDataHora()} 👤 NOVO CLIENTE INDIVIDUAL: ${pushName || 'Sem nome'} -> ${numero}`);
+        
+        const novoCliente = {
+            numero: numero,
+            tipo: 'cliente',
+            pushName: pushName || 'Cliente',
+            cadastradoEm: new Date().toISOString(),
+            origem: 'individual'
+        };
+        
+        usuarioMap[numero] = novoCliente;
+        salvarUsuarios();
+        
+        console.log(`${formatarDataHora()} ✅ Cliente individual cadastrado: ${pushName || 'Cliente'} -> ${numero}`);
+        
+        return novoCliente;
+    }
+    
+    // ⚠️ SE FOR LISTA (@lid) - Mensagem individual em massa
+    if (isBroadcastJID(jid)) {
+        console.log(`${formatarDataHora()} 📨 Mensagem de LISTA (@lid): ${jid} - "${texto}"`);
+        
+        // Tentar extrair número do texto (se o usuário enviar)
+        if (texto && !ignorarExtracaoNumero) {
             const match = texto.match(/\d{10,}/g);
             if (match && match.length > 0) {
                 const num = match[0].replace(/\D/g, '');
-                
-                // ⚠️ CORREÇÃO CRÍTICA: Verificar se não é CPF/CNPJ
-                // CPF tem 11 dígitos, CNPJ tem 14 dígitos
-                // Número de telefone normalmente tem 10-13 dígitos (com país)
+                // ⚠️ Verificar se não é CPF/CNPJ
                 if (num.length >= 10 && num.length !== 11 && num.length !== 14) {
                     const numeroExtraido = num.startsWith('55') ? num : '55' + num;
-                    console.log(`${formatarDataHora()} 📱 Número extraído do texto: ${numeroExtraido} (${num.length} dígitos)`);
+                    console.log(`${formatarDataHora()} 📱 Número extraído do texto da lista: ${numeroExtraido}`);
                     
                     // Verificar se já existe
                     if (usuarioMap[numeroExtraido]) {
+                        console.log(`${formatarDataHora()} ✅ Usuário de lista já cadastrado: ${pushName} -> ${numeroExtraido}`);
                         return usuarioMap[numeroExtraido];
                     }
                     
@@ -477,25 +537,27 @@ function identificarUsuario(jid, pushName, texto = '', ignorarExtracaoNumero = f
                         numero: numeroExtraido,
                         tipo: 'cliente',
                         pushName: pushName || 'Cliente',
-                        cadastradoEm: new Date().toISOString()
+                        cadastradoEm: new Date().toISOString(),
+                        origem: 'lista',
+                        jidOriginal: jid
                     };
                     
                     usuarioMap[numeroExtraido] = novoCliente;
                     salvarUsuarios();
                     
-                    console.log(`${formatarDataHora()} ✅ Cliente cadastrado via número extraído: ${pushName} -> ${numeroExtraido}`);
+                    console.log(`${formatarDataHora()} ✅ Cliente cadastrado via lista: ${pushName} -> ${numeroExtraido}`);
                     return novoCliente;
                 } else {
-                    console.log(`${formatarDataHora()} ⚠️ Ignorando extração: parece CPF/CNPJ (${num.length} dígitos)`);
+                    console.log(`${formatarDataHora()} ⚠️ Ignorando extração em lista: parece CPF/CNPJ (${num.length} dígitos)`);
                 }
             }
         }
         
-        // Se não conseguiu extrair número, criar com JID temporário
+        // Se não conseguir extrair número, criar temporário baseado no JID da lista
         const jidTemp = jid.replace(/[^a-zA-Z0-9]/g, '').substring(0, 15);
-        const numeroTemp = `TEMP${jidTemp}`;
+        const numeroTemp = `LISTA${jidTemp}`;
         
-        console.log(`${formatarDataHora()} ⚠️ Criando usuário temporário para ${pushName} em ${jid}`);
+        console.log(`${formatarDataHora()} ⚠️ Criando usuário temporário para lista: ${pushName}`);
         
         const usuarioTemp = {
             numero: numeroTemp,
@@ -503,7 +565,8 @@ function identificarUsuario(jid, pushName, texto = '', ignorarExtracaoNumero = f
             pushName: pushName || 'Cliente',
             jidOriginal: jid,
             cadastradoEm: new Date().toISOString(),
-            temporario: true
+            temporario: true,
+            origem: 'lista_temp'
         };
         
         usuarioMap[numeroTemp] = usuarioTemp;
@@ -512,60 +575,9 @@ function identificarUsuario(jid, pushName, texto = '', ignorarExtracaoNumero = f
         return usuarioTemp;
     }
     
-    // Se for JID individual, extrair número normalmente
-    const numero = extrairNumeroDoJID(jid);
-    if (!numero) {
-        console.error(`${formatarDataHora()} ❌ Não foi possível extrair número do JID:`, jid);
-        return null;
-    }
-    
-    console.log(`${formatarDataHora()} 🔍 Identificando: "${pushName}" (${numero})`);
-    
-    // ⚠️ CORREÇÃO: PRIMEIRO verificar se já é atendente registrado
-    // Verificar se existe algum atendente com este número
-    for (const [chave, usuario] of Object.entries(usuarioMap)) {
-        if (usuario.numero === numero && usuario.tipo === 'atendente') {
-            console.log(`${formatarDataHora()} ✅ Este número já é atendente: ${pushName} -> ${numero}`);
-            
-            // Atualizar pushName se necessário
-            if (pushName && pushName !== usuario.pushName) {
-                usuarioMap[chave].pushName = pushName;
-                salvarUsuarios();
-            }
-            
-            return usuarioMap[chave];
-        }
-    }
-    
-    // 1. Buscar pelo número (chave principal)
-    if (usuarioMap[numero]) {
-        console.log(`${formatarDataHora()} ✅ Usuário conhecido: ${pushName} -> ${numero}`);
-        
-        // Atualizar pushName se necessário
-        if (pushName && pushName !== usuarioMap[numero].pushName) {
-            usuarioMap[numero].pushName = pushName;
-            salvarUsuarios();
-        }
-        
-        return usuarioMap[numero];
-    }
-    
-    // 2. NOVO CLIENTE
-    console.log(`${formatarDataHora()} 👤 NOVO CLIENTE: ${pushName || 'Sem nome'} -> ${numero}`);
-    
-    const novoCliente = {
-        numero: numero,
-        tipo: 'cliente',
-        pushName: pushName || 'Cliente',
-        cadastradoEm: new Date().toISOString()
-    };
-    
-    usuarioMap[numero] = novoCliente;
-    salvarUsuarios();
-    
-    console.log(`${formatarDataHora()} ✅ Cliente cadastrado: ${pushName || 'Cliente'} -> ${numero}`);
-    
-    return novoCliente;
+    // Se não for nenhum dos tipos conhecidos, ignorar
+    console.log(`${formatarDataHora()} ⚠️ Tipo de JID desconhecido: ${jid}`);
+    return null;
 }
 
 // ⚠️ ENCERRAR ATENDIMENTO
@@ -590,24 +602,22 @@ async function encerrarAtendimento(numeroCliente, pushName, config, motivo = "en
     }
     
     try {
-        // Verificar se é um usuário temporário (de lista/grupo)
+        // Verificar se é um usuário de lista temporário
         const usuario = usuarioMap[numeroCliente];
-        let jidDestino = null;
         
         if (usuario?.temporario && usuario?.jidOriginal) {
-            // Para usuários temporários, usar o JID original da lista/grupo
-            jidDestino = usuario.jidOriginal;
-            console.log(`${formatarDataHora()} 📨 Enviando para JID original (lista/grupo): ${jidDestino}`);
+            // Para usuários temporários de lista, usar o JID original
+            await sockInstance.sendMessage(usuario.jidOriginal, { text: mensagem });
+            console.log(`${formatarDataHora()} 📨 Mensagem enviada para lista: ${pushName} (${usuario.jidOriginal})`);
         } else {
             // Para usuários normais, converter número para JID individual
-            jidDestino = getJID(numeroCliente);
-        }
-        
-        if (jidDestino) {
-            await sockInstance.sendMessage(jidDestino, { text: mensagem });
-            console.log(`${formatarDataHora()} 📨 Mensagem enviada para ${pushName} (${jidDestino})`);
-        } else {
-            console.error(`${formatarDataHora()} ❌ JID inválido para:`, numeroCliente);
+            const jidDestino = getJID(numeroCliente);
+            if (jidDestino) {
+                await sockInstance.sendMessage(jidDestino, { text: mensagem });
+                console.log(`${formatarDataHora()} 📨 Mensagem enviada individualmente para ${pushName} (${jidDestino})`);
+            } else {
+                console.error(`${formatarDataHora()} ❌ JID inválido para:`, numeroCliente);
+            }
         }
     } catch (error) {
         console.error(`${formatarDataHora()} ❌ Erro ao enviar:`, error);
@@ -684,38 +694,19 @@ Bem-vindo ao atendimento da *${config.empresa}*
 
 Digite o número da opção desejada:`;
 
-        // Verificar se é um usuário temporário (de lista/grupo)
-        let jidDestino = null;
-        
+        // Verificar se é um usuário temporário de lista
         if (usuario?.temporario && usuario?.jidOriginal) {
-            // Para usuários temporários, usar o JID original da lista/grupo
-            jidDestino = usuario.jidOriginal;
-            console.log(`${formatarDataHora()} 📨 Enviando menu para JID original (lista/grupo): ${jidDestino}`);
+            // Para usuários de lista, enviar para o JID original da lista
+            await sock.sendMessage(usuario.jidOriginal, { text: menuText });
+            console.log(`${formatarDataHora()} ✅ Menu enviado para lista: ${pushName || numeroCliente}`);
         } else {
             // Para usuários normais, converter número para JID individual
-            jidDestino = getJID(numeroCliente);
-        }
-        
-        if (jidDestino) {
-            await sock.sendMessage(jidDestino, { text: menuText });
-            console.log(`${formatarDataHora()} ✅ Menu enviado para ${pushName || numeroCliente} em ${jidDestino}`);
-        } else {
-            console.error(`${formatarDataHora()} ❌ Não foi possível enviar menu: JID inválido para ${numeroCliente}`);
-            
-            // Tentar extrair número do texto se disponível
-            if (texto) {
-                const match = texto.match(/\d{10,}/g);
-                if (match && match.length > 0) {
-                    const num = match[0].replace(/\D/g, '');
-                    if (num.length >= 10) {
-                        const numeroFormatado = num.startsWith('55') ? num : `55${num}`;
-                        const jidAlternativo = getJID(numeroFormatado);
-                        if (jidAlternativo) {
-                            await sock.sendMessage(jidAlternativo, { text: menuText });
-                            console.log(`${formatarDataHora()} ✅ Menu enviado via número extraído para ${numeroFormatado}`);
-                        }
-                    }
-                }
+            const jidDestino = getJID(numeroCliente);
+            if (jidDestino) {
+                await sock.sendMessage(jidDestino, { text: menuText });
+                console.log(`${formatarDataHora()} ✅ Menu enviado individualmente para ${pushName || numeroCliente}`);
+            } else {
+                console.error(`${formatarDataHora()} ❌ Não foi possível enviar menu: JID inválido para ${numeroCliente}`);
             }
         }
     } catch (error) {
@@ -730,38 +721,50 @@ async function enviarMensagemParaUsuario(sock, usuario, mensagem) {
     console.log(`${formatarDataHora()} 📤 [ENVIAR] JID original: ${usuario?.jidOriginal || 'não tem'}`);
     
     try {
-        // Verificar se é um usuário temporário (de lista/grupo)
-        let jidDestino = null;
-        
+        // Verificar se é um usuário temporário de lista
         if (usuario?.temporario && usuario?.jidOriginal) {
-            // Para usuários temporários, usar o JID original da lista/grupo
-            jidDestino = usuario.jidOriginal;
-            console.log(`${formatarDataHora()} 📤 [ENVIAR] Usando JID original (lista/grupo): ${jidDestino}`);
+            // Para usuários de lista, enviar para o JID original
+            const jidDestino = usuario.jidOriginal;
+            console.log(`${formatarDataHora()} 📤 [ENVIAR] Usando JID original da lista: ${jidDestino}`);
+            
+            if (jidDestino) {
+                console.log(`${formatarDataHora()} 📤 [ENVIAR] JID final: ${jidDestino}`);
+                console.log(`${formatarDataHora()} 📤 [ENVIAR] Mensagem (primeiros 50 chars): ${mensagem.substring(0, 50)}...`);
+                
+                if (!sock || !sock.sendMessage) {
+                    console.error(`${formatarDataHora()} 📤 [ENVIAR] ❌ sock ou sendMessage não disponível!`);
+                    return false;
+                }
+                
+                console.log(`${formatarDataHora()} 📤 [ENVIAR] Chamando sock.sendMessage...`);
+                await sock.sendMessage(jidDestino, { text: mensagem });
+                
+                console.log(`${formatarDataHora()} 📤 [ENVIAR] ✅ Mensagem enviada para lista: ${usuario.pushName || usuario.numero}`);
+                return true;
+            }
         } else {
             // Para usuários normais, converter número para JID individual
-            jidDestino = getJID(usuario.numero);
+            const jidDestino = getJID(usuario.numero);
             console.log(`${formatarDataHora()} 📤 [ENVIAR] Convertendo número para JID: ${usuario.numero} -> ${jidDestino}`);
-        }
-        
-        if (jidDestino) {
-            console.log(`${formatarDataHora()} 📤 [ENVIAR] JID final: ${jidDestino}`);
-            console.log(`${formatarDataHora()} 📤 [ENVIAR] Mensagem (primeiros 50 chars): ${mensagem.substring(0, 50)}...`);
             
-            // ⚠️ TESTE: Verificar se sock está disponível
-            if (!sock || !sock.sendMessage) {
-                console.error(`${formatarDataHora()} 📤 [ENVIAR] ❌ sock ou sendMessage não disponível!`);
+            if (jidDestino) {
+                console.log(`${formatarDataHora()} 📤 [ENVIAR] JID final: ${jidDestino}`);
+                console.log(`${formatarDataHora()} 📤 [ENVIAR] Mensagem (primeiros 50 chars): ${mensagem.substring(0, 50)}...`);
+                
+                if (!sock || !sock.sendMessage) {
+                    console.error(`${formatarDataHora()} 📤 [ENVIAR] ❌ sock ou sendMessage não disponível!`);
+                    return false;
+                }
+                
+                console.log(`${formatarDataHora()} 📤 [ENVIAR] Chamando sock.sendMessage...`);
+                await sock.sendMessage(jidDestino, { text: mensagem });
+                
+                console.log(`${formatarDataHora()} 📤 [ENVIAR] ✅ Mensagem enviada individualmente para ${usuario.pushName || usuario.numero}`);
+                return true;
+            } else {
+                console.error(`${formatarDataHora()} 📤 [ENVIAR] ❌ JID inválido para:`, usuario.numero);
                 return false;
             }
-            
-            console.log(`${formatarDataHora()} 📤 [ENVIAR] Chamando sock.sendMessage...`);
-            await sock.sendMessage(jidDestino, { text: mensagem });
-            
-            console.log(`${formatarDataHora()} 📤 [ENVIAR] ✅ Mensagem enviada para ${usuario.pushName || usuario.numero}`);
-            return true;
-        } else {
-            console.error(`${formatarDataHora()} 📤 [ENVIAR] ❌ JID inválido para:`, usuario.numero);
-            console.error(`${formatarDataHora()} 📤 [ENVIAR] Detalhes usuário:`, JSON.stringify(usuario, null, 2));
-            return false;
         }
     } catch (error) {
         console.error(`${formatarDataHora()} 📤 [ENVIAR] ❌ ERRO CRÍTICO ao enviar mensagem:`, error);
@@ -815,31 +818,30 @@ async function startBot() {
             fs.writeFileSync(QR_PATH, '');
             setStatus('online');
             
-            // ⚠️ CAPTURAR CREDENCIAIS DO WHATSAPP CONECTADO (VERSÃO CORRIGIDA PARA FORMATO COM ":sessao")
+            // ⚠️ CAPTURAR CREDENCIAIS DO WHATSAPP CONECTADO
             try {
                 const user = sock.user;
                 if (user && user.id) {
                     console.log(`${formatarDataHora()} 🔍 Dados do usuário conectado:`, JSON.stringify(user, null, 2));
                     
-                    // Extrair número do ID (removendo @s.whatsapp.net)
-                    // ⚠️ CORREÇÃO: Lidar com formato como "558382341576:27@s.whatsapp.net"
+                    // Extrair número do ID
                     let numero = user.id.split('@')[0];
                     
                     console.log(`${formatarDataHora()} 🔍 Número bruto extraído: ${numero}`);
                     
-                    // ⚠️ CORREÇÃO CRÍTICA: Se tiver ":" (como "558382341576:27"), pegar apenas a parte antes dos ":"
+                    // CORREÇÃO: Se tiver ":", pegar apenas a parte antes
                     if (numero.includes(':')) {
                         console.log(`${formatarDataHora()} ⚠️ Número contém ':', separando...`);
                         numero = numero.split(':')[0];
                         console.log(`${formatarDataHora()} 🔍 Número após separar ':': ${numero}`);
                     }
                     
-                    // ⚠️ CORREÇÃO: Remover todos os caracteres não numéricos
+                    // Remover todos os caracteres não numéricos
                     numero = numero.replace(/\D/g, '');
                     
                     console.log(`${formatarDataHora()} 🔍 Número após limpeza: ${numero} (${numero.length} dígitos)`);
                     
-                    // ⚠️ CORREÇÃO: Verificar se tem comprimento válido (10-13 dígitos para Brasil com código país)
+                    // Verificar se tem comprimento válido
                     if (numero.length >= 10 && numero.length <= 13) {
                         // Garantir que comece com 55
                         if (!numero.startsWith('55')) {
@@ -847,14 +849,13 @@ async function startBot() {
                             console.log(`${formatarDataHora()} 🔍 Número após adicionar 55: ${numero}`);
                         }
                         
-                        // ⚠️ VERIFICAÇÃO FINAL: Garantir que tenha comprimento correto
+                        // VERIFICAÇÃO FINAL
                         if (numero.length >= 12 && numero.length <= 13) {
                             const pushName = user.name || 'Atendente WhatsApp';
                             
                             console.log(`${formatarDataHora()} 🔐 WhatsApp conectado como: ${pushName} (${numero})`);
                             
-                            // ⚠️ CORREÇÃO: Limpar atendentes antigos ANTES de adicionar o novo
-                            // E também remover qualquer entrada CLIENTE com esse mesmo número
+                            // Limpar atendentes antigos ANTES de adicionar o novo
                             const chavesParaRemover = [];
                             
                             for (const [chave, usuario] of Object.entries(usuarioMap)) {
@@ -863,7 +864,7 @@ async function startBot() {
                                     console.log(`${formatarDataHora()} 🗑️ Removendo atendente antigo: ${usuario.pushName} (${usuario.numero})`);
                                     chavesParaRemover.push(chave);
                                 }
-                                // ⚠️ TAMBÉM remover cliente com mesmo número (se houver)
+                                // TAMBÉM remover cliente com mesmo número (se houver)
                                 else if (usuario.numero === numero) {
                                     console.log(`${formatarDataHora()} 🗑️ Removendo cliente com mesmo número: ${usuario.pushName} (${usuario.numero})`);
                                     chavesParaRemover.push(chave);
@@ -875,7 +876,7 @@ async function startBot() {
                                 delete usuarioMap[chave];
                             }
                             
-                            // Atualizar/registrar como atendente no arquivo usuarios.json
+                            // Atualizar/registrar como atendente
                             usuarioMap[numero] = {
                                 numero: numero,
                                 tipo: 'atendente',
@@ -889,10 +890,10 @@ async function startBot() {
                             console.log(`${formatarDataHora()} ✅ Atendente registrado/atualizado: ${pushName} (${numero})`);
                             console.log(`${formatarDataHora()} 📊 Total de usuários: ${Object.keys(usuarioMap).length}`);
                             
-                            // ⚠️ ATUALIZAR NÚMERO DO ATENDENTE NO CONFIG.JSON
+                            // ATUALIZAR NÚMERO DO ATENDENTE NO CONFIG.JSON
                             atualizarAtendenteNoConfig(numero);
                             
-                            // ⚠️ IMPORTANTE: ENVIAR MENSAGEM PARA O ATENDENTE CONFIRMANDO
+                            // ENVIAR MENSAGEM PARA O ATENDENTE CONFIRMANDO
                             try {
                                 const jidAtendente = getJID(numero);
                                 if (jidAtendente) {
@@ -910,17 +911,15 @@ async function startBot() {
                         }
                     } else {
                         console.error(`${formatarDataHora()} ❌ Número inválido: ${numero} (${numero.length} dígitos) - Esperado 10-13 dígitos`);
-                        console.error(`${formatarDataHora()} ❌ ID original: ${user.id}`);
                     }
                 } else {
                     console.error(`${formatarDataHora()} ❌ Não foi possível obter dados do usuário`);
                 }
             } catch (error) {
                 console.error(`${formatarDataHora()} ❌ Erro ao capturar credenciais:`, error);
-                console.error(`${formatarDataHora()} ❌ Detalhes do erro:`, error.stack);
             }
             
-            console.log(`${formatarDataHora()} ✅ WhatsApp conectado - COM CONTROLE DE FERIADOS`);
+            console.log(`${formatarDataHora()} ✅ WhatsApp conectado`);
             console.log(`${formatarDataHora()} 👥 ${Object.keys(usuarioMap).length} usuário(s)`);
             console.log(`${formatarDataHora()} 🕐 Horário comercial: ${dentroHorarioComercial() ? 'ABERTO' : 'FECHADO'}`);
             console.log(`${formatarDataHora()} 🎯 Feriados ativos: ${ehFeriado(new Date()) ? 'SIM (hoje é feriado)' : 'VERIFICAR CONFIG'}`);
@@ -933,11 +932,11 @@ async function startBot() {
         if (connection === 'close') {
             setStatus('offline');
             
-            // ⚠️ DETECTAR SE FOI DESCONEXÃO FORÇADA (loggedOut)
+            // DETECTAR SE FOI DESCONEXÃO FORÇADA (loggedOut)
             if (lastDisconnect?.error?.output?.statusCode === DisconnectReason.loggedOut) {
                 console.log(`${formatarDataHora()} 🔐 WhatsApp desconectado pelo usuário (loggedOut)`);
                 
-                // ⚠️ LIMPAR AUTH_INFO PARA GERAR NOVO QR CODE
+                // LIMPAR AUTH_INFO PARA GERAR NOVO QR CODE
                 const limpezaRealizada = limparAuthInfo();
                 
                 if (limpezaRealizada) {
@@ -968,9 +967,7 @@ async function startBot() {
 
         const msg = messages[0];
         
-        // ⚠️ CORREÇÃO CRÍTICA: Processar comandos do atendente ANTES de qualquer outra coisa
-        // Isso evita que os comandos sejam tratados como mensagem de cliente
-        
+        // ⚠️ Processar comandos do atendente ANTES de qualquer outra coisa
         const texto = (
             msg.message.conversation ||
             msg.message.extendedTextMessage?.text ||
@@ -979,7 +976,7 @@ async function startBot() {
         
         const jidRemetente = msg.key.remoteJid;
         
-        // ⚠️ DETECTAR COMANDOS DO ATENDENTE (mesmo em grupos/listas)
+        // ⚠️ DETECTAR COMANDOS DO ATENDENTE (permitir mesmo em grupos/listas)
         if (texto.startsWith('#FECHAR') || texto === '#CLIENTES') {
             console.log(`${formatarDataHora()} 🔍 Comando do atendente detectado: ${texto}`);
             
@@ -1007,7 +1004,7 @@ async function startBot() {
                         console.log(`${formatarDataHora()} ✅ Comando do atendente configurado: ${numeroAtendenteConfig}`);
                     }
                 }
-                // 3. Verificar se pushName corresponde ao atendente conhecido (para listas/grupos)
+                // 3. Verificar se pushName corresponde ao atendente conhecido
                 else {
                     const pushName = msg.pushName || '';
                     // Buscar atendente no usuarioMap
@@ -1110,7 +1107,6 @@ async function startBot() {
                             console.error(`${formatarDataHora()} ❌ Erro ao enviar lista de clientes:`, error);
                         }
                         
-                        // ⚠️ IMPORTANTE: RETORNAR AQUI - não processar como mensagem normal
                         return;
                     }
                     
@@ -1129,9 +1125,8 @@ async function startBot() {
                                 await encerrarAtendimento(clienteNum, nomeCliente, config, "atendente");
                             }
                             
-                            // Enviar confirmação apenas para o atendente (não para o grupo)
+                            // Enviar confirmação apenas para o atendente
                             try {
-                                // Buscar número do atendente no usuarioMap
                                 let numeroAtendente = null;
                                 for (const [chave, usuario] of Object.entries(usuarioMap)) {
                                     if (usuario.tipo === 'atendente') {
@@ -1154,8 +1149,7 @@ async function startBot() {
                             }
                             
                         } else if (texto.startsWith('#FECHAR ')) {
-                            // ⚠️ NOVO: FECHAR ATENDIMENTO ESPECÍFICO
-                            // Formato: #FECHAR [número] ou #FECHAR [nome]
+                            // ⚠️ FECHAR ATENDIMENTO ESPECÍFICO
                             const partes = texto.split(' ');
                             if (partes.length >= 2) {
                                 const parametro = partes.slice(1).join(' ').trim();
@@ -1240,7 +1234,6 @@ async function startBot() {
                                                     clientesAtivos.forEach((clienteNum, index) => {
                                                         const clienteInfo = usuarioMap[clienteNum];
                                                         const nome = clienteInfo?.pushName || 'Cliente';
-                                                        // Formatar número para exibição (remover 55 se tiver)
                                                         let numExibicao = clienteNum;
                                                         if (numExibicao.startsWith('55')) {
                                                             numExibicao = numExibicao.substring(2);
@@ -1287,7 +1280,6 @@ async function startBot() {
                         }
                     }
                     
-                    // ⚠️ IMPORTANTE: RETORNAR AQUI - não processar como mensagem normal
                     return;
                 } else {
                     console.log(`${formatarDataHora()} ⚠️ Comando do atendente ignorado - não é do atendente`);
@@ -1297,7 +1289,7 @@ async function startBot() {
             }
         }
         
-        // ⚠️ Ignorar mensagens do próprio bot (exceto comandos já processados acima)
+        // ⚠️ Ignorar mensagens do próprio bot
         if (msg.key.fromMe) {
             console.log(`${formatarDataHora()} 🤖 Ignorando mensagem do próprio bot`);
             return;
@@ -1328,27 +1320,11 @@ async function startBot() {
         
         console.log(`\n${formatarDataHora()} 📨 MENSAGEM DE: ${pushName} (${jidRemetente}) - "${texto}"`);
 
-        // ⚠️ IDENTIFICAR USUÁRIO com cuidado para não confundir CPF/CNPJ com telefone
-        // Primeiro precisamos saber o contexto atual do usuário
-        let contextoAtualParaIdentificacao = 'menu';
-        
-        // Tentar encontrar o usuário temporário primeiro
-        let usuarioTemporario = null;
-        for (const [chave, user] of Object.entries(usuarioMap)) {
-            if (user.jidOriginal === jidRemetente && user.temporario) {
-                usuarioTemporario = user;
-                contextoAtualParaIdentificacao = contextos[user.numero] || 'menu';
-                break;
-            }
-        }
-        
-        const ignorarExtracaoNumero = (contextoAtualParaIdentificacao === 'aguardando_cpf');
-        console.log(`${formatarDataHora()} 🔍 Identificando usuário (ignorarExtracao: ${ignorarExtracaoNumero}, contexto: ${contextoAtualParaIdentificacao})`);
-
-        const usuario = identificarUsuario(jidRemetente, pushName, texto, ignorarExtracaoNumero);
+        // ⚠️ IDENTIFICAR USUÁRIO (a função já lida com grupos, listas e individuais)
+        const usuario = identificarUsuario(jidRemetente, pushName, texto, false);
         
         if (!usuario) {
-            console.log(`${formatarDataHora()} ❌ Usuário não identificado`);
+            console.log(`${formatarDataHora()} ❌ Usuário não identificado ou mensagem ignorada (grupo)`);
             return;
         }
 
@@ -1358,11 +1334,10 @@ async function startBot() {
 
         console.log(`${formatarDataHora()} 🔢 ${pushName} -> ${numeroCliente} (${usuario.tipo})`);
 
-        // ⚠️ ENCERRAMENTO PELO ATENDENTE (já processado no início, mas mantido para consistência)
+        // ⚠️ ENCERRAMENTO PELO ATENDENTE (já processado no início)
         if (isAtendente) {
             if (texto === '#FECHAR' || texto === '#CLIENTES' || texto.startsWith('#FECHAR ')) {
-                // Já processado no início, mas mantém lógica de backup
-                console.log(`${formatarDataHora()} 🔄 Comando do atendente processado (backup): ${texto}`);
+                console.log(`${formatarDataHora()} 🔄 Comando do atendente já processado`);
                 return;
             }
             
@@ -1466,54 +1441,48 @@ async function startBot() {
                 }
             }
 
-            // ⚠️ AGUARDANDO CPF (CORRIGIDO - NÃO CONFUNDE COM TELEFONE)
+            // ⚠️ AGUARDANDO CPF
             if (contextoAtual === 'aguardando_cpf') {
-                console.log(`${formatarDataHora()} 📄 [DEBUG] Contexto aguardando_cpf ATIVADO`);
-                console.log(`${formatarDataHora()} 📄 [DEBUG] Texto recebido: "${texto}"`);
-                console.log(`${formatarDataHora()} 📄 [DEBUG] Usuário: ${pushName} (${numeroCliente})`);
+                console.log(`${formatarDataHora()} 📄 Contexto aguardando_cpf ATIVADO`);
+                console.log(`${formatarDataHora()} 📄 Texto recebido: "${texto}"`);
+                console.log(`${formatarDataHora()} 📄 Usuário: ${pushName} (${numeroCliente})`);
                 
                 if (atendimentos[numeroCliente]) {
                     atendimentos[numeroCliente].inicio = Date.now();
-                    console.log(`${formatarDataHora()} 📄 [DEBUG] Atendimento atualizado`);
+                    console.log(`${formatarDataHora()} 📄 Atendimento atualizado`);
                 }
                 
                 // Se digitar comando
                 if (texto === '0' || texto === '9' || texto === '1' || texto === '2') {
-                    console.log(`${formatarDataHora()} 📄 [DEBUG] Comando detectado: ${texto}`);
+                    console.log(`${formatarDataHora()} 📄 Comando detectado: ${texto}`);
                     delete atendimentos[numeroCliente];
                     contextos[numeroCliente] = 'menu';
                     await enviarMenuPrincipal(sock, usuario, texto);
                     return;
                 }
                 
-                // ⚠️ LOG DETALHADO DO PROCESSAMENTO
-                console.log(`${formatarDataHora()} 📄 [DEBUG] Iniciando processamento do documento...`);
+                // Processamento do documento
                 const doc = limparDoc(texto);
-                console.log(`${formatarDataHora()} 📄 [DEBUG] Documento após limpar: "${doc}"`);
-                console.log(`${formatarDataHora()} 📄 [DEBUG] Tamanho do documento: ${doc.length} dígitos`);
+                console.log(`${formatarDataHora()} 📄 Documento após limpar: "${doc}"`);
+                console.log(`${formatarDataHora()} 📄 Tamanho do documento: ${doc.length} dígitos`);
                 
-                // Testar regex
                 const temApenasNumeros = /^\d+$/.test(doc);
-                console.log(`${formatarDataHora()} 📄 [DEBUG] Tem apenas números? ${temApenasNumeros}`);
+                console.log(`${formatarDataHora()} 📄 Tem apenas números? ${temApenasNumeros}`);
                 
                 // Validar CPF (11 dígitos)
                 if (doc.length === 11 && temApenasNumeros) {
-                    console.log(`${formatarDataHora()} 📄 [DEBUG] ✅ CPF VÁLIDO DETECTADO!`);
-                    console.log(`${formatarDataHora()} 📄 [DEBUG] CPF: ${doc}`);
+                    console.log(`${formatarDataHora()} 📄 ✅ CPF VÁLIDO DETECTADO!`);
+                    console.log(`${formatarDataHora()} 📄 CPF: ${doc}`);
                     
                     try {
-                        console.log(`${formatarDataHora()} 📄 [DEBUG] Tentando enviar mensagem com link PIX...`);
-                        
                         const mensagemPix = `💠 *Pagamento via PIX*\n\nclique no link abaixo para acessar sua fatura:\n🔗 ${config.boleto_url}?doc=${doc}\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
                         
-                        // Chamar função de envio DIRETAMENTE para debug
-                        console.log(`${formatarDataHora()} 📄 [DEBUG] Chamando enviarMensagemParaUsuario...`);
                         const resultado = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
                         
                         if (resultado) {
-                            console.log(`${formatarDataHora()} 📄 [DEBUG] ✅ Mensagem enviada com sucesso!`);
+                            console.log(`${formatarDataHora()} 📄 ✅ Mensagem enviada com sucesso!`);
                             
-                            // ⚠️ CORREÇÃO ADICIONADA: Configurar timeout para tela PIX
+                            // Configurar timeout para tela PIX
                             atendimentos[numeroCliente] = {
                                 tipo: 'pos_pix',
                                 inicio: Date.now(),
@@ -1521,25 +1490,23 @@ async function startBot() {
                             };
                             
                             contextos[numeroCliente] = 'pos_pix';
-                            console.log(`${formatarDataHora()} 📄 [DEBUG] Contexto alterado para: pos_pix com timeout de 10min`);
+                            console.log(`${formatarDataHora()} 📄 Contexto alterado para: pos_pix com timeout de 10min`);
                         } else {
-                            console.log(`${formatarDataHora()} 📄 [DEBUG] ❌ Falha ao enviar mensagem!`);
-                            // Tentar enviar mensagem de erro
+                            console.log(`${formatarDataHora()} 📄 ❌ Falha ao enviar mensagem!`);
                             await enviarMensagemParaUsuario(sock, usuario, 
                                 `❌ Ocorreu um erro ao processar. Tente novamente.`
                             );
                         }
                         
                     } catch (error) {
-                        console.error(`${formatarDataHora()} 📄 [DEBUG] ❌ ERRO no try/catch:`, error);
-                        console.error(`${formatarDataHora()} 📄 [DEBUG] Stack trace:`, error.stack);
+                        console.error(`${formatarDataHora()} 📄 ❌ ERRO no try/catch:`, error);
                     }
                     return;
                     
                 // Validar CNPJ (14 dígitos)
                 } else if (doc.length === 14 && temApenasNumeros) {
-                    console.log(`${formatarDataHora()} 📄 [DEBUG] ✅ CNPJ VÁLIDO DETECTADO!`);
-                    console.log(`${formatarDataHora()} 📄 [DEBUG] CNPJ: ${doc}`);
+                    console.log(`${formatarDataHora()} 📄 ✅ CNPJ VÁLIDO DETECTADO!`);
+                    console.log(`${formatarDataHora()} 📄 CNPJ: ${doc}`);
                     
                     try {
                         const mensagemPix = `💠 *Pagamento via PIX*\n\nclique no link abaixo para acessar sua fatura:\n🔗 ${config.boleto_url}?doc=${doc}\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
@@ -1547,9 +1514,9 @@ async function startBot() {
                         const resultado = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
                         
                         if (resultado) {
-                            console.log(`${formatarDataHora()} 📄 [DEBUG] ✅ Mensagem CNPJ enviada!`);
+                            console.log(`${formatarDataHora()} 📄 ✅ Mensagem CNPJ enviada!`);
                             
-                            // ⚠️ CORREÇÃO ADICIONADA: Configurar timeout para tela PIX
+                            // Configurar timeout para tela PIX
                             atendimentos[numeroCliente] = {
                                 tipo: 'pos_pix',
                                 inicio: Date.now(),
@@ -1557,20 +1524,19 @@ async function startBot() {
                             };
                             
                             contextos[numeroCliente] = 'pos_pix';
-                            console.log(`${formatarDataHora()} 📄 [DEBUG] Contexto CNPJ alterado para: pos_pix com timeout de 10min`);
+                            console.log(`${formatarDataHora()} 📄 Contexto CNPJ alterado para: pos_pix com timeout de 10min`);
                         } else {
-                            console.log(`${formatarDataHora()} 📄 [DEBUG] ❌ Falha ao enviar CNPJ!`);
+                            console.log(`${formatarDataHora()} 📄 ❌ Falha ao enviar CNPJ!`);
                         }
                         
                     } catch (error) {
-                        console.error(`${formatarDataHora()} 📄 [DEBUG] ❌ ERRO CNPJ:`, error);
+                        console.error(`${formatarDataHora()} 📄 ❌ ERRO CNPJ:`, error);
                     }
                     return;
                     
                 } else {
                     // Documento inválido
-                    console.log(`${formatarDataHora()} 📄 [DEBUG] ❌ DOCUMENTO INVÁLIDO`);
-                    console.log(`${formatarDataHora()} 📄 [DEBUG] Razão: length=${doc.length}, apenasNumeros=${temApenasNumeros}`);
+                    console.log(`${formatarDataHora()} 📄 ❌ DOCUMENTO INVÁLIDO`);
                     
                     try {
                         let mensagemErro = `❌ ${pushName}, formato inválido.\n\n`;
@@ -1584,15 +1550,13 @@ async function startBot() {
                         mensagemErro += `• CNPJ: 14 dígitos (ex: 12345678000199)\n\n`;
                         mensagemErro += `Digite novamente:`;
                         
-                        console.log(`${formatarDataHora()} 📄 [DEBUG] Enviando mensagem de erro...`);
                         await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
                         
                     } catch (error) {
-                        console.error(`${formatarDataHora()} 📄 [DEBUG] ❌ ERRO ao enviar mensagem de erro:`, error);
+                        console.error(`${formatarDataHora()} 📄 ❌ ERRO ao enviar mensagem de erro:`, error);
                     }
                 }
                 
-                console.log(`${formatarDataHora()} 📄 [DEBUG] Fim do processamento aguardando_cpf`);
                 return;
             }
 
