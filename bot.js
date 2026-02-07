@@ -10,6 +10,10 @@
  * CORRIGIDO: Ignorar mensagens de sistema/sincronização
  * ADICIONADO: Atualização automática do número do atendente no config.json
  * ADICIONADO: Limpeza automática da pasta auth_info ao detectar desconexão (loggedOut)
+ * CORRIGIDO: Comando #FECHAR do atendente agora funciona corretamente
+ * ADICIONADO: Timeout automático para tela PIX (10 minutos)
+ * ADICIONADO: Comandos #FECHAR [número] e #FECHAR [nome] para encerrar individualmente
+ * ADICIONADO: Comando #CLIENTES para listar atendimentos ativos
  *************************************************/
 
 const {
@@ -641,6 +645,14 @@ async function verificarTimeouts() {
                 await encerrarAtendimento(numeroCliente, pushName, config, "timeout");
                 houveAcao = true;
             }
+            
+            // ⚠️ CORREÇÃO ADICIONADA: Timeout para tela PIX (10 minutos)
+            if (atendimento.tipo === 'pos_pix' && atendimento.inicio && 
+                (agora - atendimento.inicio) > (10 * 60 * 1000)) {
+                console.log(`${formatarDataHora()} ⏰ Timeout PIX expirado para ${pushName}`);
+                await encerrarAtendimento(numeroCliente, pushName, config, "timeout");
+                houveAcao = true;
+            }
         }
         
         // Logar apenas se a quantidade mudou ou se houve ação
@@ -886,7 +898,7 @@ async function startBot() {
                                 if (jidAtendente) {
                                     const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
                                     await sock.sendMessage(jidAtendente, {
-                                        text: `👨‍💼 *ATENDENTE CONFIGURADO*\n\nOlá ${pushName}! Você foi configurado como atendente do bot da *${config.empresa}*.\n\nUse #FECHAR para encerrar todos os atendimentos.`
+                                        text: `👨‍💼 *ATENDENTE CONFIGURADO*\n\nOlá ${pushName}! Você foi configurado como atendente do bot da *${config.empresa}*.\n\n*Comandos disponíveis:*\n• #FECHAR - Encerra todos os atendimentos\n• #FECHAR [número] - Encerra cliente específico\n• #FECHAR [nome] - Encerra por nome\n• #CLIENTES - Lista clientes ativos`
                                     });
                                     console.log(`${formatarDataHora()} 📨 Mensagem de confirmação enviada para o atendente`);
                                 }
@@ -956,7 +968,336 @@ async function startBot() {
 
         const msg = messages[0];
         
-        // Verificar se a mensagem é do próprio bot
+        // ⚠️ CORREÇÃO CRÍTICA: Processar comandos do atendente ANTES de qualquer outra coisa
+        // Isso evita que os comandos sejam tratados como mensagem de cliente
+        
+        const texto = (
+            msg.message.conversation ||
+            msg.message.extendedTextMessage?.text ||
+            ''
+        ).trim();
+        
+        const jidRemetente = msg.key.remoteJid;
+        
+        // ⚠️ DETECTAR COMANDOS DO ATENDENTE (mesmo em grupos/listas)
+        if (texto.startsWith('#FECHAR') || texto === '#CLIENTES') {
+            console.log(`${formatarDataHora()} 🔍 Comando do atendente detectado: ${texto}`);
+            
+            try {
+                // Carregar configuração
+                const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
+                
+                // Buscar número do atendente no config.json
+                const numeroAtendenteConfig = config.atendente_numero;
+                
+                // Verificar se quem enviou é o atendente
+                let ehAtendente = false;
+                
+                // 1. Verificar se é mensagem "fromMe" (atendente enviando da conta conectada)
+                if (msg.key.fromMe) {
+                    ehAtendente = true;
+                    console.log(`${formatarDataHora()} ✅ Comando do atendente (fromMe)`);
+                } 
+                // 2. Verificar se vem do número configurado como atendente
+                else if (jidRemetente && numeroAtendenteConfig) {
+                    // Extrair número do JID para comparar
+                    const numeroRemetente = extrairNumeroDoJID(jidRemetente);
+                    if (numeroRemetente === numeroAtendenteConfig) {
+                        ehAtendente = true;
+                        console.log(`${formatarDataHora()} ✅ Comando do atendente configurado: ${numeroAtendenteConfig}`);
+                    }
+                }
+                // 3. Verificar se pushName corresponde ao atendente conhecido (para listas/grupos)
+                else {
+                    const pushName = msg.pushName || '';
+                    // Buscar atendente no usuarioMap
+                    for (const [chave, usuario] of Object.entries(usuarioMap)) {
+                        if (usuario.tipo === 'atendente' && pushName.includes(usuario.pushName)) {
+                            ehAtendente = true;
+                            console.log(`${formatarDataHora()} ✅ Comando do atendente por pushName: ${usuario.pushName}`);
+                            break;
+                        }
+                    }
+                }
+                
+                if (ehAtendente) {
+                    // ⚠️ VERIFICAR QUAL COMANDO FOI ENVIADO
+                    
+                    // 1. COMANDO: #CLIENTES - Listar clientes ativos
+                    if (texto === '#CLIENTES') {
+                        console.log(`${formatarDataHora()} 📋 Atendente solicitou lista de clientes`);
+                        
+                        const clientesAtivos = Object.keys(atendimentos);
+                        
+                        try {
+                            // Buscar número do atendente no usuarioMap
+                            let numeroAtendente = null;
+                            for (const [chave, usuario] of Object.entries(usuarioMap)) {
+                                if (usuario.tipo === 'atendente') {
+                                    numeroAtendente = usuario.numero;
+                                    break;
+                                }
+                            }
+                            
+                            if (numeroAtendente) {
+                                const jidAtendente = getJID(numeroAtendente);
+                                if (jidAtendente) {
+                                    let mensagemClientes = `👥 *ATENDENTE - CLIENTES ATIVOS*\n\n`;
+                                    
+                                    if (clientesAtivos.length > 0) {
+                                        mensagemClientes += `*Total:* ${clientesAtivos.length} cliente(s)\n\n`;
+                                        
+                                        clientesAtivos.forEach((clienteNum, index) => {
+                                            const clienteInfo = usuarioMap[clienteNum];
+                                            const nome = clienteInfo?.pushName || 'Cliente';
+                                            const contexto = contextos[clienteNum] || 'desconhecido';
+                                            const atendimento = atendimentos[clienteNum];
+                                            
+                                            // Formatar número para exibição (remover 55 se tiver)
+                                            let numExibicao = clienteNum;
+                                            if (numExibicao.startsWith('55')) {
+                                                numExibicao = numExibicao.substring(2);
+                                            }
+                                            
+                                            // Determinar status do atendimento
+                                            let status = '';
+                                            let tempoRestante = '';
+                                            
+                                            if (atendimento) {
+                                                if (atendimento.tipo === 'humano') {
+                                                    status = '👨‍💼 Atendimento humano';
+                                                    if (atendimento.timeout) {
+                                                        const tempo = Math.max(0, atendimento.timeout - Date.now());
+                                                        const minutos = Math.floor(tempo / 60000);
+                                                        tempoRestante = ` (${minutos}min restantes)`;
+                                                    }
+                                                } else if (atendimento.tipo === 'aguardando_cpf') {
+                                                    status = '🔐 Aguardando CPF';
+                                                    if (atendimento.inicio) {
+                                                        const tempo = Date.now() - atendimento.inicio;
+                                                        const minutos = Math.floor(tempo / 60000);
+                                                        tempoRestante = ` (${minutos}min)`;
+                                                    }
+                                                } else if (atendimento.tipo === 'pos_pix') {
+                                                    status = '💠 PIX gerado';
+                                                    if (atendimento.inicio) {
+                                                        const tempo = Date.now() - atendimento.inicio;
+                                                        const minutos = Math.floor(tempo / 60000);
+                                                        tempoRestante = ` (${minutos}min)`;
+                                                    }
+                                                }
+                                            }
+                                            
+                                            mensagemClientes += `${index + 1}. *${nome}*\n`;
+                                            mensagemClientes += `   📱: ${numExibicao}\n`;
+                                            mensagemClientes += `   📊: ${contexto}${tempoRestante}\n`;
+                                            mensagemClientes += `   🔧: #FECHAR ${numExibicao}\n\n`;
+                                        });
+                                        
+                                        mensagemClientes += `*Comandos:*\n`;
+                                        mensagemClientes += `• #FECHAR [número] - Encerra cliente\n`;
+                                        mensagemClientes += `• #FECHAR [nome] - Encerra por nome\n`;
+                                        mensagemClientes += `• #FECHAR - Encerra todos\n`;
+                                    } else {
+                                        mensagemClientes += `📭 Nenhum cliente ativo no momento.`;
+                                    }
+                                    
+                                    await sock.sendMessage(jidAtendente, { text: mensagemClientes });
+                                    console.log(`${formatarDataHora()} 📨 Lista de clientes enviada para atendente`);
+                                }
+                            }
+                        } catch (error) {
+                            console.error(`${formatarDataHora()} ❌ Erro ao enviar lista de clientes:`, error);
+                        }
+                        
+                        // ⚠️ IMPORTANTE: RETORNAR AQUI - não processar como mensagem normal
+                        return;
+                    }
+                    
+                    // 2. COMANDO: #FECHAR - Encerrar atendimentos
+                    else if (texto.startsWith('#FECHAR')) {
+                        // ⚠️ VERIFICAR SE É FECHAR TODOS OU FECHAR ESPECÍFICO
+                        if (texto === '#FECHAR') {
+                            // FECHAR TODOS OS ATENDIMENTOS
+                            const clientesAtivos = Object.keys(atendimentos);
+                            console.log(`${formatarDataHora()} 🚪 Atendente encerrando TODOS os ${clientesAtivos.length} atendimento(s)`);
+                            
+                            for (const clienteNum of clientesAtivos) {
+                                const clienteInfo = usuarioMap[clienteNum];
+                                const nomeCliente = clienteInfo?.pushName || 'Cliente';
+                                
+                                await encerrarAtendimento(clienteNum, nomeCliente, config, "atendente");
+                            }
+                            
+                            // Enviar confirmação apenas para o atendente (não para o grupo)
+                            try {
+                                // Buscar número do atendente no usuarioMap
+                                let numeroAtendente = null;
+                                for (const [chave, usuario] of Object.entries(usuarioMap)) {
+                                    if (usuario.tipo === 'atendente') {
+                                        numeroAtendente = usuario.numero;
+                                        break;
+                                    }
+                                }
+                                
+                                if (numeroAtendente) {
+                                    const jidAtendente = getJID(numeroAtendente);
+                                    if (jidAtendente) {
+                                        await sock.sendMessage(jidAtendente, {
+                                            text: `👨‍💼 *ATENDENTE:* Todos os ${clientesAtivos.length} atendimento(s) encerrados.\n\nA *${config.empresa}* agradece!`
+                                        });
+                                        console.log(`${formatarDataHora()} 📨 Confirmação enviada para atendente individualmente`);
+                                    }
+                                }
+                            } catch (error) {
+                                console.error(`${formatarDataHora()} ❌ Erro ao enviar confirmação:`, error);
+                            }
+                            
+                        } else if (texto.startsWith('#FECHAR ')) {
+                            // ⚠️ NOVO: FECHAR ATENDIMENTO ESPECÍFICO
+                            // Formato: #FECHAR [número] ou #FECHAR [nome]
+                            const partes = texto.split(' ');
+                            if (partes.length >= 2) {
+                                const parametro = partes.slice(1).join(' ').trim();
+                                console.log(`${formatarDataHora()} 🔍 Tentando encerrar atendimento específico: "${parametro}"`);
+                                
+                                let clienteEncontrado = null;
+                                let numeroCliente = null;
+                                let nomeCliente = null;
+                                
+                                // Buscar cliente por número ou nome
+                                for (const [clienteNum, clienteInfo] of Object.entries(usuarioMap)) {
+                                    if (clienteInfo.tipo === 'cliente' && atendimentos[clienteNum]) {
+                                        // Verificar se o parâmetro é o número (com ou sem 55)
+                                        let numeroBusca = parametro.replace(/\D/g, '');
+                                        if (!numeroBusca.startsWith('55') && numeroBusca.length >= 10) {
+                                            numeroBusca = '55' + numeroBusca;
+                                        }
+                                        
+                                        if (clienteNum === numeroBusca || 
+                                            clienteNum === parametro ||
+                                            clienteInfo.numero === numeroBusca ||
+                                            clienteInfo.numero === parametro ||
+                                            (clienteInfo.pushName && clienteInfo.pushName.toLowerCase().includes(parametro.toLowerCase()))) {
+                                            
+                                            clienteEncontrado = clienteInfo;
+                                            numeroCliente = clienteNum;
+                                            nomeCliente = clienteInfo.pushName || 'Cliente';
+                                            break;
+                                        }
+                                    }
+                                }
+                                
+                                if (clienteEncontrado && numeroCliente) {
+                                    console.log(`${formatarDataHora()} ✅ Cliente encontrado: ${nomeCliente} (${numeroCliente})`);
+                                    
+                                    await encerrarAtendimento(numeroCliente, nomeCliente, config, "atendente");
+                                    
+                                    // Enviar confirmação para o atendente
+                                    try {
+                                        let numeroAtendente = null;
+                                        for (const [chave, usuario] of Object.entries(usuarioMap)) {
+                                            if (usuario.tipo === 'atendente') {
+                                                numeroAtendente = usuario.numero;
+                                                break;
+                                            }
+                                        }
+                                        
+                                        if (numeroAtendente) {
+                                            const jidAtendente = getJID(numeroAtendente);
+                                            if (jidAtendente) {
+                                                await sock.sendMessage(jidAtendente, {
+                                                    text: `👨‍💼 *ATENDENTE:* Atendimento de *${nomeCliente}* (${numeroCliente}) encerrado.\n\nA *${config.empresa}* agradece!`
+                                                });
+                                                console.log(`${formatarDataHora()} 📨 Confirmação de encerramento individual enviada`);
+                                            }
+                                        }
+                                    } catch (error) {
+                                        console.error(`${formatarDataHora()} ❌ Erro ao enviar confirmação:`, error);
+                                    }
+                                    
+                                } else {
+                                    // Cliente não encontrado - enviar lista de clientes ativos
+                                    console.log(`${formatarDataHora()} ⚠️ Cliente não encontrado: ${parametro}`);
+                                    
+                                    try {
+                                        let numeroAtendente = null;
+                                        for (const [chave, usuario] of Object.entries(usuarioMap)) {
+                                            if (usuario.tipo === 'atendente') {
+                                                numeroAtendente = usuario.numero;
+                                                break;
+                                            }
+                                        }
+                                        
+                                        if (numeroAtendente) {
+                                            const jidAtendente = getJID(numeroAtendente);
+                                            if (jidAtendente) {
+                                                const clientesAtivos = Object.keys(atendimentos);
+                                                let mensagemErro = `❌ *ATENDENTE:* Cliente "${parametro}" não encontrado.\n\n`;
+                                                mensagemErro += `*Clientes ativos (${clientesAtivos.length}):*\n`;
+                                                
+                                                if (clientesAtivos.length > 0) {
+                                                    clientesAtivos.forEach((clienteNum, index) => {
+                                                        const clienteInfo = usuarioMap[clienteNum];
+                                                        const nome = clienteInfo?.pushName || 'Cliente';
+                                                        // Formatar número para exibição (remover 55 se tiver)
+                                                        let numExibicao = clienteNum;
+                                                        if (numExibicao.startsWith('55')) {
+                                                            numExibicao = numExibicao.substring(2);
+                                                        }
+                                                        mensagemErro += `${index + 1}. ${nome} (${numExibicao})\n`;
+                                                    });
+                                                    mensagemErro += `\nUse: #FECHAR [número] ou #FECHAR [nome]`;
+                                                } else {
+                                                    mensagemErro += `Nenhum cliente ativo no momento.`;
+                                                }
+                                                
+                                                await sock.sendMessage(jidAtendente, { text: mensagemErro });
+                                            }
+                                        }
+                                    } catch (error) {
+                                        console.error(`${formatarDataHora()} ❌ Erro ao enviar lista de clientes:`, error);
+                                    }
+                                }
+                            } else {
+                                console.log(`${formatarDataHora()} ⚠️ Comando #FECHAR inválido - formato: #FECHAR [número/nome]`);
+                                
+                                // Enviar ajuda para o atendente
+                                try {
+                                    let numeroAtendente = null;
+                                    for (const [chave, usuario] of Object.entries(usuarioMap)) {
+                                        if (usuario.tipo === 'atendente') {
+                                            numeroAtendente = usuario.numero;
+                                            break;
+                                        }
+                                    }
+                                    
+                                    if (numeroAtendente) {
+                                        const jidAtendente = getJID(numeroAtendente);
+                                        if (jidAtendente) {
+                                            await sock.sendMessage(jidAtendente, {
+                                                text: `❌ *ATENDENTE:* Comando inválido.\n\n*Formatos válidos:*\n• #FECHAR - Encerra todos\n• #FECHAR [número] - Encerra específico\n• #FECHAR [nome] - Encerra por nome\n• #CLIENTES - Lista clientes ativos\n\nEx: #FECHAR 83982345678\nEx: #FECHAR João`
+                                            });
+                                        }
+                                    }
+                                } catch (error) {
+                                    console.error(`${formatarDataHora()} ❌ Erro ao enviar ajuda:`, error);
+                                }
+                            }
+                        }
+                    }
+                    
+                    // ⚠️ IMPORTANTE: RETORNAR AQUI - não processar como mensagem normal
+                    return;
+                } else {
+                    console.log(`${formatarDataHora()} ⚠️ Comando do atendente ignorado - não é do atendente`);
+                }
+            } catch (error) {
+                console.error(`${formatarDataHora()} ❌ Erro ao processar comando do atendente:`, error);
+            }
+        }
+        
+        // ⚠️ Ignorar mensagens do próprio bot (exceto comandos já processados acima)
         if (msg.key.fromMe) {
             console.log(`${formatarDataHora()} 🤖 Ignorando mensagem do próprio bot`);
             return;
@@ -964,7 +1305,6 @@ async function startBot() {
         
         // ⚠️ CORREÇÃO: Ignorar mensagens vazias ou de status
         if (!msg.message || msg.message.protocolMessage || msg.message.senderKeyDistributionMessage) {
-            // REMOVIDO: console.log(`${formatarDataHora()} 📭 Ignorando mensagem de sistema/status`);
             return;
         }
         
@@ -979,19 +1319,11 @@ async function startBot() {
         }
         
         // Obter JID do remetente
-        const jidRemetente = msg.key.remoteJid;
         if (!jidRemetente) {
             console.error(`${formatarDataHora()} ❌ Não foi possível obter JID do remetente`);
             return;
         }
         
-        // Obter texto da mensagem
-        const texto = (
-            msg.message.conversation ||
-            msg.message.extendedTextMessage?.text ||
-            ''
-        ).trim();
-
         const pushName = msg.pushName || 'Cliente';
         
         console.log(`\n${formatarDataHora()} 📨 MENSAGEM DE: ${pushName} (${jidRemetente}) - "${texto}"`);
@@ -1026,28 +1358,11 @@ async function startBot() {
 
         console.log(`${formatarDataHora()} 🔢 ${pushName} -> ${numeroCliente} (${usuario.tipo})`);
 
-        // ⚠️ ENCERRAMENTO PELO ATENDENTE
+        // ⚠️ ENCERRAMENTO PELO ATENDENTE (já processado no início, mas mantido para consistência)
         if (isAtendente) {
-            if (texto === '#FECHAR') {
-                console.log(`${formatarDataHora()} 🚪 Atendente encerrando tudo`);
-                
-                const clientesAtivos = Object.keys(atendimentos);
-                console.log(`${formatarDataHora()} 👥 ${clientesAtivos.length} cliente(s)`);
-                
-                for (const clienteNum of clientesAtivos) {
-                    const clienteInfo = usuarioMap[clienteNum];
-                    const nomeCliente = clienteInfo?.pushName || 'Cliente';
-                    
-                    await encerrarAtendimento(clienteNum, nomeCliente, config, "atendente");
-                }
-                
-                // Enviar mensagem para o atendente
-                const jidAtendente = getJID(usuario.numero);
-                if (jidAtendente) {
-                    await sock.sendMessage(jidAtendente, {
-                        text: `👨‍💼 *ATENDENTE:* Todos os atendimentos encerrados.\n\nA *${config.empresa}* agradece!`
-                    });
-                }
+            if (texto === '#FECHAR' || texto === '#CLIENTES' || texto.startsWith('#FECHAR ')) {
+                // Já processado no início, mas mantém lógica de backup
+                console.log(`${formatarDataHora()} 🔄 Comando do atendente processado (backup): ${texto}`);
                 return;
             }
             
@@ -1197,9 +1512,16 @@ async function startBot() {
                         
                         if (resultado) {
                             console.log(`${formatarDataHora()} 📄 [DEBUG] ✅ Mensagem enviada com sucesso!`);
-                            delete atendimentos[numeroCliente];
+                            
+                            // ⚠️ CORREÇÃO ADICIONADA: Configurar timeout para tela PIX
+                            atendimentos[numeroCliente] = {
+                                tipo: 'pos_pix',
+                                inicio: Date.now(),
+                                timeout: Date.now() + (10 * 60 * 1000) // 10 minutos
+                            };
+                            
                             contextos[numeroCliente] = 'pos_pix';
-                            console.log(`${formatarDataHora()} 📄 [DEBUG] Contexto alterado para: pos_pix`);
+                            console.log(`${formatarDataHora()} 📄 [DEBUG] Contexto alterado para: pos_pix com timeout de 10min`);
                         } else {
                             console.log(`${formatarDataHora()} 📄 [DEBUG] ❌ Falha ao enviar mensagem!`);
                             // Tentar enviar mensagem de erro
@@ -1226,8 +1548,16 @@ async function startBot() {
                         
                         if (resultado) {
                             console.log(`${formatarDataHora()} 📄 [DEBUG] ✅ Mensagem CNPJ enviada!`);
-                            delete atendimentos[numeroCliente];
+                            
+                            // ⚠️ CORREÇÃO ADICIONADA: Configurar timeout para tela PIX
+                            atendimentos[numeroCliente] = {
+                                tipo: 'pos_pix',
+                                inicio: Date.now(),
+                                timeout: Date.now() + (10 * 60 * 1000) // 10 minutos
+                            };
+                            
                             contextos[numeroCliente] = 'pos_pix';
+                            console.log(`${formatarDataHora()} 📄 [DEBUG] Contexto CNPJ alterado para: pos_pix com timeout de 10min`);
                         } else {
                             console.log(`${formatarDataHora()} 📄 [DEBUG] ❌ Falha ao enviar CNPJ!`);
                         }
