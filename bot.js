@@ -9,6 +9,7 @@
  * CORRIGIDO: Prevenção de duplicação atendente/cliente
  * CORRIGIDO: Ignorar mensagens de sistema/sincronização
  * ADICIONADO: Atualização automática do número do atendente no config.json
+ * ADICIONADO: Limpeza automática da pasta auth_info ao detectar desconexão (loggedOut)
  *************************************************/
 
 const {
@@ -81,6 +82,33 @@ function formatarData(data) {
     const mes = (data.getMonth() + 1).toString().padStart(2, '0');
     const dia = data.getDate().toString().padStart(2, '0');
     return `${mes}-${dia}`;
+}
+
+// ⚠️ FUNÇÃO PARA LIMPAR AUTH_INFO
+function limparAuthInfo() {
+    try {
+        if (fs.existsSync(AUTH_DIR)) {
+            console.log(`${formatarDataHora()} 🗑️ Limpando pasta auth_info...`);
+            
+            // Remover todos os arquivos da pasta
+            const files = fs.readdirSync(AUTH_DIR);
+            for (const file of files) {
+                fs.unlinkSync(path.join(AUTH_DIR, file));
+                console.log(`${formatarDataHora()} 🗑️ Removido: ${file}`);
+            }
+            
+            // Remover a pasta
+            fs.rmdirSync(AUTH_DIR);
+            console.log(`${formatarDataHora()} ✅ Pasta auth_info removida com sucesso!`);
+            return true;
+        } else {
+            console.log(`${formatarDataHora()} ℹ️ Pasta auth_info não existe`);
+            return false;
+        }
+    } catch (error) {
+        console.error(`${formatarDataHora()} ❌ Erro ao limpar auth_info:`, error);
+        return false;
+    }
 }
 
 // Verificar se é um JID individual (não grupo/lista)
@@ -748,6 +776,11 @@ async function startBot() {
         }
     }, 60000); // Verificar a cada minuto
 
+    // Verificar se a pasta auth_info existe antes de tentar usar
+    if (!fs.existsSync(AUTH_DIR)) {
+        console.log(`${formatarDataHora()} ℹ️ Pasta auth_info não existe - será criada ao gerar QR Code`);
+    }
+
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
     const sock = makeWASocket({
@@ -887,7 +920,29 @@ async function startBot() {
 
         if (connection === 'close') {
             setStatus('offline');
-            if (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut) {
+            
+            // ⚠️ DETECTAR SE FOI DESCONEXÃO FORÇADA (loggedOut)
+            if (lastDisconnect?.error?.output?.statusCode === DisconnectReason.loggedOut) {
+                console.log(`${formatarDataHora()} 🔐 WhatsApp desconectado pelo usuário (loggedOut)`);
+                
+                // ⚠️ LIMPAR AUTH_INFO PARA GERAR NOVO QR CODE
+                const limpezaRealizada = limparAuthInfo();
+                
+                if (limpezaRealizada) {
+                    console.log(`${formatarDataHora()} 🔄 Aguardando nova conexão com QR Code...`);
+                    
+                    // Aguardar 2 segundos antes de reiniciar
+                    setTimeout(() => {
+                        console.log(`${formatarDataHora()} 🔄 Reiniciando bot...`);
+                        startBot();
+                    }, 2000);
+                } else {
+                    // Se não conseguiu limpar, tentar reconectar normalmente
+                    console.log(`${formatarDataHora()} 🔄 Tentando reconectar...`);
+                    startBot();
+                }
+            } else {
+                // Para outras desconexões, reconectar normalmente
                 console.log(`${formatarDataHora()} 🔄 Reconectando...`);
                 startBot();
             }
