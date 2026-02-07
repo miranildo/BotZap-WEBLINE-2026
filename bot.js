@@ -964,7 +964,7 @@ async function startBot() {
         
         // ⚠️ CORREÇÃO: Ignorar mensagens vazias ou de status
         if (!msg.message || msg.message.protocolMessage || msg.message.senderKeyDistributionMessage) {
-            console.log(`${formatarDataHora()} 📭 Ignorando mensagem de sistema/status`);
+            // REMOVIDO: console.log(`${formatarDataHora()} 📭 Ignorando mensagem de sistema/status`);
             return;
         }
         
