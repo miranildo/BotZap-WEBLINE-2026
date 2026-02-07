@@ -68,6 +68,14 @@ if (file_exists($statusPath)) {
     }
 }
 
+/* ========= API SIMPLES PARA VERIFICAÇÃO ========= */
+if (isset($_GET['check_status']) || isset($_GET['api_status'])) {
+    // Retornar apenas o status em formato simples
+    header('Content-Type: text/plain');
+    echo $status;
+    exit;
+}
+
 /* ========= IMAGEM CONFORME STATUS ========= */
 $imgSrc = 'qrcode_view.php';
 
@@ -298,13 +306,55 @@ button {
 </div>
 
 <script>
-setInterval(() => {
-    const img = document.getElementById('qrImg');
-    if (img.src.includes('qrcode_view.php')) {
-        img.src = 'qrcode_view.php?t=' + Date.now();
-    }
-}, 3000);
+// ⚠️ SOLUÇÃO COMPLETA - monitora QR → ONLINE e ONLINE → QR
+const statusDiv = document.querySelector('.status');
 
+if (statusDiv) {
+    console.log('🔍 Monitorando status do WhatsApp...');
+    
+    // Determinar status atual
+    let statusAtual;
+    if (statusDiv.classList.contains('online')) {
+        statusAtual = 'online';
+    } else if (statusDiv.classList.contains('qr')) {
+        statusAtual = 'qr';
+    } else {
+        statusAtual = 'offline';
+    }
+    
+    console.log('Status inicial:', statusAtual);
+    
+    // ⚠️ VERIFICAR MUDANÇAS DE STATUS A CADA 3 SEGUNDOS
+    const intervalo = setInterval(() => {
+        fetch('?api_status=1&t=' + Date.now())
+            .then(r => r.text())
+            .then(novoStatus => {
+                console.log('Status verificado:', novoStatus, '(atual:', statusAtual, ')');
+                
+                // Se o status mudou
+                if (novoStatus !== statusAtual) {
+                    console.log('✅ Status mudou de', statusAtual, 'para', novoStatus, 'Recarregando página...');
+                    clearInterval(intervalo);
+                    location.reload();
+                }
+            })
+            .catch(() => {
+                console.log('Erro na verificação');
+            });
+    }, 3000); // Verificar a cada 3 segundos
+    
+    // ⚠️ ATUALIZAR IMAGEM DO QR APENAS SE FOR QR CODE
+    if (statusAtual === 'qr') {
+        setInterval(() => {
+            const img = document.getElementById('qrImg');
+            if (img && img.src.includes('qrcode_view.php')) {
+                img.src = 'qrcode_view.php?t=' + Date.now();
+            }
+        }, 3000);
+    }
+}
+
+// Mensagem de sucesso
 if (window.location.search.includes('salvo=1')) {
     window.history.replaceState({}, document.title, window.location.pathname);
 }
