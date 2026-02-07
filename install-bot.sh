@@ -269,7 +269,7 @@ cat > "$BOT_DIR/config.json" <<'CFGEOF'
     "empresa": "WebLine Telecom",
     "menu": "Olá! 👋\nBem-vindo ao atendimento da *{{empresa}}*\n\n1️⃣ Baixar Fatura\n2️⃣ Falar com Atendente\n\nDigite o número da opção desejada:",
     "boleto_url": "https://www.weblinetelecom.com.br/pix.php",
-    "atendente_numero": "5583982277238",
+    "atendente_numero": "558332383833",
     "tempo_atendimento_humano": 15,
     "feriados_ativos": "Sim"
 }
@@ -291,14 +291,7 @@ echo "✅ status.json criado"
 
 # 3. usuarios.json - COMPARTILHADO (bot escreve, php lê)
 cat > "$BOT_DIR/usuarios.json" <<'USEREOF'
-{
-  "5583982277238": {
-    "numero": "5583982277238",
-    "tipo": "atendente",
-    "pushName": "Webline Info",
-    "cadastradoEm": "$(date -Iseconds)"
-  }
-}
+{}
 USEREOF
 chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/usuarios.json"
 chmod 664 "$BOT_DIR/usuarios.json"
