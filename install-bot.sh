@@ -1001,6 +1001,8 @@ cat << EOF
 -----------------
 • Status do bot:          systemctl status botzap
 • Logs do bot:            journalctl -u botzap -f
+• Logs tail do bot:       tail -f /var/log/botzap.log
+• Reiniciar bot:          systemctl restart botzap
 • Reiniciar Apache:       systemctl reload apache2
 • Ver configuração:       cat /etc/apache2/sites-available/botzap.conf
 
