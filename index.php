@@ -15,7 +15,7 @@ $config = [
     'tempo_atendimento_humano' => '',
     'feriados_ativos' => 'Sim',
     // Novos campos para MK-Auth
-    'mkauth_url' => 'https://www.weblinetelecom.com.br',
+    'mkauth_url' => 'https://www.SEU_DOMINIO.com.br/api',
     'mkauth_client_id' => '',
     'mkauth_client_secret' => ''
 ];
@@ -339,7 +339,7 @@ button {
             <input 
                 name="mkauth_url" 
                 value="<?= htmlspecialchars($config['mkauth_url']) ?>"
-                placeholder="https://www.weblinetelecom.com.br"
+                placeholder="https://www.SEU_DOMINIO.com.br/api"
             >
             <small style="color: #6b7280; font-size: 12px;">
                 URL base do sistema MK-Auth (deve terminar com / se for API completa)
