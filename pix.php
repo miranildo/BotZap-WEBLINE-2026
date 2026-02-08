@@ -1,7 +1,7 @@
 <?php
 /*************************************************
  * CONFIGURAÇÃO MK-AUTH
-*************************************************/
+ *************************************************/
 $URL_PROV = "https://www.SEU_PROVEDOR.com.br";
 $API_BASE = "https://www.SEU_PROVEDOR.com.br/api/";
 $CLIENT_ID = "SEU_ID_API";
