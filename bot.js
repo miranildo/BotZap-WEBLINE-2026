@@ -19,6 +19,7 @@
  * ATUALIZADO: Credenciais MK-Auth configuráveis via painel web
  * CORRIGIDO: Não gera link se credenciais não estiverem configuradas
  * CORRIGIDO: "Para Fatura" fora do horário e "Tentar outro CPF" agora vão para tela CPF
+ * ATUALIZADO: Permite cliente inativo COM fatura em aberto acessar PIX normalmente
  *************************************************/
 
 const {
@@ -66,7 +67,9 @@ const FERIADOS_NACIONAIS = [
 /*************************************************
  * FUNÇÃO PARA VERIFICAR CPF/CNPJ NO MK-AUTH
  * Verifica se o documento existe e tem faturas
+ * E VERIFICA SE O CLIENTE ESTÁ ATIVO (cli_ativado === 's')
  * Usando módulo nativo https do Node.js
+ * ATUALIZADO: Permite cliente inativo COM fatura em aberto acessar PIX
  *************************************************/
 function verificarClienteMKAuth(doc) {
     return new Promise((resolve, reject) => {
@@ -245,6 +248,113 @@ function consultarTitulosMKAuth(doc, token, apiBase) {
                         return;
                     }
                     
+                    // ⚠️ VERIFICAR SE CLIENTE ESTÁ ATIVO
+                    console.log(`${formatarDataHora()} 🔎 VERIFICANDO CAMPO cli_ativado:`);
+                    
+                    let cliAtivado = null;
+                    
+                    // PRIMEIRO: Verificar se o campo está no nível raiz
+                    if (parsedData.cli_ativado !== undefined) {
+                        cliAtivado = parsedData.cli_ativado;
+                        console.log(`${formatarDataHora()} 🔎 cli_ativado encontrado no nível raiz: "${cliAtivado}"`);
+                    } 
+                    // SEGUNDO: Se não estiver no nível raiz, verificar nos títulos
+                    else if (parsedData.titulos && Array.isArray(parsedData.titulos)) {
+                        console.log(`${formatarDataHora()} 🔎 Buscando cli_ativado nos títulos...`);
+                        
+                        // Verificar se há pelo menos UM título com cli_ativado = 's'
+                        let tituloAtivoEncontrado = false;
+                        
+                        for (const titulo of parsedData.titulos) {
+                            if (titulo.cli_ativado === 's') {
+                                tituloAtivoEncontrado = true;
+                                cliAtivado = 's';
+                                console.log(`${formatarDataHora()} 🔎 Encontrado título com cli_ativado = 's'`);
+                                break;
+                            } else if (titulo.cli_ativado === 'n') {
+                                // Continuar procurando
+                                cliAtivado = 'n';
+                            }
+                        }
+                        
+                        if (!tituloAtivoEncontrado && cliAtivado === 'n') {
+                            console.log(`${formatarDataHora()} 🔎 Todos os títulos têm cli_ativado = 'n'`);
+                        }
+                    } 
+                    // TERCEIRO: Se não encontrou em nenhum lugar
+                    else {
+                        console.log(`${formatarDataHora()} 🔎 Nenhum campo cli_ativado encontrado em nenhum nível`);
+                        console.log(`${formatarDataHora()} ⚠️ Considerando cliente como ATIVO por padrão`);
+                        cliAtivado = 's';
+                    }
+                    
+                    // Verificar valor do campo
+                    console.log(`${formatarDataHora()} 🔎 Valor final de cliAtivado: "${cliAtivado}" (tipo: ${typeof cliAtivado})`);
+                    
+                    // Converter para string para comparação
+                    const cliAtivadoStr = String(cliAtivado).toLowerCase().trim();
+                    console.log(`${formatarDataHora()} 🔎 Valor normalizado: "${cliAtivadoStr}"`);
+                    
+                    // ⚠️ NOVA LÓGICA: VERIFICAR SE CLIENTE INATIVO TEM FATURA EM ABERTO
+                    if (cliAtivadoStr !== 's') {
+                        console.log(`${formatarDataHora()} ⚠️ Cliente marcado como INATIVO: ${doc} (cli_ativado: ${cliAtivadoStr})`);
+                        
+                        // ⚠️ VERIFICAÇÃO: Mesmo inativo, verificar se tem faturas em aberto
+                        if (parsedData.titulos && Array.isArray(parsedData.titulos)) {
+                            let temFaturaAberta = false;
+                            let temFaturaComPix = false;
+                            
+                            for (const titulo of parsedData.titulos) {
+                                // Verificar se a fatura está em aberto
+                                const status = titulo.status ? titulo.status.toLowerCase() : '';
+                                const statusValidos = ['aberto', 'pendente', 'vencido', 'em aberto', 'aberta', 'atrasada'];
+                                
+                                if (statusValidos.some(s => status.includes(s))) {
+                                    temFaturaAberta = true;
+                                    
+                                    // Verificar se esta fatura tem PIX
+                                    if (titulo.pix && titulo.pix.trim() !== '') {
+                                        temFaturaComPix = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            
+                            if (temFaturaAberta && temFaturaComPix) {
+                                // ⚠️ CASO ESPECIAL: Cliente inativo mas com fatura aberta e PIX
+                                console.log(`${formatarDataHora()} ⚠️ Cliente INATIVO mas com fatura(s) em aberto e PIX - PERMITINDO ACESSO: ${doc}`);
+                                
+                                // Marcar como sucesso para gerar link normalmente
+                                // O bot vai informar que está inativo mas tem fatura em aberto
+                                // CONTINUA O PROCESSAMENTO (não retorna erro aqui)
+                            } else {
+                                // Cliente inativo sem faturas abertas ou sem PIX
+                                console.log(`${formatarDataHora()} ❌ Cliente INATIVO sem faturas em aberto com PIX: ${doc}`);
+                                
+                                resolve({ 
+                                    sucesso: false, 
+                                    existe: true,
+                                    ativo: false,
+                                    cli_ativado: cliAtivadoStr,
+                                    mensagem: "CPF/CNPJ com cadastro INATIVO. Favor entrar em contato com o Atendente."
+                                });
+                                return;
+                            }
+                        } else {
+                            // Cliente inativo e sem títulos
+                            console.log(`${formatarDataHora()} ❌ Cliente INATIVO sem faturas: ${doc}`);
+                            
+                            resolve({ 
+                                sucesso: false, 
+                                existe: true,
+                                ativo: false,
+                                cli_ativado: cliAtivadoStr,
+                                mensagem: "CPF/CNPJ com cadastro INATIVO. Favor entrar em contato com o Atendente."
+                            });
+                            return;
+                        }
+                    }
+                    
                     // Verificar se tem títulos
                     if (!parsedData.titulos || !Array.isArray(parsedData.titulos) || 
                         parsedData.titulos.length === 0) {
@@ -252,6 +362,7 @@ function consultarTitulosMKAuth(doc, token, apiBase) {
                         resolve({ 
                             sucesso: false, 
                             existe: true,
+                            ativo: true,
                             temFaturas: false,
                             mensagem: "Cliente encontrado, mas sem faturas disponíveis"
                         });
@@ -272,6 +383,7 @@ function consultarTitulosMKAuth(doc, token, apiBase) {
                         resolve({ 
                             sucesso: false, 
                             existe: true,
+                            ativo: true,
                             temFaturas: true,
                             temPix: false,
                             mensagem: "Cliente encontrado, mas sem faturas para pagamento via PIX"
@@ -286,6 +398,8 @@ function consultarTitulosMKAuth(doc, token, apiBase) {
                     resolve({ 
                         sucesso: true, 
                         existe: true,
+                        ativo: cliAtivadoStr === 's', // Indica se está ativo ou não
+                        cli_ativado: cliAtivadoStr,
                         temFaturas: true,
                         temPix: true,
                         mensagem: "Cliente válido",
@@ -294,6 +408,7 @@ function consultarTitulosMKAuth(doc, token, apiBase) {
                     
                 } catch (error) {
                     console.error(`${formatarDataHora()} ❌ Erro ao processar resposta:`, error.message);
+                    console.error(`${formatarDataHora()} ❌ Stack trace:`, error.stack);
                     reject(error);
                 }
             });
@@ -1825,18 +1940,31 @@ async function startBot() {
                         
                         if (!resultado.sucesso) {
                             // CPF não encontrado ou erro na consulta
-                            console.log(`${formatarDataHora()} 📄 ❌ CPF não encontrado ou sem faturas`);
+                            console.log(`${formatarDataHora()} 📄 ❌ CPF não encontrado ou inativo: ${doc}`);
                             
-                            let mensagemErro = `❌ *CPF não encontrado*\n\n`;
+                            let mensagemErro = `❌ *`;
                             
-                            if (resultado.existe === false) {
+                            // ⚠️ VERIFICAÇÃO ESPECÍFICA PARA CLIENTE INATIVO SEM FATURAS EM ABERTO
+                            if (resultado.ativo === false) {
+                                mensagemErro += `CPF com cadastro inativo*\n\n`;
+                                mensagemErro += `O CPF *${doc}* está com o cadastro *INATIVO*.\n\n`;
+                                mensagemErro += `*Favor entrar em contato com o Atendente.*\n\n`;
+                                mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                                
+                                await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                                return;
+                            } else if (resultado.existe === false) {
+                                mensagemErro += `CPF não encontrado*\n\n`;
                                 mensagemErro += `O CPF *${doc}* não foi encontrado na base de clientes da *${config.empresa}*.\n\n`;
                             } else if (resultado.temFaturas === false) {
+                                mensagemErro += `Cliente sem faturas*\n\n`;
                                 mensagemErro += `Cliente encontrado, mas não há faturas disponíveis.\n\n`;
                             } else if (resultado.temPix === false) {
+                                mensagemErro += `Cliente sem PIX*\n\n`;
                                 mensagemErro += `Cliente encontrado, mas não há faturas para pagamento via PIX.\n\n`;
                             } else if (resultado.configurado === false) {
                                 // ⚠️ CREDENCIAIS NÃO CONFIGURADAS - NÃO GERAR LINK
+                                mensagemErro += `Sistema não configurado*\n\n`;
                                 mensagemErro += `❌ *Sistema de verificação não configurado.*\n\n`;
                                 mensagemErro += `Para acessar suas faturas, entre em contato com nosso atendimento.\n\n`;
                                 mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
@@ -1845,6 +1973,7 @@ async function startBot() {
                                 return;
                             } else if (resultado.erro === true) {
                                 // Erro de sistema, não gerar link
+                                mensagemErro += `Sistema indisponível*\n\n`;
                                 mensagemErro += `❌ *Sistema de verificação temporariamente indisponível.*\n\n`;
                                 mensagemErro += `Para acessar suas faturas, entre em contato com nosso atendimento.\n\n`;
                                 mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
@@ -1852,7 +1981,7 @@ async function startBot() {
                                 await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
                                 return;
                             } else {
-                                mensagemErro += `${resultado.mensagem}\n\n`;
+                                mensagemErro += `${resultado.mensagem}*\n\n`;
                             }
                             
                             mensagemErro += `Verifique se o CPF está correto ou entre em contato com nosso atendimento.\n\n`;
@@ -1865,7 +1994,26 @@ async function startBot() {
                         // ⚠️ CPF ENCONTRADO E VÁLIDO - GERAR LINK
                         console.log(`${formatarDataHora()} 📄 ✅ CPF válido no MK-Auth! Gerando link...`);
                         
-                        const mensagemPix = `✅ *CPF encontrado!*\n\nClique no link abaixo para acessar sua fatura PIX:\n\n🔗 ${config.boleto_url}?doc=${doc}\n\n⏱️ *Link válido por 10 minutos*\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                        let mensagemPix = '';
+                        
+                        // ⚠️ VERIFICAR SE CLIENTE ESTÁ INATIVO MAS TEM FATURA EM ABERTO
+                        if (resultado.ativo === false) {
+                            // Cliente INATIVO mas com fatura em aberto
+                            mensagemPix = `⚠️ *ATENÇÃO: Cadastro INATIVO*\n\n` +
+                                         `Seu cadastro está *INATIVO* na *${config.empresa}*.\n\n` +
+                                         `Você possui faturas em aberto que precisam ser pagas.\n\n` +
+                                         `🔗 Clique no link abaixo para acessar suas faturas PIX:\n\n` +
+                                         `${config.boleto_url}?doc=${doc}\n\n` +
+                                         `⏱️ *Link válido por 10 minutos*\n\n` +
+                                         `0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                        } else {
+                            // Cliente ATIVO normal
+                            mensagemPix = `✅ *CPF encontrado!*\n\n` +
+                                         `Clique no link abaixo para acessar sua fatura PIX:\n\n` +
+                                         `🔗 ${config.boleto_url}?doc=${doc}\n\n` +
+                                         `⏱️ *Link válido por 10 minutos*\n\n` +
+                                         `0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                        }
                         
                         const resultadoEnvio = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
                         
@@ -1911,18 +2059,31 @@ async function startBot() {
                         
                         if (!resultado.sucesso) {
                             // CNPJ não encontrado ou erro na consulta
-                            console.log(`${formatarDataHora()} 📄 ❌ CNPJ não encontrado ou sem faturas`);
+                            console.log(`${formatarDataHora()} 📄 ❌ CNPJ não encontrado ou inativo: ${doc}`);
                             
-                            let mensagemErro = `❌ *CNPJ não encontrado*\n\n`;
+                            let mensagemErro = `❌ *`;
                             
-                            if (resultado.existe === false) {
+                            // ⚠️ VERIFICAÇÃO ESPECÍFICA PARA CLIENTE INATIVO SEM FATURAS EM ABERTO
+                            if (resultado.ativo === false) {
+                                mensagemErro += `CNPJ com cadastro inativo*\n\n`;
+                                mensagemErro += `O CNPJ *${doc}* está com o cadastro *INATIVO*.\n\n`;
+                                mensagemErro += `*Favor entrar em contato com o Atendente.*\n\n`;
+                                mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                                
+                                await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                                return;
+                            } else if (resultado.existe === false) {
+                                mensagemErro += `CNPJ não encontrado*\n\n`;
                                 mensagemErro += `O CNPJ *${doc}* não foi encontrado na base de clientes da *${config.empresa}*.\n\n`;
                             } else if (resultado.temFaturas === false) {
+                                mensagemErro += `Cliente sem faturas*\n\n`;
                                 mensagemErro += `Cliente encontrado, mas não há faturas disponíveis.\n\n`;
                             } else if (resultado.temPix === false) {
+                                mensagemErro += `Cliente sem PIX*\n\n`;
                                 mensagemErro += `Cliente encontrado, mas não há faturas para pagamento via PIX.\n\n`;
                             } else if (resultado.configurado === false) {
                                 // ⚠️ CREDENCIAIS NÃO CONFIGURADAS - NÃO GERAR LINK
+                                mensagemErro += `Sistema não configurado*\n\n`;
                                 mensagemErro += `❌ *Sistema de verificação não configurado.*\n\n`;
                                 mensagemErro += `Para acessar suas faturas, entre em contato com nosso atendimento.\n\n`;
                                 mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
@@ -1931,6 +2092,7 @@ async function startBot() {
                                 return;
                             } else if (resultado.erro === true) {
                                 // Erro de sistema, não gerar link
+                                mensagemErro += `Sistema indisponível*\n\n`;
                                 mensagemErro += `❌ *Sistema de verificação temporariamente indisponível.*\n\n`;
                                 mensagemErro += `Para acessar suas faturas, entre em contato com nosso atendimento.\n\n`;
                                 mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
@@ -1938,7 +2100,7 @@ async function startBot() {
                                 await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
                                 return;
                             } else {
-                                mensagemErro += `${resultado.mensagem}\n\n`;
+                                mensagemErro += `${resultado.mensagem}*\n\n`;
                             }
                             
                             mensagemErro += `Verifique se o CNPJ está correto ou entre em contato com nosso atendimento.\n\n`;
@@ -1951,7 +2113,26 @@ async function startBot() {
                         // ⚠️ CNPJ ENCONTRADO E VÁLIDO - GERAR LINK
                         console.log(`${formatarDataHora()} 📄 ✅ CNPJ válido no MK-Auth! Gerando link...`);
                         
-                        const mensagemPix = `✅ *CNPJ encontrado!*\n\nClique no link abaixo para acessar sua fatura PIX:\n\n🔗 ${config.boleto_url}?doc=${doc}\n\n⏱️ *Link válido por 10 minutos*\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                        let mensagemPix = '';
+                        
+                        // ⚠️ VERIFICAR SE CLIENTE ESTÁ INATIVO MAS TEM FATURA EM ABERTO
+                        if (resultado.ativo === false) {
+                            // Cliente INATIVO mas com fatura em aberto
+                            mensagemPix = `⚠️ *ATENÇÃO: Cadastro INATIVO*\n\n` +
+                                         `Seu cadastro está *INATIVO* na *${config.empresa}*.\n\n` +
+                                         `Você possui faturas em aberto que precisam ser pagas.\n\n` +
+                                         `🔗 Clique no link abaixo para acessar suas faturas PIX:\n\n` +
+                                         `${config.boleto_url}?doc=${doc}\n\n` +
+                                         `⏱️ *Link válido por 10 minutos*\n\n` +
+                                         `0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                        } else {
+                            // Cliente ATIVO normal
+                            mensagemPix = `✅ *CNPJ encontrado!*\n\n` +
+                                         `Clique no link abaixo para acessar sua fatura PIX:\n\n` +
+                                         `🔗 ${config.boleto_url}?doc=${doc}\n\n` +
+                                         `⏱️ *Link válido por 10 minutos*\n\n` +
+                                         `0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                        }
                         
                         const resultadoEnvio = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
                         
