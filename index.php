@@ -13,7 +13,11 @@ $config = [
     'boleto_url' => '',
     'atendente_numero' => '',
     'tempo_atendimento_humano' => '',
-    'feriados_ativos' => 'Sim' // Valor padrão
+    'feriados_ativos' => 'Sim',
+    // Novos campos para MK-Auth
+    'mkauth_url' => 'https://www.weblinetelecom.com.br',
+    'mkauth_client_id' => '',
+    'mkauth_client_secret' => ''
 ];
 
 /* ========= CARREGA CONFIG ========= */
@@ -34,6 +38,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $config['tempo_atendimento_humano'] =
         intval($_POST['tempo_atendimento_humano'] ?? '');
     $config['feriados_ativos'] = trim($_POST['feriados_ativos'] ?? 'Sim');
+    
+    // Novos campos MK-Auth
+    $config['mkauth_url'] = trim($_POST['mkauth_url'] ?? '');
+    $config['mkauth_client_id'] = trim($_POST['mkauth_client_id'] ?? '');
+    $config['mkauth_client_secret'] = trim($_POST['mkauth_client_secret'] ?? '');
 
     if ($config['tempo_atendimento_humano'] <= 0) {
         $config['tempo_atendimento_humano'] = 30;
@@ -202,6 +211,27 @@ textarea { height:110px; resize:vertical; }
     margin: 5px 0;
 }
 
+.config-section {
+    background: #f9fafb;
+    border-radius: 8px;
+    padding: 20px;
+    margin-top: 20px;
+    border-left: 4px solid #3b82f6;
+}
+
+.config-section h3 {
+    margin-top: 0;
+    color: #1f2937;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.config-section h3 i {
+    font-size: 18px;
+}
+
 button {
     margin-top:20px;
     padding:12px 18px;
@@ -299,6 +329,52 @@ button {
             <p>• PIX continua disponível 24/7 independentemente desta configuração</p>
         </div>
 
+        <div class="config-section">
+            <h3>🔐 Configurações MK-Auth (Verificação de Clientes)</h3>
+            <p style="margin-top: 0; font-size: 14px; color: #6b7280;">
+                Configurações para verificação de CPF/CNPJ na base de clientes antes de gerar link PIX
+            </p>
+
+            <label>URL do MK-Auth</label>
+            <input 
+                name="mkauth_url" 
+                value="<?= htmlspecialchars($config['mkauth_url']) ?>"
+                placeholder="https://www.weblinetelecom.com.br"
+            >
+            <small style="color: #6b7280; font-size: 12px;">
+                URL base do sistema MK-Auth (deve terminar com / se for API completa)
+            </small>
+
+            <label>Client ID</label>
+            <input 
+                name="mkauth_client_id" 
+                value="<?= htmlspecialchars($config['mkauth_client_id']) ?>"
+                placeholder="c582c8ede2c9169c64f29c626fadc38e"
+            >
+            <small style="color: #6b7280; font-size: 12px;">
+                Identificador do cliente para autenticação na API
+            </small>
+
+            <label>Client Secret</label>
+            <input 
+                name="mkauth_client_secret" 
+                type="password"
+                value="<?= htmlspecialchars($config['mkauth_client_secret']) ?>"
+                placeholder="9d2367fbf45d2e89d8ee8cb92ca3c02f13bcb0c1"
+            >
+            <small style="color: #6b7280; font-size: 12px;">
+                Senha de acesso à API (chave secreta)
+            </small>
+
+            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 10px 12px; margin-top: 15px; border-radius: 6px; font-size: 13px;">
+                <p style="margin: 0; color: #92400e;"><strong>⚠️ Importante:</strong></p>
+                <p style="margin: 5px 0 0 0; color: #92400e;">
+                    • Se as credenciais não forem configuradas, o bot NÃO permitirá acesso direto ao PIX<br>
+                    • Configure corretamente para filtrar apenas clientes da base
+                </p>
+            </div>
+        </div>
+
         <button type="submit">Salvar configurações</button>
     </form>
 </div>
@@ -365,6 +441,38 @@ if (msg) {
         msg.style.opacity = '0';
         setTimeout(() => msg.remove(), 500);
     }, 3000);
+}
+
+// Mostrar/ocultar senha MK-Auth
+const secretField = document.querySelector('input[name="mkauth_client_secret"]');
+if (secretField) {
+    const showPasswordBtn = document.createElement('button');
+    showPasswordBtn.type = 'button';
+    showPasswordBtn.innerHTML = '👁️';
+    showPasswordBtn.style.cssText = `
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 16px;
+    `;
+    
+    const parent = secretField.parentElement;
+    parent.style.position = 'relative';
+    parent.appendChild(showPasswordBtn);
+    
+    showPasswordBtn.addEventListener('click', function() {
+        if (secretField.type === 'password') {
+            secretField.type = 'text';
+            this.innerHTML = '🙈';
+        } else {
+            secretField.type = 'password';
+            this.innerHTML = '👁️';
+        }
+    });
 }
 </script>
 
