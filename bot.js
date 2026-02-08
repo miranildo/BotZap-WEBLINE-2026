@@ -15,6 +15,10 @@
  * ADICIONADO: Comandos #FECHAR [número] e #FECHAR [nome] para encerrar individualmente
  * ADICIONADO: Comando #CLIENTES para listar atendimentos ativos
  * CORRIGIDO: Bot NÃO responde em grupos - apenas individualmente
+ * ADICIONADO: Verificação MK-Auth para CPF/CNPJ existentes antes de gerar link PIX
+ * ATUALIZADO: Credenciais MK-Auth configuráveis via painel web
+ * CORRIGIDO: Não gera link se credenciais não estiverem configuradas
+ * CORRIGIDO: "Para Fatura" fora do horário e "Tentar outro CPF" agora vão para tela CPF
  *************************************************/
 
 const {
@@ -26,6 +30,7 @@ const {
 const fs = require('fs');
 const path = require('path');
 const P = require('pino');
+const https = require('https'); // Usando módulo nativo do Node.js
 
 const BASE_DIR = __dirname;
 const AUTH_DIR = path.join(BASE_DIR, 'auth_info');
@@ -57,6 +62,257 @@ const FERIADOS_NACIONAIS = [
     '11-15', // Proclamação da República
     '12-25', // Natal
 ];
+
+/*************************************************
+ * FUNÇÃO PARA VERIFICAR CPF/CNPJ NO MK-AUTH
+ * Verifica se o documento existe e tem faturas
+ * Usando módulo nativo https do Node.js
+ *************************************************/
+function verificarClienteMKAuth(doc) {
+    return new Promise((resolve, reject) => {
+        console.log(`${formatarDataHora()} 🔍 Verificando cliente no MK-Auth: ${doc}`);
+        
+        try {
+            // Carregar configuração do arquivo
+            const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
+            
+            // Verificar se as credenciais do MK-Auth estão configuradas
+            if (!config.mkauth_url || !config.mkauth_client_id || !config.mkauth_client_secret) {
+                console.log(`${formatarDataHora()} ❌ Credenciais MK-Auth não configuradas no painel`);
+                resolve({ 
+                    sucesso: false, 
+                    erro: true, 
+                    configurado: false,
+                    mensagem: "Sistema de verificação não configurado. Entre em contato com o suporte." 
+                });
+                return;
+            }
+            
+            // Extrair URL base da URL completa
+            const urlProv = config.mkauth_url;
+            let apiBase = urlProv;
+            
+            // Garantir que a URL termina com /api/
+            if (!apiBase.endsWith('/')) {
+                apiBase += '/';
+            }
+            if (!apiBase.includes('/api/')) {
+                apiBase += 'api/';
+            }
+            
+            const clientId = config.mkauth_client_id;
+            const clientSecret = config.mkauth_client_secret;
+            
+            console.log(`${formatarDataHora()} 🔧 Usando configurações MK-Auth do painel`);
+            
+            // 1. Primeiro obter token
+            obterTokenMKAuth(apiBase, clientId, clientSecret)
+                .then(token => {
+                    if (!token) {
+                        console.log(`${formatarDataHora()} ❌ Erro ao obter token MK-Auth`);
+                        resolve({ sucesso: false, erro: true, mensagem: "Erro na autenticação do sistema" });
+                        return;
+                    }
+                    
+                    // 2. Consultar títulos com o token
+                    consultarTitulosMKAuth(doc, token, apiBase)
+                        .then(resultado => {
+                            resolve(resultado);
+                        })
+                        .catch(error => {
+                            console.error(`${formatarDataHora()} ❌ Erro na consulta:`, error.message);
+                            resolve({ sucesso: false, erro: true, mensagem: "Erro ao consultar o sistema" });
+                        });
+                })
+                .catch(error => {
+                    console.error(`${formatarDataHora()} ❌ Erro ao obter token:`, error.message);
+                    resolve({ sucesso: false, erro: true, mensagem: "Erro na autenticação do sistema" });
+                });
+                
+        } catch (error) {
+            console.error(`${formatarDataHora()} ❌ Erro ao carregar configurações:`, error);
+            resolve({ 
+                sucesso: false, 
+                erro: true, 
+                configurado: false,
+                mensagem: "Erro no sistema de verificação. Tente novamente mais tarde." 
+            });
+        }
+    });
+}
+
+// Função para obter token de acesso
+function obterTokenMKAuth(apiBase, clientId, clientSecret) {
+    return new Promise((resolve, reject) => {
+        // Extrair hostname e caminho da URL
+        const url = new URL(apiBase);
+        const hostname = url.hostname;
+        const path = url.pathname;
+        
+        const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+        
+        const options = {
+            hostname: hostname,
+            port: 443,
+            path: path,
+            method: 'GET',
+            headers: {
+                'Authorization': `Basic ${auth}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 10000
+        };
+        
+        const req = https.request(options, (res) => {
+            let data = '';
+            
+            res.on('data', (chunk) => {
+                data += chunk;
+            });
+            
+            res.on('end', () => {
+                if (res.statusCode === 200) {
+                    const token = data.trim();
+                    if (token && token.length >= 20) {
+                        console.log(`${formatarDataHora()} ✅ Token obtido com sucesso`);
+                        resolve(token);
+                    } else {
+                        console.log(`${formatarDataHora()} ❌ Token inválido recebido`);
+                        reject(new Error('Token inválido'));
+                    }
+                } else {
+                    console.log(`${formatarDataHora()} ❌ Erro HTTP ${res.statusCode} ao obter token`);
+                    reject(new Error(`HTTP ${res.statusCode}`));
+                }
+            });
+        });
+        
+        req.on('error', (error) => {
+            console.error(`${formatarDataHora()} ❌ Erro de conexão ao obter token:`, error.message);
+            reject(error);
+        });
+        
+        req.on('timeout', () => {
+            console.log(`${formatarDataHora()} ❌ Timeout ao obter token`);
+            req.destroy();
+            reject(new Error('Timeout'));
+        });
+        
+        req.end();
+    });
+}
+
+// Função para consultar títulos
+function consultarTitulosMKAuth(doc, token, apiBase) {
+    return new Promise((resolve, reject) => {
+        // Extrair hostname e caminho da URL
+        const url = new URL(apiBase);
+        const hostname = url.hostname;
+        const path = `/api/titulo/titulos/${doc}`;
+        
+        const options = {
+            hostname: hostname,
+            port: 443,
+            path: path,
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 15000
+        };
+        
+        const req = https.request(options, (res) => {
+            let data = '';
+            
+            res.on('data', (chunk) => {
+                data += chunk;
+            });
+            
+            res.on('end', () => {
+                try {
+                    const parsedData = JSON.parse(data);
+                    
+                    // Verificar se cliente existe
+                    if (parsedData && parsedData.mensagem && 
+                        parsedData.mensagem.toLowerCase().includes('não encontrado')) {
+                        console.log(`${formatarDataHora()} ❌ Cliente não encontrado no MK-Auth: ${doc}`);
+                        resolve({ 
+                            sucesso: false, 
+                            existe: false,
+                            mensagem: "CPF/CNPJ não encontrado na base de clientes"
+                        });
+                        return;
+                    }
+                    
+                    // Verificar se tem títulos
+                    if (!parsedData.titulos || !Array.isArray(parsedData.titulos) || 
+                        parsedData.titulos.length === 0) {
+                        console.log(`${formatarDataHora()} ❌ Cliente encontrado mas sem faturas: ${doc}`);
+                        resolve({ 
+                            sucesso: false, 
+                            existe: true,
+                            temFaturas: false,
+                            mensagem: "Cliente encontrado, mas sem faturas disponíveis"
+                        });
+                        return;
+                    }
+                    
+                    // Verificar se tem fatura com PIX
+                    let temFaturaComPix = false;
+                    for (const titulo of parsedData.titulos) {
+                        if (titulo.pix && titulo.pix.trim() !== '') {
+                            temFaturaComPix = true;
+                            break;
+                        }
+                    }
+                    
+                    if (!temFaturaComPix) {
+                        console.log(`${formatarDataHora()} ❌ Cliente encontrado mas sem PIX: ${doc}`);
+                        resolve({ 
+                            sucesso: false, 
+                            existe: true,
+                            temFaturas: true,
+                            temPix: false,
+                            mensagem: "Cliente encontrado, mas sem faturas para pagamento via PIX"
+                        });
+                        return;
+                    }
+                    
+                    // Cliente válido
+                    console.log(`${formatarDataHora()} ✅ Cliente válido no MK-Auth: ${doc}`);
+                    console.log(`${formatarDataHora()} 📊 Total de títulos: ${parsedData.titulos.length}`);
+                    
+                    resolve({ 
+                        sucesso: true, 
+                        existe: true,
+                        temFaturas: true,
+                        temPix: true,
+                        mensagem: "Cliente válido",
+                        data: parsedData
+                    });
+                    
+                } catch (error) {
+                    console.error(`${formatarDataHora()} ❌ Erro ao processar resposta:`, error.message);
+                    reject(error);
+                }
+            });
+        });
+        
+        req.on('error', (error) => {
+            console.error(`${formatarDataHora()} ❌ Erro de conexão na consulta:`, error.message);
+            reject(error);
+        });
+        
+        req.on('timeout', () => {
+            console.log(`${formatarDataHora()} ❌ Timeout na consulta`);
+            req.destroy();
+            reject(new Error('Timeout'));
+        });
+        
+        req.end();
+    });
+}
 
 /* ================= FUNÇÕES AUXILIARES ================= */
 function formatarDataHora() {
@@ -920,6 +1176,20 @@ async function startBot() {
                 console.error(`${formatarDataHora()} ❌ Erro ao capturar credenciais:`, error);
             }
             
+            // ⚠️ VERIFICAR SE CREDENCIAIS MK-AUTH ESTÃO CONFIGURADAS
+            try {
+                const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
+                if (config.mkauth_url && config.mkauth_client_id && config.mkauth_client_secret) {
+                    console.log(`${formatarDataHora()} ✅ Credenciais MK-Auth configuradas no painel`);
+                } else {
+                    console.log(`${formatarDataHora()} ⚠️ Credenciais MK-Auth NÃO configuradas no painel`);
+                    console.log(`${formatarDataHora()} ⚠️ O bot NÃO permitirá acesso ao PIX sem credenciais configuradas`);
+                    console.log(`${formatarDataHora()} ℹ️ Configure em: Painel Web → Configurações → MK-Auth`);
+                }
+            } catch (error) {
+                console.error(`${formatarDataHora()} ❌ Erro ao verificar credenciais MK-Auth:`, error);
+            }
+            
             console.log(`${formatarDataHora()} ✅ WhatsApp conectado`);
             console.log(`${formatarDataHora()} 👥 ${Object.keys(usuarioMap).length} usuário(s)`);
             console.log(`${formatarDataHora()} 🕐 Horário comercial: ${dentroHorarioComercial() ? 'ABERTO' : 'FECHADO'}`);
@@ -1366,6 +1636,29 @@ async function startBot() {
                 return;
             }
 
+            // ⚠️ CORREÇÃO ADICIONADA: TRATAMENTO PARA "TENTAR OUTRO CPF" (opção 1 quando está aguardando_cpf)
+            if (texto === '1' && contextoAtual === 'aguardando_cpf') {
+                console.log(`${formatarDataHora()} 📄 Cliente escolheu tentar outro CPF`);
+                
+                // Manter o mesmo contexto e apenas pedir o CPF novamente
+                await enviarMensagemParaUsuario(sock, usuario, `🔐 Informe seu CPF ou CNPJ:`);
+                return;
+            }
+
+            // ⚠️ CORREÇÃO ADICIONADA: TRATAMENTO PARA "PARA FATURA" fora do horário
+            if (texto === '1' && !dentroHorarioComercial()) {
+                console.log(`${formatarDataHora()} 💠 Cliente escolheu PIX fora do horário`);
+                contextos[numeroCliente] = 'aguardando_cpf';
+                atendimentos[numeroCliente] = {
+                    tipo: 'aguardando_cpf',
+                    inicio: Date.now(),
+                    timeout: null
+                };
+                
+                await enviarMensagemParaUsuario(sock, usuario, `🔐 Informe seu CPF ou CNPJ:`);
+                return;
+            }
+
             // ⚠️ CLIENTE EM ATENDIMENTO HUMANO
             if (atendimentos[numeroCliente]?.tipo === 'humano') {
                 console.log(`${formatarDataHora()} 🤐 Cliente em atendimento humano - mensagem será encaminhada ao atendente`);
@@ -1442,7 +1735,7 @@ async function startBot() {
                 }
             }
 
-            // ⚠️ AGUARDANDO CPF
+            // ⚠️ AGUARDANDO CPF (COM VERIFICAÇÃO MK-AUTH)
             if (contextoAtual === 'aguardando_cpf') {
                 console.log(`${formatarDataHora()} 📄 Contexto aguardando_cpf ATIVADO`);
                 console.log(`${formatarDataHora()} 📄 Texto recebido: "${texto}"`);
@@ -1456,6 +1749,53 @@ async function startBot() {
                 // Se digitar comando
                 if (texto === '0' || texto === '9' || texto === '1' || texto === '2') {
                     console.log(`${formatarDataHora()} 📄 Comando detectado: ${texto}`);
+                    
+                    // Se digitar 2️⃣, iniciar atendimento humano
+                    if (texto === '2') {
+                        console.log(`${formatarDataHora()} 👨‍💼 Cliente escolheu atendimento após erro no CPF`);
+                        
+                        // ⚠️ VERIFICAR HORÁRIO COMERCIAL COM FERIADOS
+                        if (!dentroHorarioComercial()) {
+                            console.log(`${formatarDataHora()} ⏰ Fora do horário comercial ou feriado`);
+                            
+                            // Verificar se é feriado específico
+                            const hoje = new Date();
+                            const ehFeriadoHoje = ehFeriado(hoje);
+                            
+                            let mensagemErro = `⏰ *${pushName}*, `;
+                            
+                            if (ehFeriadoHoje) {
+                                mensagemErro += `hoje é feriado nacional.\n\n`;
+                            } else if (hoje.getDay() === 0) {
+                                mensagemErro += `hoje é domingo.\n\n`;
+                            } else {
+                                mensagemErro += `porfavor, retorne seu contato em *horário comercial*.\n\n`;
+                            }
+                            mensagemErro += `${formatarHorarioComercial()}`;
+                            mensagemErro += `1️⃣  Para Fatura  |  9️⃣  Retornar ao Menu`;
+                            
+                            await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                            return;
+                        }
+                        
+                        // Criar atendimento humano
+                        const tempoTimeout = config.tempo_atendimento_humano || 5;
+                        atendimentos[numeroCliente] = {
+                            tipo: 'humano',
+                            inicio: Date.now(),
+                            timeout: Date.now() + (tempoTimeout * 60 * 1000)
+                        };
+                        contextos[numeroCliente] = 'em_atendimento';
+                        
+                        console.log(`${formatarDataHora()} ⏱️ Atendimento humano iniciado após erro CPF (${tempoTimeout}min)`);
+                        
+                        await enviarMensagemParaUsuario(sock, usuario, 
+                            `👨‍💼 *ATENDIMENTO INICIADO*\n\n*${pushName}*, um atendente falará com você em instantes, aguarde...\n\n⏱️ Duração: ${tempoTimeout} minutos\n\n 0️⃣ Encerrar Atendimento`
+                        );
+                        return;
+                    }
+                    
+                    // Para outros comandos (0, 9, 1), voltar ao menu
                     delete atendimentos[numeroCliente];
                     contextos[numeroCliente] = 'menu';
                     await enviarMenuPrincipal(sock, usuario, texto);
@@ -1476,12 +1816,61 @@ async function startBot() {
                     console.log(`${formatarDataHora()} 📄 CPF: ${doc}`);
                     
                     try {
-                        const mensagemPix = `💠 *Pagamento via PIX*\n\nclique no link abaixo para acessar sua fatura:\n🔗 ${config.boleto_url}?doc=${doc}\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                        // ⚠️ VERIFICAR SE O CPF EXISTE NO MK-AUTH
+                        await enviarMensagemParaUsuario(sock, usuario, 
+                            `🔍 Verificando CPF ${doc} na base de clientes...`
+                        );
                         
-                        const resultado = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
+                        const resultado = await verificarClienteMKAuth(doc);
                         
-                        if (resultado) {
-                            console.log(`${formatarDataHora()} 📄 ✅ Mensagem enviada com sucesso!`);
+                        if (!resultado.sucesso) {
+                            // CPF não encontrado ou erro na consulta
+                            console.log(`${formatarDataHora()} 📄 ❌ CPF não encontrado ou sem faturas`);
+                            
+                            let mensagemErro = `❌ *CPF não encontrado*\n\n`;
+                            
+                            if (resultado.existe === false) {
+                                mensagemErro += `O CPF *${doc}* não foi encontrado na base de clientes da *${config.empresa}*.\n\n`;
+                            } else if (resultado.temFaturas === false) {
+                                mensagemErro += `Cliente encontrado, mas não há faturas disponíveis.\n\n`;
+                            } else if (resultado.temPix === false) {
+                                mensagemErro += `Cliente encontrado, mas não há faturas para pagamento via PIX.\n\n`;
+                            } else if (resultado.configurado === false) {
+                                // ⚠️ CREDENCIAIS NÃO CONFIGURADAS - NÃO GERAR LINK
+                                mensagemErro += `❌ *Sistema de verificação não configurado.*\n\n`;
+                                mensagemErro += `Para acessar suas faturas, entre em contato com nosso atendimento.\n\n`;
+                                mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                                
+                                await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                                return;
+                            } else if (resultado.erro === true) {
+                                // Erro de sistema, não gerar link
+                                mensagemErro += `❌ *Sistema de verificação temporariamente indisponível.*\n\n`;
+                                mensagemErro += `Para acessar suas faturas, entre em contato com nosso atendimento.\n\n`;
+                                mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                                
+                                await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                                return;
+                            } else {
+                                mensagemErro += `${resultado.mensagem}\n\n`;
+                            }
+                            
+                            mensagemErro += `Verifique se o CPF está correto ou entre em contato com nosso atendimento.\n\n`;
+                            mensagemErro += `1️⃣  Tentar outro CPF  |  2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                            
+                            await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                            return;
+                        }
+                        
+                        // ⚠️ CPF ENCONTRADO E VÁLIDO - GERAR LINK
+                        console.log(`${formatarDataHora()} 📄 ✅ CPF válido no MK-Auth! Gerando link...`);
+                        
+                        const mensagemPix = `✅ *CPF encontrado!*\n\nClique no link abaixo para acessar sua fatura PIX:\n\n🔗 ${config.boleto_url}?doc=${doc}\n\n⏱️ *Link válido por 10 minutos*\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                        
+                        const resultadoEnvio = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
+                        
+                        if (resultadoEnvio) {
+                            console.log(`${formatarDataHora()} 📄 ✅ Mensagem PIX enviada com sucesso!`);
                             
                             // Configurar timeout para tela PIX
                             atendimentos[numeroCliente] = {
@@ -1493,14 +1882,17 @@ async function startBot() {
                             contextos[numeroCliente] = 'pos_pix';
                             console.log(`${formatarDataHora()} 📄 Contexto alterado para: pos_pix com timeout de 10min`);
                         } else {
-                            console.log(`${formatarDataHora()} 📄 ❌ Falha ao enviar mensagem!`);
+                            console.log(`${formatarDataHora()} 📄 ❌ Falha ao enviar mensagem PIX!`);
                             await enviarMensagemParaUsuario(sock, usuario, 
-                                `❌ Ocorreu um erro ao processar. Tente novamente.`
+                                `❌ Ocorreu um erro ao gerar o link. Tente novamente.`
                             );
                         }
                         
                     } catch (error) {
                         console.error(`${formatarDataHora()} 📄 ❌ ERRO no try/catch:`, error);
+                        await enviarMensagemParaUsuario(sock, usuario, 
+                            `❌ Erro ao consultar CPF. Tente novamente em alguns instantes.\n\n2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`
+                        );
                     }
                     return;
                     
@@ -1510,12 +1902,61 @@ async function startBot() {
                     console.log(`${formatarDataHora()} 📄 CNPJ: ${doc}`);
                     
                     try {
-                        const mensagemPix = `💠 *Pagamento via PIX*\n\nclique no link abaixo para acessar sua fatura:\n🔗 ${config.boleto_url}?doc=${doc}\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                        // ⚠️ VERIFICAR SE O CNPJ EXISTE NO MK-AUTH
+                        await enviarMensagemParaUsuario(sock, usuario, 
+                            `🔍 Verificando CNPJ ${doc} na base de clientes...`
+                        );
                         
-                        const resultado = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
+                        const resultado = await verificarClienteMKAuth(doc);
                         
-                        if (resultado) {
-                            console.log(`${formatarDataHora()} 📄 ✅ Mensagem CNPJ enviada!`);
+                        if (!resultado.sucesso) {
+                            // CNPJ não encontrado ou erro na consulta
+                            console.log(`${formatarDataHora()} 📄 ❌ CNPJ não encontrado ou sem faturas`);
+                            
+                            let mensagemErro = `❌ *CNPJ não encontrado*\n\n`;
+                            
+                            if (resultado.existe === false) {
+                                mensagemErro += `O CNPJ *${doc}* não foi encontrado na base de clientes da *${config.empresa}*.\n\n`;
+                            } else if (resultado.temFaturas === false) {
+                                mensagemErro += `Cliente encontrado, mas não há faturas disponíveis.\n\n`;
+                            } else if (resultado.temPix === false) {
+                                mensagemErro += `Cliente encontrado, mas não há faturas para pagamento via PIX.\n\n`;
+                            } else if (resultado.configurado === false) {
+                                // ⚠️ CREDENCIAIS NÃO CONFIGURADAS - NÃO GERAR LINK
+                                mensagemErro += `❌ *Sistema de verificação não configurado.*\n\n`;
+                                mensagemErro += `Para acessar suas faturas, entre em contato com nosso atendimento.\n\n`;
+                                mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                                
+                                await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                                return;
+                            } else if (resultado.erro === true) {
+                                // Erro de sistema, não gerar link
+                                mensagemErro += `❌ *Sistema de verificação temporariamente indisponível.*\n\n`;
+                                mensagemErro += `Para acessar suas faturas, entre em contato com nosso atendimento.\n\n`;
+                                mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                                
+                                await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                                return;
+                            } else {
+                                mensagemErro += `${resultado.mensagem}\n\n`;
+                            }
+                            
+                            mensagemErro += `Verifique se o CNPJ está correto ou entre em contato com nosso atendimento.\n\n`;
+                            mensagemErro += `1️⃣  Tentar outro CNPJ  |  2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                            
+                            await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                            return;
+                        }
+                        
+                        // ⚠️ CNPJ ENCONTRADO E VÁLIDO - GERAR LINK
+                        console.log(`${formatarDataHora()} 📄 ✅ CNPJ válido no MK-Auth! Gerando link...`);
+                        
+                        const mensagemPix = `✅ *CNPJ encontrado!*\n\nClique no link abaixo para acessar sua fatura PIX:\n\n🔗 ${config.boleto_url}?doc=${doc}\n\n⏱️ *Link válido por 10 minutos*\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                        
+                        const resultadoEnvio = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
+                        
+                        if (resultadoEnvio) {
+                            console.log(`${formatarDataHora()} 📄 ✅ Mensagem PIX CNPJ enviada!`);
                             
                             // Configurar timeout para tela PIX
                             atendimentos[numeroCliente] = {
@@ -1527,11 +1968,14 @@ async function startBot() {
                             contextos[numeroCliente] = 'pos_pix';
                             console.log(`${formatarDataHora()} 📄 Contexto CNPJ alterado para: pos_pix com timeout de 10min`);
                         } else {
-                            console.log(`${formatarDataHora()} 📄 ❌ Falha ao enviar CNPJ!`);
+                            console.log(`${formatarDataHora()} 📄 ❌ Falha ao enviar mensagem CNPJ!`);
                         }
                         
                     } catch (error) {
                         console.error(`${formatarDataHora()} 📄 ❌ ERRO CNPJ:`, error);
+                        await enviarMensagemParaUsuario(sock, usuario, 
+                            `❌ Erro ao consultar CNPJ. Tente novamente em alguns instantes.\n\n2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`
+                        );
                     }
                     return;
                     
@@ -1549,7 +1993,8 @@ async function startBot() {
                         mensagemErro += `\n📋 *Formatos aceitos:*\n`;
                         mensagemErro += `• CPF: 11 dígitos (ex: 12345678901)\n`;
                         mensagemErro += `• CNPJ: 14 dígitos (ex: 12345678000199)\n\n`;
-                        mensagemErro += `Digite novamente:`;
+                        mensagemErro += `Digite novamente:\n\n`;
+                        mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
                         
                         await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
                         
@@ -1564,7 +2009,7 @@ async function startBot() {
             // ⚠️ CONTEXTO PÓS-PIX
             if (contextoAtual === 'pos_pix') {
                 await enviarMensagemParaUsuario(sock, usuario, 
-                    `PIX já gerado.\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`
+                    `PIX já gerado. Acesse o link enviado anteriormente.\n\n⏱️ *Link válido por 10 minutos*\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`
                 );
                 return;
             }
