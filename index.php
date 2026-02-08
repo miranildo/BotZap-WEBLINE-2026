@@ -3,6 +3,7 @@ require __DIR__ . '/auth.php';
 
 $configPath = '/opt/whatsapp-bot/config.json';
 $statusPath = '/opt/whatsapp-bot/status.json';
+$pixPath = '/var/www/botzap/pix.php'; // Caminho para o pix.php
 
 $mensagem = '';
 $erro = '';
@@ -56,6 +57,69 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 
     if (file_put_contents($configPath, $json) !== false) {
+        // ============ SINCRONIZAR COM PIX.PHP ============
+        if (file_exists($pixPath)) {
+            $pixContent = file_get_contents($pixPath);
+            
+            // Extrair domínio da URL do MK-Auth para $URL_PROV
+            $urlProvedor = "https://www.SEU_PROVEDOR.com.br";
+            $apiBase = "https://www.SEU_PROVEDOR.com.br/api/";
+            
+            if (!empty($config['mkauth_url'])) {
+                // Extrair o domínio da URL do MK-Auth
+                $urlParts = parse_url($config['mkauth_url']);
+                if (isset($urlParts['host'])) {
+                    $dominio = $urlParts['host'];
+                    // Remover www. se existir
+                    $dominio = preg_replace('/^www\./', '', $dominio);
+                    $urlProvedor = "https://www." . $dominio;
+                    $apiBase = rtrim($config['mkauth_url'], '/') . '/';
+                }
+            }
+            
+            // Preparar valores para substituição
+            $clientId = !empty($config['mkauth_client_id']) ? 
+                addslashes($config['mkauth_client_id']) : 'SEU_ID_API';
+            
+            $clientSecret = !empty($config['mkauth_client_secret']) ? 
+                addslashes($config['mkauth_client_secret']) : 'SEU_SECRET_API';
+            
+            // Substituir variáveis no pix.php
+            $pixContent = preg_replace(
+                '/\$URL_PROV\s*=\s*"[^"]*"/',
+                '$URL_PROV = "' . $urlProvedor . '"',
+                $pixContent
+            );
+            
+            $pixContent = preg_replace(
+                '/\$API_BASE\s*=\s*"[^"]*"/',
+                '$API_BASE = "' . $apiBase . '"',
+                $pixContent
+            );
+            
+            $pixContent = preg_replace(
+                '/\$CLIENT_ID\s*=\s*"[^"]*"/',
+                '$CLIENT_ID = "' . $clientId . '"',
+                $pixContent
+            );
+            
+            $pixContent = preg_replace(
+                '/\$CLIENT_SECRET\s*=\s*"[^"]*"/',
+                '$CLIENT_SECRET = "' . $clientSecret . '"',
+                $pixContent
+            );
+            
+            // Salvar alterações no pix.php
+            if (file_put_contents($pixPath, $pixContent) !== false) {
+                $mensagem = 'Configurações salvas com sucesso e pix.php atualizado!';
+            } else {
+                $mensagem = 'Configurações salvas, mas erro ao atualizar pix.php!';
+            }
+        } else {
+            $mensagem = 'Configurações salvas, mas pix.php não encontrado!';
+        }
+        // ============ FIM DA SINCRONIZAÇÃO ============
+        
         header('Location: index.php?salvo=1');
         exit;
     } else {
@@ -65,7 +129,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 /* ========= MENSAGEM ========= */
 if (isset($_GET['salvo']) && $_GET['salvo'] == 1) {
-    $mensagem = 'Configurações salvas com sucesso!';
+    if (empty($mensagem)) {
+        $mensagem = 'Configurações salvas com sucesso!';
+    }
 }
 
 /* ========= STATUS ========= */
@@ -369,6 +435,7 @@ button {
             <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 10px 12px; margin-top: 15px; border-radius: 6px; font-size: 13px;">
                 <p style="margin: 0; color: #92400e;"><strong>⚠️ Importante:</strong></p>
                 <p style="margin: 5px 0 0 0; color: #92400e;">
+                    • As credenciais MK-Auth serão sincronizadas automaticamente com o arquivo pix.php<br>
                     • Se as credenciais não forem configuradas, o bot NÃO permitirá acesso direto ao PIX<br>
                     • Configure corretamente para filtrar apenas clientes da base
                 </p>
