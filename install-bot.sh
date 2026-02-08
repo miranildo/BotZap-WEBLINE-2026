@@ -21,14 +21,14 @@ REPO_URL="https://raw.githubusercontent.com/miranildo/BotZap-WEBLINE-2026/main"
 # =====================================================
 echo "🌐 CONFIGURAÇÃO DE DOMÍNIO"
 echo "=========================="
-echo "Digite o domínio completo para o bot (ex: bot.weblinetelecom.com.br)"
-echo "Deixe em branco para usar o padrão: botwhatsapp.weblinetelecom.com.br"
+echo "Digite o domínio completo para o bot (ex: bot.SEU_DOMINIO.com.br)"
+echo "Deixe em branco para usar o padrão: bot.weblinetelecom.com.br"
 echo -n "Domínio: "
 read BOT_DOMAIN
 
 # Se não digitou nada, usar padrão
 if [ -z "$BOT_DOMAIN" ]; then
-    BOT_DOMAIN="botwhatsapp.weblinetelecom.com.br"
+    BOT_DOMAIN="bot.weblinetelecom.com.br"
     echo "✅ Usando domínio padrão: $BOT_DOMAIN"
 else
     # Remover http:// ou https:// se o usuário digitou
@@ -229,7 +229,7 @@ cat > "$BOT_DIR/package.json" <<'PKGEOF'
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "WebLine Telecom",
+  "author": "PROVEDOR",
   "license": "ISC",
   "description": "Bot WhatsApp para atendimento automático",
   "dependencies": {
@@ -266,10 +266,10 @@ echo "⚙️ Criando arquivos de configuração do bot..."
 # 1. config.json - COMPARTILHADO (bot e php podem ler/escrever)
 cat > "$BOT_DIR/config.json" <<'CFGEOF'
 {
-    "empresa": "WebLine Telecom",
+    "empresa": "PROVEDOR",
     "menu": "Olá! 👋\nBem-vindo ao atendimento da *{{empresa}}*\n\n1️⃣ Baixar Fatura\n2️⃣ Falar com Atendente\n\nDigite o número da opção desejada:",
-    "boleto_url": "https://www.weblinetelecom.com.br/pix.php",
-    "atendente_numero": "558332383833",
+    "boleto_url": "https://www.SEU_DOMINIO.com.br/pix.php",
+    "atendente_numero": "55XXXXXXXXXX",
     "tempo_atendimento_humano": 15,
     "feriados_ativos": "Sim"
 }
@@ -873,7 +873,7 @@ echo "✅ Logrotate configurado"
 echo ""
 echo "🌐 Configurando hosts local para teste..."
 # Remover entradas antigas se existirem
-sed -i '/botwhatsapp\.weblinetelecom\.com\.br/d' /etc/hosts
+sed -i '/bot\.$DOMAIN_BASE/d' /etc/hosts
 sed -i "/$DOMAIN_BASE/d" /etc/hosts
 
 # Adicionar nova entrada
