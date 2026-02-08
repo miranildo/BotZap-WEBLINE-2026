@@ -28,7 +28,6 @@ $FILTRO_CONFIG = [
         '35.184.0.0/13',      // Google Cloud
         '8.8.8.8',            // Google DNS
         '8.8.4.4',            // Google DNS
-        // Adicione outros IPs de bots aqui
     ],
     
     // User-Agents para bloquear (crawlers, bots)
@@ -56,23 +55,19 @@ $FILTRO_CONFIG = [
 /*************************************************
  * FUNÇÕES DE FILTRO
  *************************************************/
-// Verificar se IP está na lista de bloqueados
 function ipEstaBloqueado($ip) {
     global $FILTRO_CONFIG;
     
-    // Se não tem IP, não bloqueia
     if (empty($ip) || $ip === 'desconhecido') {
         return false;
     }
     
     foreach ($FILTRO_CONFIG['ips_bloqueados'] as $ipBloqueado) {
         if (strpos($ipBloqueado, '/') !== false) {
-            // É uma faixa CIDR
             if (ipNaFaixaCidr($ip, $ipBloqueado)) {
                 return true;
             }
         } else {
-            // É um IP específico
             if ($ip === $ipBloqueado) {
                 return true;
             }
@@ -82,7 +77,6 @@ function ipEstaBloqueado($ip) {
     return false;
 }
 
-// Verificar se IP está dentro de uma faixa CIDR
 function ipNaFaixaCidr($ip, $cidr) {
     list($rede, $mascara) = explode('/', $cidr);
     
@@ -93,7 +87,6 @@ function ipNaFaixaCidr($ip, $cidr) {
     return ($ipDecimal & $mascaraDecimal) === ($redeDecimal & $mascaraDecimal);
 }
 
-// Verificar User-Agent bloqueado
 function userAgentBloqueado() {
     global $FILTRO_CONFIG;
     
@@ -114,7 +107,6 @@ function userAgentBloqueado() {
     return false;
 }
 
-// Verificar se é um acesso recente do mesmo CPF
 function acessoRecente($cpf) {
     global $FILTRO_CONFIG;
     
@@ -131,16 +123,13 @@ function acessoRecente($cpf) {
     $handle = fopen($arquivoHoje, 'r');
     if ($handle) {
         while (($linha = fgets($handle)) !== false) {
-            // Extrair CPF da linha de log
             if (preg_match('/CPF:\s*([0-9]+)/', $linha, $matches)) {
                 $cpfLog = trim($matches[1]);
                 
                 if ($cpfLog === $cpfProcurado) {
-                    // Extrair timestamp da linha
                     if (preg_match('/(\d{4}-\d{2}-\d{2})\s+\|\s+(\d{2}:\d{2}:\d{2})/', $linha, $timeMatch)) {
                         $timestampLog = strtotime($timeMatch[1] . ' ' . $timeMatch[2]);
                         
-                        // Se encontrou um acesso recente dentro do intervalo mínimo
                         if ($timestampLog >= $limiteTempo) {
                             fclose($handle);
                             return true;
@@ -155,7 +144,6 @@ function acessoRecente($cpf) {
     return false;
 }
 
-// Verificar se é refresh/duplicação (mesmo IP + CPF em pouco tempo)
 function verificarDuplicacao($cpf, $ip) {
     global $FILTRO_CONFIG;
     
@@ -172,22 +160,18 @@ function verificarDuplicacao($cpf, $ip) {
     
     $handle = fopen($arquivoHoje, 'r');
     if ($handle) {
-        $linhas = file($arquivoHoje, FILE_IGNORE_NEW_LINES);
-        // Ler de trás para frente (acessos mais recentes primeiro)
+        $linhas = file($arquivoHoje, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
         $linhas = array_reverse($linhas);
         
         foreach ($linhas as $linha) {
-            // Extrair CPF e IP da linha
             if (preg_match('/CPF:\s*([0-9]+).*IP:\s*([0-9\.]+)/', $linha, $matches)) {
                 $cpfLog = trim($matches[1]);
                 $ipLog = trim($matches[2]);
                 
                 if ($cpfLog === $cpfProcurado && $ipLog === $ipProcurado) {
-                    // Extrair timestamp
                     if (preg_match('/(\d{4}-\d{2}-\d{2})\s+\|\s+(\d{2}:\d{2}:\d{2})/', $linha, $timeMatch)) {
                         $timestampLog = strtotime($timeMatch[1] . ' ' . $timeMatch[2]);
                         
-                        // Se encontrou acesso do mesmo IP+CPF dentro do intervalo
                         if ($timestampLog >= $limiteTempo) {
                             fclose($handle);
                             return true;
@@ -213,7 +197,6 @@ function getIpCliente() {
     if (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
         $ips = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR']);
         $ip = trim($ips[0]);
-        // Validar IP
         if (filter_var($ip, FILTER_VALIDATE_IP)) {
             return $ip;
         }
@@ -265,7 +248,6 @@ function registrarAcesso($nome, $cpf, $titulo, $vencimento) {
     
     $logDir = '/var/log/pix_acessos/';
     
-    // Garantir que o diretório existe
     if (!is_dir($logDir)) {
         @mkdir($logDir, 0750, true);
     }
@@ -274,47 +256,39 @@ function registrarAcesso($nome, $cpf, $titulo, $vencimento) {
     $hora = date('H:i:s');
     $ip = getIpCliente();
     
-    // DEBUG: Log para monitoramento dos filtros
     $debugLog = $logDir . 'pix_filtros.log';
     $debugInfo = date('Y-m-d H:i:s') . " | IP: $ip | CPF: $cpf | User-Agent: " . ($_SERVER['HTTP_USER_AGENT'] ?? 'N/A');
     
-    // 1. VERIFICAR IP BLOQUEADO
     if (ipEstaBloqueado($ip)) {
         $debugInfo .= " | STATUS: IP BLOQUEADO\n";
         @file_put_contents($debugLog, $debugInfo, FILE_APPEND);
-        return false; // Não registra log
+        return false;
     }
     
-    // 2. VERIFICAR USER-AGENT BLOQUEADO
     if (userAgentBloqueado()) {
         $debugInfo .= " | STATUS: USER-AGENT BLOQUEADO\n";
         @file_put_contents($debugLog, $debugInfo, FILE_APPEND);
-        return false; // Não registra log
+        return false;
     }
     
-    // 3. VERIFICAR ACESSO RECENTE DO MESMO CPF
     if (acessoRecente($cpf)) {
         $debugInfo .= " | STATUS: ACESSO RECENTE DO CPF\n";
         @file_put_contents($debugLog, $debugInfo, FILE_APPEND);
-        return false; // Não registra log (já tem acesso recente)
+        return false;
     }
     
-    // 4. VERIFICAR DUPLICAÇÃO (MESMO IP + CPF)
     if (verificarDuplicacao($cpf, $ip)) {
         $debugInfo .= " | STATUS: DUPLICAÇÃO DETECTADA\n";
         @file_put_contents($debugLog, $debugInfo, FILE_APPEND);
-        return false; // Não registra log (duplicação detectada)
+        return false;
     }
     
-    // 5. SE PASSOU POR TODOS OS FILTROS, REGISTRAR LOG
     $arquivoLog = $logDir . "pix_log_$dataAcesso.log";
     $linha = "$dataAcesso | $hora | VENC: $vencimento | IP: $ip | NOME: $nome | CPF: $cpf | TITULO: $titulo\n";
     
-    // Log de sucesso no filtro
     $debugInfo .= " | STATUS: LOG REGISTRADO\n";
     @file_put_contents($debugLog, $debugInfo, FILE_APPEND);
     
-    // Registrar no log principal
     file_put_contents($arquivoLog, $linha, FILE_APPEND);
     
     return true;
@@ -383,23 +357,19 @@ if (!isset($_GET['doc'])) {
     </div>
 
     <script>
-        // Foca automaticamente no campo de CPF/CNPJ
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('docInput').focus();
         });
 
-        // Validação enquanto digita (apenas números)
         document.getElementById('docInput').addEventListener('input', function(e) {
             this.value = this.value.replace(/\D/g, '');
         });
 
-        // Função para desabilitar o botão e mostrar mensagem
         function desabilitarBotao() {
             const botao = document.getElementById('submitBtn');
             const mensagem = document.getElementById('loadingMsg');
             const input = document.getElementById('docInput');
             
-            // Validação básica do CPF/CNPJ
             const docValue = input.value.replace(/\D/g, '');
             if (docValue.length < 11) {
                 alert('Por favor, digite um CPF (11 dígitos) ou CNPJ (14 dígitos) válido.');
@@ -407,28 +377,21 @@ if (!isset($_GET['doc'])) {
                 return false;
             }
             
-            // Desabilita o botão
             botao.disabled = true;
             botao.innerHTML = '⏳ Processando...';
-            
-            // Mostra mensagem de aguarde
             mensagem.style.display = 'block';
-            
-            // Adiciona classe de loading
             botao.classList.add('loading');
             
-            // Impede múltiplos cliques
             setTimeout(function() {
                 botao.disabled = false;
                 botao.innerHTML = 'Continuar';
                 mensagem.style.display = 'none';
                 botao.classList.remove('loading');
-            }, 5000); // Timeout de segurança (5 segundos)
+            }, 5000);
             
-            return true; // Permite o envio do formulário
+            return true;
         }
 
-        // Previne envio duplo por Enter
         let formEnviado = false;
         document.getElementById('consultaForm').addEventListener('submit', function(e) {
             if (formEnviado) {
@@ -438,7 +401,6 @@ if (!isset($_GET['doc'])) {
             formEnviado = true;
         });
 
-        // Permite reenvio se houver erro (quando a página recarregar)
         window.addEventListener('pageshow', function() {
             formEnviado = false;
         });
@@ -511,13 +473,10 @@ foreach ($titulos as $titulo) {
     }
 }
 
-// Se houver mais de um nome diferente, mostrar tela de seleção
 if (count($nomesUnicos) > 1) {
-    // Verificar se já foi selecionado um nome específico
     if (isset($_GET['selecionar_nome']) && isset($_GET['nome'])) {
         $nomeSelecionado = urldecode($_GET['nome']);
         
-        // Filtrar títulos apenas do nome selecionado
         $titulosFiltrados = [];
         foreach ($titulos as $titulo) {
             if (trim($titulo['nome'] ?? '') === $nomeSelecionado) {
@@ -529,10 +488,8 @@ if (count($nomesUnicos) > 1) {
             erro("❌ Nome selecionado não encontrado.");
         }
         
-        // Substituir o array de títulos pelos filtrados
         $titulos = $titulosFiltrados;
     } else {
-        // Mostrar tela de seleção de nome
         echo "
         <!DOCTYPE html>
         <html lang='pt-br'>
@@ -653,12 +610,10 @@ if (count($nomesUnicos) > 1) {
                     nomeSelecionado = nome;
                     document.getElementById('nomeSelecionado').value = nome;
                     
-                    // Remover classe selected de todas as opções
                     document.querySelectorAll('.nome-option').forEach(opt => {
                         opt.classList.remove('selected');
                     });
                     
-                    // Adicionar classe selected à opção clicada
                     const opcoes = document.querySelectorAll('.nome-option');
                     for (let i = 0; i < opcoes.length; i++) {
                         if (opcoes[i].textContent.includes(nome)) {
@@ -667,11 +622,9 @@ if (count($nomesUnicos) > 1) {
                         }
                     }
                     
-                    // Habilitar botão
                     document.getElementById('btnContinuar').disabled = false;
                 }
                 
-                // Função para desabilitar botão na seleção
                 function desabilitarBotaoSelecao() {
                     const botao = document.getElementById('btnContinuar');
                     const loading = document.getElementById('loadingSelecao');
@@ -685,7 +638,6 @@ if (count($nomesUnicos) > 1) {
                     loading.style.display = 'block';
                     formSelecaoEnviado = true;
                     
-                    // Timeout de segurança
                     setTimeout(function() {
                         botao.disabled = false;
                         botao.innerHTML = 'Continuar com o cadastro selecionado';
@@ -696,13 +648,11 @@ if (count($nomesUnicos) > 1) {
                     return true;
                 }
                 
-                // Selecionar a primeira opção por padrão
                 document.addEventListener('DOMContentLoaded', function() {
                     const primeiroNome = '" . addslashes($nomesUnicos[0]) . "';
                     selecionarNome(primeiroNome);
                 });
                 
-                // Permite reenvio se houver erro
                 window.addEventListener('pageshow', function() {
                     formSelecaoEnviado = false;
                 });
@@ -714,7 +664,7 @@ if (count($nomesUnicos) > 1) {
 }
 
 /*************************************************
- * REGRA DE NEGÓCIO (INALTERADA)
+ * REGRA DE NEGÓCIO - SELECIONAR TÍTULO CORRETO
  *************************************************/
 $vencidos=[];
 $abertos=[];
@@ -736,7 +686,19 @@ if(!$fatura || empty($fatura['pix'])) {
 }
 
 /*************************************************
- * LOG + CONTADOR (CONSULTA OK)
+ * EXTRAR DADOS PARA BOLETO DIRETO
+ *************************************************/
+$numeroTitulo = $fatura['titulo'] ?? '';
+$contratoCliente = $fatura['login'] ?? $fatura['contrato'] ?? '';
+
+$boletoDiretoUrl = '';
+if (!empty($numeroTitulo) && !empty($contratoCliente)) {
+    $boletoDiretoUrl = $URL_PROV . "/boleto/boleto.hhvm?titulo=" . urlencode($numeroTitulo) . 
+                       "&contrato=" . urlencode($contratoCliente);
+}
+
+/*************************************************
+ * LOG + CONTADOR
  *************************************************/
 $nomeCliente = $fatura['nome'] ?? 'DESCONHECIDO';
 $vencLog = date('d/m/Y', strtotime($fatura['datavenc']));
@@ -764,7 +726,10 @@ $dadosInt = base64_encode(json_encode([
     'x' => $pix,
     'l' => $linhadig,
     'n' => $linhadigNum,
-    'u' => $uuid_boleto
+    'u' => $uuid_boleto,
+    'nt' => $numeroTitulo,
+    'ct' => $contratoCliente,
+    'bd' => $boletoDiretoUrl
 ]));
 
 ?>
@@ -804,7 +769,6 @@ $dadosInt = base64_encode(json_encode([
             opacity:0.6;
             z-index:9999;
         }
-        /* Estilo para o botão de boleto - mantendo o mesmo design */
         .btn-boleto {
             background: #3498db !important;
             margin-top: 15px;
@@ -835,7 +799,6 @@ $dadosInt = base64_encode(json_encode([
             font-size: 12px;
             min-height: 40px;
         }
-        /* Estilo para botão de voltar à seleção */
         .btn-voltar {
             background: #95a5a6 !important;
             margin-top: 10px;
@@ -871,23 +834,16 @@ $dadosInt = base64_encode(json_encode([
         </div>
         <?php endif; ?>
         
-        <!-- DADOS SERÃO PREENCHIDOS VIA JAVASCRIPT -->
         <p><b>Cliente:</b> <span id="clienteNome">Carregando...</span></p>
         <p><b>Valor:</b> <span id="valorFatura">Carregando...</span></p>
         <p><b>Vencimento:</b> <span id="vencimentoFatura">Carregando...</span></p>
         
-        <!-- BOTÃO PARA ABRIR BOLETO COM AUTENTICAÇÃO AUTOMÁTICA -->
         <div class="info-boleto">
             <p style="margin: 0 0 10px 0;"><b>Boleto Bancário</b></p>
             <p style="margin: 0 0 15px 0; font-size: 13px;">
                 Abra o boleto para visualização ou impressão.
             </p>
-            <!-- Formulário será preenchido via JavaScript -->
-            <form id="formBoleto" action="<?php echo $URL_PROV; ?>/central/executar_login.php" method="POST" target="_blank" style="display: none;">
-                <input type="hidden" name="txt_cpf" id="cpfCliente">
-                <input type="hidden" name="ttoken_central" id="csrf_token">
-            </form>
-            <button class="btn-boleto" onclick="abrirBoletoComLogin()" id="btnBoleto">
+            <button class="btn-boleto" onclick="abrirBoletoDireto()" id="btnBoleto">
                 Abrir Boleto
             </button>
             <div id="boletoStatus"></div>
@@ -895,7 +851,6 @@ $dadosInt = base64_encode(json_encode([
         
         <div id="qrcode"></div>
         
-        <!-- Campos serão preenchidos via JavaScript -->
         <small>Código PIX:</small>
         <textarea id="pix" readonly>Carregando código Pix...</textarea>
         <button onclick="copiar('pix')" id="btnCopiarPix">Copiar Código Pix</button>
@@ -914,7 +869,6 @@ $dadosInt = base64_encode(json_encode([
     <input type="hidden" id="dadosInt" value="<?= $dadosInt ?>">
     
     <script>
-        // Função para decodificar dados
         function decodificarDados() {
             try {
                 const dadosCodificados = document.getElementById('dadosInt').value;
@@ -928,7 +882,10 @@ $dadosInt = base64_encode(json_encode([
                     pix: dados.x,
                     linhaDigitavel: dados.l,
                     linhaNumeros: dados.n,
-                    uuidBoleto: dados.u
+                    uuidBoleto: dados.u,
+                    numeroTitulo: dados.nt,
+                    contratoCliente: dados.ct,
+                    boletoDiretoUrl: dados.bd
                 };
             } catch (error) {
                 console.error('Erro ao decodificar dados:', error);
@@ -936,7 +893,6 @@ $dadosInt = base64_encode(json_encode([
             }
         }
         
-        // Função para preencher os dados na página
         function preencherDados() {
             const dadosPagamento = decodificarDados();
             if (!dadosPagamento) {
@@ -946,25 +902,26 @@ $dadosInt = base64_encode(json_encode([
                 return;
             }
             
-            // Preenche os elementos HTML
             document.getElementById('clienteNome').textContent = dadosPagamento.cliente;
             document.getElementById('valorFatura').textContent = dadosPagamento.valor;
             document.getElementById('vencimentoFatura').textContent = dadosPagamento.vencimento;
-            document.getElementById('cpfCliente').value = dadosPagamento.cpf;
             document.getElementById('pix').value = dadosPagamento.pix;
             
-            // Preenche linha digitável se existir
             if (dadosPagamento.linhaDigitavel && document.getElementById('linha')) {
                 document.getElementById('linha').value = dadosPagamento.linhaDigitavel;
             }
             
-            // Ajusta altura dos textareas
+            if (!dadosPagamento.boletoDiretoUrl && dadosPagamento.numeroTitulo && dadosPagamento.contratoCliente) {
+                dadosPagamento.boletoDiretoUrl = '<?php echo $URL_PROV; ?>/boleto/boleto.hhvm?titulo=' + 
+                                   encodeURIComponent(dadosPagamento.numeroTitulo) + 
+                                   '&contrato=' + encodeURIComponent(dadosPagamento.contratoCliente);
+            }
+            
             document.querySelectorAll('textarea').forEach(el => {
                 el.style.height = 'auto';
                 el.style.height = el.scrollHeight + 'px';
             });
             
-            // Gera QR Code
             if (document.getElementById('qrcode')) {
                 new QRCode(document.getElementById("qrcode"), {
                     text: dadosPagamento.pix,
@@ -973,12 +930,10 @@ $dadosInt = base64_encode(json_encode([
                 });
             }
             
-            // Retorna dados para uso em outras funções
             return dadosPagamento;
         }
         
-        // Função para abrir boleto com login automático
-        async function abrirBoletoComLogin() {
+        function abrirBoletoDireto() {
             const dadosPagamento = decodificarDados();
             if (!dadosPagamento) {
                 alert('Erro ao carregar dados do boleto');
@@ -987,123 +942,56 @@ $dadosInt = base64_encode(json_encode([
             
             const statusDiv = document.getElementById('boletoStatus');
             const btnBoleto = document.getElementById('btnBoleto');
-            const boletoUrl = '<?php echo $URL_PROV; ?>/central/prepara_boleto.php?titulo=' + dadosPagamento.uuidBoleto;
             
-            // Desabilita botão para evitar múltiplos cliques
+            let boletoUrl = dadosPagamento.boletoDiretoUrl;
+            
+            if (!boletoUrl && dadosPagamento.numeroTitulo && dadosPagamento.contratoCliente) {
+                boletoUrl = '<?php echo $URL_PROV; ?>/boleto/boleto.hhvm?titulo=' + 
+                           encodeURIComponent(dadosPagamento.numeroTitulo) + 
+                           '&contrato=' + encodeURIComponent(dadosPagamento.contratoCliente);
+            }
+            
+            if (!boletoUrl) {
+                statusDiv.innerHTML = '❌ Erro: Não foi possível gerar link do boleto';
+                return;
+            }
+            
             btnBoleto.disabled = true;
-            btnBoleto.innerHTML = '⏳ Processando...';
+            btnBoleto.innerHTML = '⏳ Abrindo...';
             
-            try {
-                statusDiv.innerHTML = '🔄 Iniciando processamento...';
-                
-                // 1. Primeiro obtém o token CSRF
-                statusDiv.innerHTML = '🔄 Obtendo token de segurança...';
-                const response = await fetch('<?php echo $URL_PROV; ?>/central/login.hhvm');
-                const html = await response.text();
-                
-                // 2. Extrai o token CSRF
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
-                const tokenInput = doc.querySelector('input[name="ttoken_central"]');
-                if (!tokenInput || !tokenInput.value) {
-                    throw new Error('Não foi possível obter token de segurança');
-                }
-                const csrfToken = tokenInput.value;
-                
-                // 3. Preenche o formulário
-                document.getElementById('csrf_token').value = csrfToken;
-                
-                // 4. Faz login via fetch (SEM abrir janela)
-                statusDiv.innerHTML = '🔄 Fazendo login automático...';
-                const form = document.getElementById('formBoleto');
-                
-                // Cria um iframe invisível MUITO pequeno
-                const iframe = document.createElement('iframe');
-                iframe.name = 'loginFrame';
-                iframe.style.width = '1px';
-                iframe.style.height = '1px';
-                iframe.style.position = 'absolute';
-                iframe.style.left = '-1000px';
-                iframe.style.top = '-1000px';
-                iframe.style.border = 'none';
-                document.body.appendChild(iframe);
-                
-                // Envia formulário para o iframe
-                form.target = 'loginFrame';
-                form.submit();
-                
-                // 5. Aguarda login processar
-                statusDiv.innerHTML = '⏳ Processando login...';
-                await new Promise(resolve => setTimeout(resolve, 2500));
-                
-                // 6. PRÉ-CARREGA o boleto (sem abrir janela)
-                statusDiv.innerHTML = '⏳ Pré-carregando boleto...';
-                // Usa fetch para pré-carregar (acordar o gerador)
-                try {
-                    await fetch(boletoUrl, {
-                        method: 'GET',
-                        mode: 'no-cors',
-                        credentials: 'include'
-                    });
-                } catch (e) {
-                    console.log('Pré-carregamento feito (erro CORS ignorado)');
-                }
-                
-                // Aguarda 1.5 segundos para o gerador processar
-                await new Promise(resolve => setTimeout(resolve, 1500));
-                
-                // 7. Agora abre o boleto para o usuário
-                statusDiv.innerHTML = '✅ Abrindo boleto...';
-                
-                // Abre em nova aba
-                const novaAba = window.open(boletoUrl, '_blank');
-                
-                if (!novaAba || novaAba.closed) {
-                    // Se bloqueado, mostra opção manual
+            if (statusDiv) {
+                statusDiv.innerHTML = '🔄 Abrindo boleto...';
+            }
+            
+            const novaAba = window.open(boletoUrl, '_blank');
+            
+            if (!novaAba || novaAba.closed) {
+                if (statusDiv) {
                     statusDiv.innerHTML = '⚠️ Navegador bloqueou a nova aba.<br>' +
                         'Clique <a href="' + boletoUrl + '" target="_blank" ' +
                         'style="color:#3498db;text-decoration:underline;font-weight:bold;">' +
-                        'AQUI</a> para abrir manualmente.';
-                    btnBoleto.innerHTML = 'Abrir Boleto';
-                    btnBoleto.disabled = false;
+                        'AQUI</a> para abrir boleto.';
                 } else {
-                    // Foco na nova aba
-                    novaAba.focus();
-                    
-                    // Aguarda um pouco e verifica
-                    setTimeout(() => {
-                        try {
-                            if (!novaAba.closed) {
-                                statusDiv.innerHTML = '✅ Boleto aberto com sucesso!<br>' +
-                                    'Verifique a nova aba do seu navegador.';
-                            }
-                        } catch (e) {
-                            statusDiv.innerHTML = '✅ Processo concluído!';
-                        }
-                        
-                        btnBoleto.innerHTML = 'Abrir Boleto';
-                        btnBoleto.disabled = false;
-                        
-                        // Remove iframe após alguns segundos
-                        setTimeout(() => {
-                            if (iframe.parentNode) {
-                                iframe.parentNode.removeChild(iframe);
-                            }
-                        }, 3000);
-                    }, 1000);
+                    window.location.href = boletoUrl;
                 }
-                
-            } catch (error) {
-                console.error('Erro:', error);
-                statusDiv.innerHTML = '❌ ' + error.message + '<br>Clique <a href="' + boletoUrl + '" target="_blank" ' +
-                    'style="color:#3498db;text-decoration:underline;font-weight:bold;">' +
-                    'AQUI</a> para abrir manualmente.';
+            } else {
+                novaAba.focus();
+                if (statusDiv) {
+                    statusDiv.innerHTML = '✅ Boleto aberto! Verifique a nova aba.';
+                }
+            }
+            
+            setTimeout(() => {
                 btnBoleto.innerHTML = 'Abrir Boleto';
                 btnBoleto.disabled = false;
-            }
+                if (statusDiv) {
+                    setTimeout(() => {
+                        statusDiv.innerHTML = '';
+                    }, 2000);
+                }
+            }, 3000);
         }
         
-        // Funções de cópia com feedback visual
         function copiar(id){
             const botao = document.getElementById('btnCopiarPix');
             const textoOriginal = botao.innerHTML;
@@ -1147,7 +1035,6 @@ $dadosInt = base64_encode(json_encode([
             }
         }
         
-        // Função para desabilitar botão ao voltar para seleção
         function desabilitarEIrParaSelecao() {
             const botao = document.querySelector('.btn-voltar');
             botao.disabled = true;
@@ -1161,7 +1048,6 @@ $dadosInt = base64_encode(json_encode([
             window.location.href = '?doc=<?= $doc ?>';
         }
         
-        // Inicializa a página quando carregada
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', preencherDados);
         } else {
