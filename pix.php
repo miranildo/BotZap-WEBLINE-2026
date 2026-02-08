@@ -2,10 +2,10 @@
 /*************************************************
  * CONFIGURAÇÃO MK-AUTH
  *************************************************/
-$URL_PROV = "https://www.SEU_PROVEDOR.com.br";
-$API_BASE = "https://www.SEU_PROVEDOR.com.br/api/";
-$CLIENT_ID = "SEU_ID_API";
-$CLIENT_SECRET = "SEU_SECRET_API";
+$URL_PROV = "https://www.weblinetelecom.com.br";
+$API_BASE = "https://www.weblinetelecom.com.br/api/";
+$CLIENT_ID = "c582c8ede2c9169c64f29c626fadc38e";
+$CLIENT_SECRET = "9d2367fbf45d2e89d8ee8cb92ca3c02f13bcb0c1";
 
 /*************************************************
  * CONFIGURAÇÃO DE FILTROS DE LOG
