@@ -240,6 +240,49 @@ echo "   - $WEB_DIR"
 echo "   - $WEB_DIR/.well-known/acme-challenge"
 
 # =====================================================
+# CRIAR DIRETÓRIO PARA DASHBOARD PIX
+# =====================================================
+echo "📊 Criando diretório para Dashboard Pix..."
+mkdir -p /var/log/pix_acessos
+chown www-data:www-data /var/log/pix_acessos
+chmod 0750 /var/log/pix_acessos
+echo "✅ Diretório /var/log/pix_acessos criado com permissões 0750"
+
+# Criar arquivos internos do dashboard
+echo "📝 Criando arquivos do Dashboard Pix..."
+touch /var/log/pix_acessos/usuarios.json
+touch /var/log/pix_acessos/acessos_usuarios.log
+
+# Configurar permissões dos arquivos
+chown www-data:www-data /var/log/pix_acessos/*
+chmod 0660 /var/log/pix_acessos/*
+
+# Criar usuário admin padrão no dashboard
+echo "👤 Criando usuário administrador padrão para o Dashboard..."
+cat > /var/log/pix_acessos/usuarios.json << 'PIX_EOF'
+{
+    "admin": {
+        "senha_hash": "$2y$10$WN/a1/7yFMPbsPyfM6.ysuRtFBqG8RpoAF/DwpyxFTu2tnlo1ekde",
+        "nome": "Administrador",
+        "email": "admin@sistema.com",
+        "nivel": "admin",
+        "status": "ativo",
+        "data_criacao": "$(date -Iseconds)",
+        "ip_cadastro": "127.0.0.1",
+        "ultimo_acesso": null,
+        "ip_ultimo_acesso": null
+    }
+}
+PIX_EOF
+
+echo "✅ Arquivos do Dashboard Pix criados com sucesso"
+echo "   • Diretório: /var/log/pix_acessos"
+echo "   • Arquivo usuários: /var/log/pix_acessos/usuarios.json"
+echo "   • Arquivo logs: /var/log/pix_acessos/acessos_usuarios.log"
+echo "   • Credenciais: admin / Admin@123"
+echo ""
+
+# =====================================================
 # PERMISSÕES COMPARTILHADAS
 # =====================================================
 echo "🔐 Configurando permissões compartilhadas..."
@@ -374,6 +417,7 @@ WEB_FILES=(
     "logo.jpg"
     "logout.php"
     "pix.php"
+    "pix_dashboard.php"
     "qrcode_online.png"
     "qrcode_view.php"
     "qrcode_wait.png"
@@ -850,7 +894,7 @@ allow_url_fopen = Off
 allow_url_include = Off
 expose_php = Off
 PHPINIEOF
-    echo "✅ Configuração PHP criada em /etc/php/$PHP_VERSION/apache2/conf.d/99-botzap.ini"
+    echo "✅ Configuração PHP criada em /etc/apache2/sites-available/botzap.ini"
 else
     echo "⚠️  Diretório PHP não encontrado, usando configurações padrão"
 fi
@@ -988,6 +1032,16 @@ else
     echo "   ⚠️  bot.js não encontrado (o bot não funcionará)"
 fi
 
+echo ""
+echo "6. Testando diretório Dashboard Pix:"
+if [ -d "/var/log/pix_acessos" ]; then
+    echo "   ✅ /var/log/pix_acessos existe"
+    echo "   📋 Permissões: $(ls -ld /var/log/pix_acessos | awk '{print $1, $3, $4}')"
+    echo "   📁 Arquivos encontrados: $(ls -la /var/log/pix_acessos/ | grep -E 'usuarios\.json|acessos_usuarios\.log' | wc -l)"
+else
+    echo "   ❌ /var/log/pix_acessos não existe!"
+fi
+
 # =====================================================
 # INICIAR O BOT
 # =====================================================
@@ -1043,6 +1097,9 @@ cat << EOF
 • VirtualHost:            /etc/apache2/sites-available/botzap.conf
 • Arquivo de usuários:    $WEB_DIR/users.php
 
+• Dashboard Pix:          /var/log/pix_acessos/
+• Credenciais Dashboard:  admin / Admin@123
+
 🌐 ACESSO AO SISTEMA:
 --------------------
 • URL do painel:          http://$BOT_DOMAIN
@@ -1058,6 +1115,7 @@ cat << EOF
 • Reiniciar bot:          systemctl restart botzap
 • Reiniciar Apache:       systemctl reload apache2
 • Ver configuração:       cat /etc/apache2/sites-available/botzap.conf
+• Dashboard Pix logs:     ls -la /var/log/pix_acessos/
 
 🔧 PRÓXIMOS PASSOS:
 ------------------
@@ -1065,18 +1123,21 @@ cat << EOF
 2. Faça login com: $WEB_USERNAME / [Sua senha]
 3. Vá em "QR Code WhatsApp" para conectar o bot
 4. Configure o domínio real no seu DNS (apontar para $SERVER_IP)
+5. Dashboard Pix: Os logs estão em /var/log/pix_acessos/
 
 ⚠️  IMPORTANTE:
 --------------
 • Guarde as credenciais em local seguro!
 • Backup do arquivo users.php: $WEB_DIR/users.php.backup
 • Configure backup dos arquivos em $BOT_DIR/
+• Dashboard Pix configurado em: /var/log/pix_acessos/
 
 🎛️  FERRAMENTAS INSTALADAS:
 -------------------------
 • VIM configurado com syntax highlight
 • bash-completion ativado (auto-completar comandos)
 • fzf instalado (use CTRL+R para pesquisa no histórico)
+• Dashboard Pix configurado com diretório de logs
 • Aliases úteis configurados:
   - ls, ll, l: listagens coloridas
   - grep, egrep: coloridos
