@@ -308,6 +308,24 @@ button {
     font-weight:600;
     cursor:pointer;
 }
+
+/* Estilo específico para campo somente leitura */
+.atendente-readonly {
+    background-color: #f9fafb !important;
+    border-color: #d1d5db !important;
+    color: #6b7280 !important;
+    cursor: not-allowed !important;
+}
+
+.atendente-info-box {
+    background: #f0f9ff;
+    border-left: 3px solid #0ea5e9;
+    padding: 10px 14px;
+    margin-top: 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #0369a1;
+}
 </style>
 </head>
 
@@ -363,7 +381,18 @@ button {
         <input name="boleto_url" value="<?= htmlspecialchars($config['boleto_url']) ?>">
 
         <label>Número do Atendente</label>
-        <input name="atendente_numero" value="<?= htmlspecialchars($config['atendente_numero']) ?>">
+        <input 
+            name="atendente_numero" 
+            value="<?= htmlspecialchars($config['atendente_numero']) ?>"
+            readonly
+            placeholder="Preenchido automaticamente via QR Code"
+            class="atendente-readonly"
+        >
+        <div class="atendente-info-box">
+            <p style="margin: 0;">
+                <strong>ℹ️ Informação:</strong> Este número é configurado automaticamente através da leitura do QR Code no WhatsApp e não pode ser editado manualmente.
+            </p>
+        </div>
 
         <label>⏱️ Tempo máximo de atendimento humano (minutos)</label>
         <input
