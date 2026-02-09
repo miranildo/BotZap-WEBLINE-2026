@@ -861,52 +861,51 @@ echo "✅ Apache configurado com VirtualHost para $BOT_DOMAIN"
 echo "✅ Também configurado alias: www.$DOMAIN_BASE"
 
 # =====================================================
-# CONFIGURAR PHP (TIMEZONE CORRIGIDO)
+# CONFIGURAR PHP (TIMEZONE CORRIGIDO - SIMPLIFICADO)
 # =====================================================
 echo "⚙️ Configurando PHP..."
 
 # Encontrar versão do PHP instalada
 PHP_VERSION=$(php -v | head -1 | cut -d' ' -f2 | cut -d'.' -f1,2)
-PHP_INI_DIR="/etc/php/$PHP_VERSION/apache2/conf.d"
-PHP_CLI_INI="/etc/php/$PHP_VERSION/cli/php.ini"
-PHP_APACHE_INI="/etc/php/$PHP_VERSION/apache2/php.ini"
-
 echo "   🔍 PHP versão detectada: $PHP_VERSION"
 
-# CORREÇÃO: CONFIGURAR TIMEZONE NO PHP.INI
+# Configurar timezone SIMPLES - apenas no principal
 echo "   🕐 Configurando timezone do PHP para America/Recife..."
 
-# Verificar e configurar timezone em todos os php.ini encontrados
-for PHP_INI in "$PHP_CLI_INI" "$PHP_APACHE_INI" "/etc/php.ini"; do
+# Lista de possíveis php.ini
+PHP_INI_FILES=(
+    "/etc/php/$PHP_VERSION/apache2/php.ini"
+    "/etc/php/$PHP_VERSION/cli/php.ini"
+    "/etc/php.ini"
+    "/etc/php/$PHP_VERSION/fpm/php.ini"
+)
+
+for PHP_INI in "${PHP_INI_FILES[@]}"; do
     if [ -f "$PHP_INI" ]; then
         echo "   📄 Configurando: $PHP_INI"
         
-        # Backup do arquivo original
-        cp "$PHP_INI" "$PHP_INI.backup_$(date +%Y%m%d%H%M%S)"
-        
         # Remover configurações de timezone existentes
-        sed -i '/^date\.timezone/d' "$PHP_INI"
-        sed -i '/^;date\.timezone/d' "$PHP_INI"
+        sed -i '/^date\.timezone/d' "$PHP_INI" 2>/dev/null || true
+        sed -i '/^;date\.timezone/d' "$PHP_INI" 2>/dev/null || true
         
-        # Adicionar configuração correta
-        # Encontrar a seção [Date] ou adicionar no final
+        # Adicionar configuração correta na seção [Date]
         if grep -q "\[Date\]" "$PHP_INI"; then
             # Inserir após a linha [Date]
             sed -i '/\[Date\]/a\date.timezone = America/Recife' "$PHP_INI"
+            echo "   ✅ $PHP_INI configurado (na seção [Date])"
         else
             # Se não encontrar a seção, adicionar no final
             echo "" >> "$PHP_INI"
             echo "[Date]" >> "$PHP_INI"
             echo "date.timezone = America/Recife" >> "$PHP_INI"
+            echo "   ✅ $PHP_INI configurado (seção [Date] criada)"
         fi
-        
-        echo "   ✅ $PHP_INI configurado com timezone America/Recife"
     fi
 done
 
-# Também configurar via date_default_timezone_set em arquivos de configuração
-if [ -d "$PHP_INI_DIR" ]; then
-    cat > "$PHP_INI_DIR/99-botzap.ini" <<'PHPINIEOF'
+# Criar configuração adicional para Apache se o diretório existir
+if [ -d "/etc/php/$PHP_VERSION/apache2/conf.d" ]; then
+    cat > "/etc/php/$PHP_VERSION/apache2/conf.d/99-botzap.ini" <<'PHPINIEOF'
 ; Configurações PHP para BotZap
 upload_max_filesize = 10M
 post_max_size = 10M
@@ -933,34 +932,69 @@ expose_php = Off
 ; CORREÇÃO CRÍTICA: Timezone para Brasil
 date.timezone = America/Recife
 PHPINIEOF
-    
-    echo "✅ Configuração PHP criada em $PHP_INI_DIR/99-botzap.ini"
-else
-    echo "⚠️  Diretório PHP não encontrado, usando configurações padrão"
-    # Criar configuração alternativa
-    cat > "/etc/php/$PHP_VERSION/apache2/php.ini.d/99-botzap.ini" <<'PHPINIEOF'
-; Configurações PHP para BotZap
-date.timezone = America/Recife
-PHPINIEOF
+    echo "✅ Configuração PHP adicional criada"
 fi
 
 # Testar configuração
 echo "   🧪 Testando configuração do timezone..."
-TEST_OUTPUT=$(php -r "echo date_default_timezone_get();" 2>/dev/null)
-if [ -n "$TEST_OUTPUT" ]; then
-    echo "   ✅ Timezone PHP atual: $TEST_OUTPUT"
+CURRENT_TZ=$(php -r "echo date_default_timezone_get();" 2>/dev/null || echo "Desconhecido")
+echo "   • Timezone atual PHP: $CURRENT_TZ"
+
+if [ "$CURRENT_TZ" = "America/Recife" ]; then
+    echo "   ✅ Timezone configurado corretamente!"
 else
-    echo "   ⚠️  Não foi possível obter timezone do PHP"
+    echo "   ⚠️  Timezone ainda incorreto ($CURRENT_TZ)"
+    echo "   🔧 Forçando via linha de comando..."
+    php -r "date_default_timezone_set('America/Recife'); echo 'Timezone forçado: ' . date_default_timezone_get() . PHP_EOL;" 2>/dev/null || true
 fi
 
-# Forçar configuração via script também
-echo "   🔧 Forçando timezone via comando..."
-php -r "date_default_timezone_set('America/Recife'); echo 'Timezone forçado para: ' . date_default_timezone_get() . PHP_EOL;"
-
 # Recarregar Apache para aplicar configurações PHP
-echo "   🔄 Recarregando Apache para aplicar configurações PHP..."
-systemctl reload apache2
+echo "   🔄 Recarregando Apache para aplicar configurações..."
+systemctl reload apache2 2>/dev/null || systemctl restart apache2 2>/dev/null || true
 echo "✅ Configuração PHP aplicada"
+
+# =====================================================
+# VERIFICAR E CORRIGIR PERMISSÕES DOS ARQUIVOS DO BOT (IMPORTANTE!)
+# =====================================================
+echo "🔐 Verificando e corrigindo permissões dos arquivos do bot..."
+
+# Lista de arquivos compartilhados que o PHP precisa acessar
+SHARED_FILES=(
+    "$BOT_DIR/config.json"
+    "$BOT_DIR/status.json" 
+    "$BOT_DIR/usuarios.json"
+    "$BOT_DIR/qrcode.txt"
+    "$BOT_DIR/bot.js"
+)
+
+echo "   📁 Ajustando permissões de arquivos compartilhados..."
+for FILE in "${SHARED_FILES[@]}"; do
+    if [ -f "$FILE" ]; then
+        # Garantir que www-data (PHP) pode ler/escrever
+        chown "$BOT_USER:$WEB_GROUP" "$FILE"
+        chmod 664 "$FILE"
+        echo "   ✅ $FILE - dono: $BOT_USER, grupo: $WEB_GROUP, permissões: 664"
+    else
+        echo "   ⚠️  $FILE não existe"
+    fi
+done
+
+# Garantir que o diretório do bot tem permissões corretas
+chmod 775 "$BOT_DIR"
+echo "   ✅ $BOT_DIR - permissões: 775"
+
+# Adicionar permissão de leitura para grupo www-data em todo o diretório
+find "$BOT_DIR" -type d -exec chmod 775 {} \;
+find "$BOT_DIR" -type f -exec chmod 664 {} \;
+
+# Exceção: auth_info deve ser privado
+if [ -d "$BOT_DIR/auth_info" ]; then
+    chmod 700 "$BOT_DIR/auth_info"
+    find "$BOT_DIR/auth_info" -type f -exec chmod 600 {} \;
+    echo "   ✅ $BOT_DIR/auth_info - mantido privado (700)"
+fi
+
+echo "✅ Permissões corrigidas"
 
 # =====================================================
 # SYSTEMD – SERVIÇO DO BOT
@@ -1033,7 +1067,7 @@ echo "✅ Logrotate configurado"
 echo ""
 echo "🌐 Configurando hosts local para teste..."
 # Remover entradas antigas se existirem
-sed -i '/bot\.$DOMAIN_BASE/d' /etc/hosts
+sed -i "/$BOT_DOMAIN/d" /etc/hosts
 sed -i "/$DOMAIN_BASE/d" /etc/hosts
 
 # Adicionar nova entrada
@@ -1041,60 +1075,6 @@ echo "127.0.0.1 $BOT_DOMAIN www.$DOMAIN_BASE" >> /etc/hosts
 echo "✅ Hosts local configurado:"
 echo "   127.0.0.1 $BOT_DOMAIN"
 echo "   127.0.0.1 www.$DOMAIN_BASE"
-
-# =====================================================
-# VERIFICAR TIMEZONE DO PHP
-# =====================================================
-echo ""
-echo "🕐 Verificando configuração de timezone do PHP..."
-echo "----------------------------------------------"
-
-# Verificar timezone atual
-CURRENT_TZ=$(php -r "echo date_default_timezone_get();")
-EXPECTED_TZ="America/Recife"
-
-echo "   • Timezone esperado: $EXPECTED_TZ"
-echo "   • Timezone atual: $CURRENT_TZ"
-
-if [ "$CURRENT_TZ" = "$EXPECTED_TZ" ]; then
-    echo "   ✅ Timezone configurado corretamente!"
-else
-    echo "   ⚠️  Timezone INCORRETO! Tentando corrigir..."
-    
-    # Tentar corrigir via comando
-    for PHP_INI in /etc/php/*/apache2/php.ini /etc/php/*/cli/php.ini /etc/php.ini; do
-        if [ -f "$PHP_INI" ]; then
-            sed -i '/^date\.timezone/d' "$PHP_INI"
-            sed -i '/^;date\.timezone/d' "$PHP_INI"
-            
-            if grep -q "\[Date\]" "$PHP_INI"; then
-                sed -i '/\[Date\]/a\date.timezone = America/Recife' "$PHP_INI"
-            else
-                echo "" >> "$PHP_INI"
-                echo "[Date]" >> "$PHP_INI"
-                echo "date.timezone = America/Recife" >> "$PHP_INI"
-            fi
-            echo "   ✅ Corrigido: $PHP_INI"
-        fi
-    done
-    
-    # Testar novamente
-    NEW_TZ=$(php -r "echo date_default_timezone_get();")
-    echo "   • Novo timezone: $NEW_TZ"
-    
-    if [ "$NEW_TZ" = "$EXPECTED_TZ" ]; then
-        echo "   ✅ Timezone corrigido com sucesso!"
-    else
-        echo "   ⚠️  Não foi possível corrigir automaticamente"
-        echo "   💡 Dica: Adicione 'date_default_timezone_set('America/Recife');' no início dos seus scripts PHP"
-    fi
-fi
-
-# Mostrar hora atual do PHP
-echo ""
-echo "🕐 Hora atual do PHP:"
-php -r "echo '   • Data/hora: ' . date('d/m/Y H:i:s') . PHP_EOL;"
-echo "   • Sistema: $(date '+%d/%m/%Y %H:%M:%S')"
 
 # =====================================================
 # TESTES FINAIS
@@ -1137,6 +1117,19 @@ if [ -d "$WEB_DIR" ]; then
     echo "   ✅ $WEB_DIR existe"
     FILE_COUNT=$(find "$WEB_DIR" -type f | wc -l)
     echo "   📁 Arquivos encontrados: $FILE_COUNT"
+    
+    # Verificar index.php específico
+    if [ -f "$WEB_DIR/index.php" ]; then
+        echo "   ✅ index.php existe"
+        # Verificar se o index.php tem código para QR Code
+        if grep -q "qrcode" "$WEB_DIR/index.php"; then
+            echo "   ✅ index.php contém código para QR Code"
+        else
+            echo "   ⚠️  index.php não contém código para QR Code"
+        fi
+    else
+        echo "   ❌ index.php não existe!"
+    fi
 else
     echo "   ❌ $WEB_DIR não existe!"
 fi
@@ -1150,7 +1143,29 @@ else
 fi
 
 echo ""
-echo "6. Testando diretório Dashboard Pix:"
+echo "6. Testando arquivos compartilhados do bot:"
+SHARED_FILES_TEST=("config.json" "status.json" "usuarios.json" "qrcode.txt")
+for FILE in "${SHARED_FILES_TEST[@]}"; do
+    FILE_PATH="$BOT_DIR/$FILE"
+    if [ -f "$FILE_PATH" ]; then
+        PERMS=$(stat -c "%A %U %G" "$FILE_PATH")
+        echo "   ✅ $FILE existe ($PERMS)"
+        
+        # Verificar se PHP (www-data) pode acessar
+        if sudo -u www-data test -r "$FILE_PATH"; then
+            echo "     ✅ PHP pode ler $FILE"
+        else
+            echo "     ❌ PHP NÃO pode ler $FILE - CORRIGINDO..."
+            chown "$BOT_USER:$WEB_GROUP" "$FILE_PATH"
+            chmod 664 "$FILE_PATH"
+        fi
+    else
+        echo "   ⚠️  $FILE não existe"
+    fi
+done
+
+echo ""
+echo "7. Testando diretório Dashboard Pix:"
 if [ -d "/var/log/pix_acessos" ]; then
     echo "   ✅ /var/log/pix_acessos existe"
     echo "   📋 Permissões: $(ls -ld /var/log/pix_acessos | awk '{print $1, $3, $4}')"
@@ -1160,13 +1175,27 @@ else
 fi
 
 echo ""
-echo "7. Testando configuração de timezone:"
-TIMEZONE_CHECK=$(php -r "echo date_default_timezone_get();")
+echo "8. Testando configuração de timezone:"
+TIMEZONE_CHECK=$(php -r "echo date_default_timezone_get();" 2>/dev/null || echo "Erro")
 echo "   • Timezone PHP: $TIMEZONE_CHECK"
 if [ "$TIMEZONE_CHECK" = "America/Recife" ]; then
     echo "   ✅ Timezone configurado corretamente!"
 else
     echo "   ⚠️  Timezone incorreto: $TIMEZONE_CHECK"
+    echo "   💡 Solução rápida: Adicione no início do index.php:"
+    echo "     <?php date_default_timezone_set('America/Recife'); ?>"
+fi
+
+echo ""
+echo "9. Testando acesso do PHP aos arquivos do bot:"
+if sudo -u www-data php -r "\$f = '/opt/whatsapp-bot/qrcode.txt'; echo file_exists(\$f) ? 'QR existe' : 'QR não existe';" 2>/dev/null; then
+    echo "   ✅ PHP pode acessar arquivos do bot"
+else
+    echo "   ❌ PHP NÃO pode acessar arquivos do bot"
+    echo "   🔧 Corrigindo permissões..."
+    chmod -R 775 "$BOT_DIR"
+    find "$BOT_DIR" -type f -name "*.json" -o -name "*.txt" -o -name "*.js" | xargs chmod 664
+    chown -R "$BOT_USER:$WEB_GROUP" "$BOT_DIR"
 fi
 
 # =====================================================
@@ -1175,31 +1204,169 @@ fi
 echo ""
 echo "🚀 Iniciando o bot WhatsApp..."
 systemctl start botzap
-sleep 2
+sleep 3
 
 BOT_STATUS=$(systemctl is-active botzap)
 if [ "$BOT_STATUS" = "active" ]; then
     echo "✅ Bot iniciado com sucesso!"
+    
+    # Verificar se o bot está gerando QR Code
+    echo "   🔍 Verificando se o bot está gerando QR Code..."
+    sleep 2
+    if [ -f "$BOT_DIR/qrcode.txt" ] && [ -s "$BOT_DIR/qrcode.txt" ]; then
+        QR_SIZE=$(stat -c%s "$BOT_DIR/qrcode.txt" 2>/dev/null || echo 0)
+        if [ "$QR_SIZE" -gt 100 ]; then
+            echo "   ✅ QR Code sendo gerado (tamanho: ${QR_SIZE} bytes)"
+        else
+            echo "   ⚠️  QR Code vazio ou muito pequeno"
+        fi
+    else
+        echo "   ⚠️  Arquivo qrcode.txt não existe ou está vazio"
+    fi
 else
     echo "⚠️  Bot não iniciou automaticamente"
     echo "   Verifique: systemctl status botzap"
+    echo "   Verifique logs: journalctl -u botzap -n 20"
 fi
 
 # =====================================================
-# VERIFICAR SE O SITE ESTÁ ACESSÍVEL
+# VERIFICAR SE O SITE ESTÁ ACESSÍVEL E MOSTRANDO QR CODE
 # =====================================================
 echo ""
-echo "🔍 Verificando acesso ao site..."
-sleep 2
-if curl -s -o /dev/null -w "%{http_code}" http://localhost/ | grep -q "200\|302\|301"; then
-    echo "✅ Site está respondendo corretamente!"
-    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/)
-    echo "   Status HTTP: $HTTP_STATUS"
+echo "🔍 Verificando acesso ao site e QR Code..."
+sleep 3
+
+# Testar acesso HTTP
+HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/ 2>/dev/null || echo "000")
+if echo "$HTTP_STATUS" | grep -q "200\|302\|301"; then
+    echo "✅ Site está respondendo (HTTP $HTTP_STATUS)"
+    
+    # Verificar se a página contém QR Code
+    echo "   🔎 Verificando se a página mostra QR Code..."
+    PAGE_CONTENT=$(curl -s http://localhost/ 2>/dev/null || echo "")
+    
+    if echo "$PAGE_CONTENT" | grep -iq "qrcode"; then
+        echo "   ✅ Página contém referência a QR Code"
+    else
+        echo "   ⚠️  Página NÃO contém referência a QR Code"
+        echo "   💡 Possíveis problemas:"
+        echo "     1. Permissões incorretas em /opt/whatsapp-bot/"
+        echo "     2. Arquivo index.php corrompido"
+        echo "     3. PHP não consegue ler qrcode.txt"
+    fi
+    
+    # Verificar conteúdo real da página
+    echo "   📄 Verificando conteúdo da página..."
+    if echo "$PAGE_CONTENT" | grep -q "data:image/png;base64"; then
+        echo "   ✅ QR Code está sendo exibido como imagem Base64!"
+    else
+        echo "   ⚠️  QR Code NÃO está sendo exibido como imagem"
+        echo "   💡 Verifique se o arquivo qrcode.txt contém dados binários PNG"
+    fi
 else
-    echo "⚠️  Site pode não estar acessível"
+    echo "⚠️  Site pode não estar acessível (HTTP $HTTP_STATUS)"
     echo "   Verifique: systemctl status apache2"
     echo "   Verifique logs: tail -f /var/log/apache2/botzap_error.log"
 fi
+
+# =====================================================
+# CORREÇÃO FINAL DE PERMISSÕES (GARANTIR)
+# =====================================================
+echo ""
+echo "🔐 Aplicando correção final de permissões..."
+
+# 1. Garantir que www-data está no grupo botzap (ou vice-versa)
+if groups www-data | grep -q "$BOT_USER" || groups "$BOT_USER" | grep -q "$WEB_GROUP"; then
+    echo "   ✅ Grupos configurados corretamente"
+else
+    echo "   🔧 Adicionando $BOT_USER ao grupo $WEB_GROUP..."
+    usermod -a -G "$WEB_GROUP" "$BOT_USER"
+fi
+
+# 2. Ajustar permissões dos arquivos críticos
+echo "   🔧 Ajustando permissões dos arquivos críticos..."
+chmod 775 "$BOT_DIR"
+find "$BOT_DIR" -type f \( -name "*.json" -o -name "*.txt" -o -name "*.js" \) -exec chmod 664 {} \;
+find "$BOT_DIR" -type d -exec chmod 775 {} \;
+chown -R "$BOT_USER:$WEB_GROUP" "$BOT_DIR"/*.json "$BOT_DIR"/*.txt "$BOT_DIR"/*.js 2>/dev/null || true
+
+# 3. Verificar arquivo qrcode.txt específico
+if [ -f "$BOT_DIR/qrcode.txt" ]; then
+    echo "   🔧 Verificando qrcode.txt..."
+    chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/qrcode.txt"
+    chmod 664 "$BOT_DIR/qrcode.txt"
+    
+    # Testar se PHP pode ler
+    if sudo -u www-data cat "$BOT_DIR/qrcode.txt" > /dev/null 2>&1; then
+        echo "   ✅ PHP pode ler qrcode.txt"
+    else
+        echo "   ❌ PHP NÃO pode ler qrcode.txt - corrigindo..."
+        chmod 666 "$BOT_DIR/qrcode.txt"
+    fi
+fi
+
+echo "✅ Correções de permissões aplicadas"
+
+# =====================================================
+# CRIAR SCRIPT DE DIAGNÓSTICO RÁPIDO
+# =====================================================
+echo ""
+echo "📝 Criando script de diagnóstico rápido..."
+cat > /usr/local/bin/check-botzap <<'DIAGEOF'
+#!/bin/bash
+echo "=== DIAGNÓSTICO BOTZAP ==="
+echo "Data: $(date)"
+echo ""
+
+echo "1. SERVIÇOS:"
+echo "   Apache: $(systemctl is-active apache2)"
+echo "   BotZap: $(systemctl is-active botzap)"
+echo ""
+
+echo "2. ARQUIVOS DO BOT (/opt/whatsapp-bot/):"
+ls -la /opt/whatsapp-bot/ 2>/dev/null | grep -E "\.(json|txt|js)$" || echo "   Nenhum arquivo encontrado"
+echo ""
+
+echo "3. QR CODE:"
+if [ -f "/opt/whatsapp-bot/qrcode.txt" ]; then
+    SIZE=$(stat -c%s "/opt/whatsapp-bot/qrcode.txt" 2>/dev/null || echo 0)
+    echo "   qrcode.txt existe (${SIZE} bytes)"
+    
+    if [ $SIZE -gt 100 ]; then
+        echo "   ✅ QR Code parece válido"
+        # Verificar se é PNG
+        if head -c 4 /opt/whatsapp-bot/qrcode.txt | xxd -p | grep -q "89504e47"; then
+            echo "   ✅ É um arquivo PNG válido"
+        else
+            echo "   ⚠️  Não parece ser PNG válido"
+        fi
+    else
+        echo "   ⚠️  QR Code muito pequeno ou vazio"
+    fi
+else
+    echo "   ❌ qrcode.txt não existe"
+fi
+echo ""
+
+echo "4. PERMISSÕES:"
+echo "   qrcode.txt: $(stat -c "%A %U %G" /opt/whatsapp-bot/qrcode.txt 2>/dev/null || echo 'Não existe')"
+echo "   Diretório bot: $(stat -c "%A %U %G" /opt/whatsapp-bot 2>/dev/null || echo 'Não existe')"
+echo ""
+
+echo "5. TESTE PHP:"
+echo "   Timezone: $(php -r "echo date_default_timezone_get();" 2>/dev/null)"
+echo "   Pode ler qrcode.txt: $(sudo -u www-data php -r "echo file_exists('/opt/whatsapp-bot/qrcode.txt') ? 'SIM' : 'NÃO';" 2>/dev/null)"
+echo ""
+
+echo "6. LOGS RECENTES:"
+journalctl -u botzap -n 5 --no-pager 2>/dev/null | tail -5 | sed 's/^/   /'
+echo ""
+
+echo "=== FIM DIAGNÓSTICO ==="
+DIAGEOF
+
+chmod +x /usr/local/bin/check-botzap
+echo "✅ Script de diagnóstico criado: check-botzap"
 
 # =====================================================
 # RESUMO FINAL
@@ -1248,6 +1415,7 @@ cat << EOF
 • Dashboard Pix logs:     ls -la /var/log/pix_acessos/
 • Verificar timezone:     php -r "echo date_default_timezone_get();"
 • Verificar hora PHP:     php -r "echo date('d/m/Y H:i:s');"
+• Diagnóstico rápido:     check-botzap
 
 🔧 PRÓXIMOS PASSOS:
 ------------------
@@ -1256,7 +1424,15 @@ cat << EOF
 3. Vá em "QR Code WhatsApp" para conectar o bot
 4. Configure o domínio real no seu DNS (apontar para $SERVER_IP)
 5. Dashboard Pix: Os logs estão em /var/log/pix_acessos/
-6. Verifique timezone: php -r "echo date('d/m/Y H:i:s');"
+6. Se QR Code não aparecer: execute 'check-botzap' para diagnóstico
+
+🔐 SOLUÇÕES PARA QR CODE NÃO APARECER:
+-------------------------------------
+1. Verifique permissões: check-botzap
+2. Reinicie o bot: systemctl restart botzap
+3. Verifique logs: journalctl -u botzap -n 20
+4. Force permissões: chmod 664 /opt/whatsapp-bot/qrcode.txt
+5. Verifique se PHP pode ler: sudo -u www-data cat /opt/whatsapp-bot/qrcode.txt
 
 ⚠️  IMPORTANTE:
 --------------
@@ -1273,6 +1449,7 @@ cat << EOF
 • fzf instalado (use CTRL+R para pesquisa no histórico)
 • Dashboard Pix configurado com diretório de logs
 • Timezone PHP configurado para America/Recife
+• Script de diagnóstico: check-botzap
 • Aliases úteis configurados:
   - ls, ll, l: listagens coloridas
   - grep, egrep: coloridos
@@ -1285,6 +1462,7 @@ cat << EOF
 ✅ Tudo pronto! O bot está instalado e configurado.
 ✅ Timezone PHP configurado para America/Recife
 ✅ Dashboard Pix com logs no horário correto!
+✅ Script de diagnóstico disponível: check-botzap
 EOF
 
 echo ""
