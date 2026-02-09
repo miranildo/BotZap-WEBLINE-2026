@@ -202,6 +202,61 @@ systemctl enable apache2
 systemctl start apache2
 
 # =====================================================
+# CONFIGURAR TIMEZONE DO PHP PARA AMERICA/RECIFE
+# =====================================================
+echo "⏰ Configurando timezone do PHP para America/Recife..."
+
+# Encontrar todas as versões do PHP instaladas
+PHP_VERSIONS=$(ls /etc/php/ 2>/dev/null | grep -E '^[0-9]+\.[0-9]+$')
+
+if [ -n "$PHP_VERSIONS" ]; then
+    for PHP_VER in $PHP_VERSIONS; do
+        # Verificar se o diretório apache2 existe para esta versão
+        PHP_INI_FILE="/etc/php/$PHP_VER/apache2/php.ini"
+        
+        if [ -f "$PHP_INI_FILE" ]; then
+            echo "   Configurando PHP $PHP_VER..."
+            
+            # Fazer backup do arquivo original
+            cp "$PHP_INI_FILE" "$PHP_INI_FILE.backup.$(date +%Y%m%d%H%M%S)"
+            
+            # Descomentar e configurar timezone
+            sed -i "s/^;date\.timezone =$/date.timezone = America\/Recife/" "$PHP_INI_FILE"
+            sed -i "s/^;date\.timezone = .*/date.timezone = America\/Recife/" "$PHP_INI_FILE"
+            
+            # Se a linha ainda não existir, adicionar no final do arquivo
+            if ! grep -q "^date\.timezone" "$PHP_INI_FILE"; then
+                echo "" >> "$PHP_INI_FILE"
+                echo "date.timezone = America/Recife" >> "$PHP_INI_FILE"
+            fi
+            
+            echo "   ✅ PHP $PHP_VER configurado"
+        else
+            echo "   ⚠️  Arquivo php.ini não encontrado para PHP $PHP_VER em $PHP_INI_FILE"
+        fi
+        
+        # Também configurar para cli se existir
+        PHP_CLI_INI="/etc/php/$PHP_VER/cli/php.ini"
+        if [ -f "$PHP_CLI_INI" ]; then
+            sed -i "s/^;date\.timezone =$/date.timezone = America\/Recife/" "$PHP_CLI_INI"
+            sed -i "s/^;date\.timezone = .*/date.timezone = America\/Recife/" "$PHP_CLI_INI"
+            
+            if ! grep -q "^date\.timezone" "$PHP_CLI_INI"; then
+                echo "" >> "$PHP_CLI_INI"
+                echo "date.timezone = America/Recife" >> "$PHP_CLI_INI"
+            fi
+        fi
+    done
+    
+    # Reiniciar Apache para aplicar as configurações
+    echo "🔄 Reiniciando Apache para aplicar configurações do timezone..."
+    systemctl restart apache2
+    echo "✅ Timezone configurado e Apache reiniciado"
+else
+    echo "⚠️  Nenhuma versão do PHP encontrada em /etc/php/"
+fi
+
+# =====================================================
 # GERAR HASH DA SENHA AGORA QUE PHP ESTÁ INSTALADO
 # =====================================================
 echo "🔑 Gerando hash da senha..."
@@ -1100,6 +1155,8 @@ cat << EOF
 • Dashboard Pix:          /var/log/pix_acessos/
 • Credenciais Dashboard:  admin / Admin@123
 
+• Timezone PHP:           ✅ Configurado para America/Recife
+
 🌐 ACESSO AO SISTEMA:
 --------------------
 • URL do painel:          http://$BOT_DOMAIN
@@ -1131,6 +1188,7 @@ cat << EOF
 • Backup do arquivo users.php: $WEB_DIR/users.php.backup
 • Configure backup dos arquivos em $BOT_DIR/
 • Dashboard Pix configurado em: /var/log/pix_acessos/
+• Timezone PHP configurado para America/Recife
 
 🎛️  FERRAMENTAS INSTALADAS:
 -------------------------
@@ -1138,6 +1196,7 @@ cat << EOF
 • bash-completion ativado (auto-completar comandos)
 • fzf instalado (use CTRL+R para pesquisa no histórico)
 • Dashboard Pix configurado com diretório de logs
+• Timezone PHP configurado corretamente
 • Aliases úteis configurados:
   - ls, ll, l: listagens coloridas
   - grep, egrep: coloridos
