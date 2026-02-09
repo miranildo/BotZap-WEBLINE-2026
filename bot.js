@@ -20,6 +20,7 @@
  * CORRIGIDO: Não gera link se credenciais não estiverem configuradas
  * CORRIGIDO: "Para Fatura" fora do horário e "Tentar outro CPF" agora vão para tela CPF
  * ATUALIZADO: Permite cliente inativo COM fatura em aberto acessar PIX normalmente
+ * ADICIONADO: Exibe nome do cliente quando CPF/CNPJ é encontrado
  *************************************************/
 
 const {
@@ -65,11 +66,78 @@ const FERIADOS_NACIONAIS = [
 ];
 
 /*************************************************
+ * FUNÇÃO PARA OBTER NOME DO CLIENTE DOS DADOS MK-AUTH
+ * Extrai o nome do cliente a partir da resposta da API
+ *************************************************/
+function extrairNomeCliente(dadosMKAuth) {
+    try {
+        console.log(`${formatarDataHora()} 🔍 Tentando extrair nome do cliente dos dados MK-Auth`);
+        
+        // PRIMEIRO: Verificar se há nome no nível raiz
+        if (dadosMKAuth.nome && dadosMKAuth.nome.trim() !== '') {
+            console.log(`${formatarDataHora()} ✅ Nome encontrado no nível raiz: ${dadosMKAuth.nome}`);
+            return dadosMKAuth.nome.trim();
+        }
+        
+        if (dadosMKAuth.cli_nome && dadosMKAuth.cli_nome.trim() !== '') {
+            console.log(`${formatarDataHora()} ✅ Nome encontrado (cli_nome): ${dadosMKAuth.cli_nome}`);
+            return dadosMKAuth.cli_nome.trim();
+        }
+        
+        if (dadosMKAuth.nome_cliente && dadosMKAuth.nome_cliente.trim() !== '') {
+            console.log(`${formatarDataHora()} ✅ Nome encontrado (nome_cliente): ${dadosMKAuth.nome_cliente}`);
+            return dadosMKAuth.nome_cliente.trim();
+        }
+        
+        // SEGUNDO: Verificar nos títulos (primeiro título que tenha nome)
+        if (dadosMKAuth.titulos && Array.isArray(dadosMKAuth.titulos) && dadosMKAuth.titulos.length > 0) {
+            for (const titulo of dadosMKAuth.titulos) {
+                if (titulo.nome && titulo.nome.trim() !== '') {
+                    console.log(`${formatarDataHora()} ✅ Nome encontrado no título: ${titulo.nome}`);
+                    return titulo.nome.trim();
+                }
+                
+                if (titulo.cli_nome && titulo.cli_nome.trim() !== '') {
+                    console.log(`${formatarDataHora()} ✅ Nome encontrado (cli_nome no título): ${titulo.cli_nome}`);
+                    return titulo.cli_nome.trim();
+                }
+                
+                if (titulo.nome_cliente && titulo.nome_cliente.trim() !== '') {
+                    console.log(`${formatarDataHora()} ✅ Nome encontrado (nome_cliente no título): ${titulo.nome_cliente}`);
+                    return titulo.nome_cliente.trim();
+                }
+            }
+        }
+        
+        // TERCEIRO: Se tiver cliente como objeto
+        if (dadosMKAuth.cliente && typeof dadosMKAuth.cliente === 'object') {
+            if (dadosMKAuth.cliente.nome && dadosMKAuth.cliente.nome.trim() !== '') {
+                console.log(`${formatarDataHora()} ✅ Nome encontrado no objeto cliente: ${dadosMKAuth.cliente.nome}`);
+                return dadosMKAuth.cliente.nome.trim();
+            }
+            
+            if (dadosMKAuth.cliente.nome_completo && dadosMKAuth.cliente.nome_completo.trim() !== '') {
+                console.log(`${formatarDataHora()} ✅ Nome encontrado (nome_completo): ${dadosMKAuth.cliente.nome_completo}`);
+                return dadosMKAuth.cliente.nome_completo.trim();
+            }
+        }
+        
+        console.log(`${formatarDataHora()} ⚠️ Nome do cliente não encontrado na resposta MK-Auth`);
+        return null;
+        
+    } catch (error) {
+        console.error(`${formatarDataHora()} ❌ Erro ao extrair nome do cliente:`, error);
+        return null;
+    }
+}
+
+/*************************************************
  * FUNÇÃO PARA VERIFICAR CPF/CNPJ NO MK-AUTH
  * Verifica se o documento existe e tem faturas
  * E VERIFICA SE O CLIENTE ESTÁ ATIVO (cli_ativado === 's')
  * Usando módulo nativo https do Node.js
  * ATUALIZADO: Permite cliente inativo COM fatura em aberto acessar PIX
+ * ADICIONADO: Extrai nome do cliente dos dados retornados
  *************************************************/
 function verificarClienteMKAuth(doc) {
     return new Promise((resolve, reject) => {
@@ -248,6 +316,9 @@ function consultarTitulosMKAuth(doc, token, apiBase) {
                         return;
                     }
                     
+                    // ⚠️ EXTRAIR NOME DO CLIENTE DOS DADOS
+                    const nomeCliente = extrairNomeCliente(parsedData);
+                    
                     // ⚠️ VERIFICAR SE CLIENTE ESTÁ ATIVO
                     console.log(`${formatarDataHora()} 🔎 VERIFICANDO CAMPO cli_ativado:`);
                     
@@ -336,6 +407,7 @@ function consultarTitulosMKAuth(doc, token, apiBase) {
                                     existe: true,
                                     ativo: false,
                                     cli_ativado: cliAtivadoStr,
+                                    nome_cliente: nomeCliente,
                                     mensagem: "CPF/CNPJ com cadastro INATIVO. Favor entrar em contato com o Atendente."
                                 });
                                 return;
@@ -349,6 +421,7 @@ function consultarTitulosMKAuth(doc, token, apiBase) {
                                 existe: true,
                                 ativo: false,
                                 cli_ativado: cliAtivadoStr,
+                                nome_cliente: nomeCliente,
                                 mensagem: "CPF/CNPJ com cadastro INATIVO. Favor entrar em contato com o Atendente."
                             });
                             return;
@@ -364,6 +437,7 @@ function consultarTitulosMKAuth(doc, token, apiBase) {
                             existe: true,
                             ativo: true,
                             temFaturas: false,
+                            nome_cliente: nomeCliente,
                             mensagem: "Cliente encontrado, mas sem faturas disponíveis"
                         });
                         return;
@@ -386,6 +460,7 @@ function consultarTitulosMKAuth(doc, token, apiBase) {
                             ativo: true,
                             temFaturas: true,
                             temPix: false,
+                            nome_cliente: nomeCliente,
                             mensagem: "Cliente encontrado, mas sem faturas para pagamento via PIX"
                         });
                         return;
@@ -394,6 +469,7 @@ function consultarTitulosMKAuth(doc, token, apiBase) {
                     // Cliente válido
                     console.log(`${formatarDataHora()} ✅ Cliente válido no MK-Auth: ${doc}`);
                     console.log(`${formatarDataHora()} 📊 Total de títulos: ${parsedData.titulos.length}`);
+                    console.log(`${formatarDataHora()} 👤 Nome do cliente: ${nomeCliente || 'Não encontrado'}`);
                     
                     resolve({ 
                         sucesso: true, 
@@ -402,6 +478,7 @@ function consultarTitulosMKAuth(doc, token, apiBase) {
                         cli_ativado: cliAtivadoStr,
                         temFaturas: true,
                         temPix: true,
+                        nome_cliente: nomeCliente,
                         mensagem: "Cliente válido",
                         data: parsedData
                     });
@@ -2002,6 +2079,8 @@ async function startBot() {
                             mensagemPix = `⚠️ *ATENÇÃO: Cadastro INATIVO*\n\n` +
                                          `Seu cadastro está *INATIVO* na *${config.empresa}*.\n\n` +
                                          `Você possui faturas em aberto que precisam ser pagas.\n\n` +
+                                         `🔍 CPF encontrado!\n\n` +
+                                         `👤 Nome: ${resultado.nome_cliente || 'Não disponível'}\n\n` +
                                          `🔗 Clique no link abaixo para acessar suas faturas PIX:\n\n` +
                                          `${config.boleto_url}?doc=${doc}\n\n` +
                                          `⏱️ *Link válido por 10 minutos*\n\n` +
@@ -2009,6 +2088,7 @@ async function startBot() {
                         } else {
                             // Cliente ATIVO normal
                             mensagemPix = `✅ *CPF encontrado!*\n\n` +
+                                         `👤 Nome: ${resultado.nome_cliente || 'Não disponível'}\n\n` +
                                          `Clique no link abaixo para acessar sua fatura PIX:\n\n` +
                                          `🔗 ${config.boleto_url}?doc=${doc}\n\n` +
                                          `⏱️ *Link válido por 10 minutos*\n\n` +
@@ -2019,6 +2099,7 @@ async function startBot() {
                         
                         if (resultadoEnvio) {
                             console.log(`${formatarDataHora()} 📄 ✅ Mensagem PIX enviada com sucesso!`);
+                            console.log(`${formatarDataHora()} 📄 Nome do cliente exibido: ${resultado.nome_cliente || 'Não disponível'}`);
                             
                             // Configurar timeout para tela PIX
                             atendimentos[numeroCliente] = {
@@ -2121,13 +2202,16 @@ async function startBot() {
                             mensagemPix = `⚠️ *ATENÇÃO: Cadastro INATIVO*\n\n` +
                                          `Seu cadastro está *INATIVO* na *${config.empresa}*.\n\n` +
                                          `Você possui faturas em aberto que precisam ser pagas.\n\n` +
+                                         `🔍 CNPJ encontrado!\n` +
+                                         `🏢 Nome/Razão Social: ${resultado.nome_cliente || 'Não disponível'}\n\n` +
                                          `🔗 Clique no link abaixo para acessar suas faturas PIX:\n\n` +
                                          `${config.boleto_url}?doc=${doc}\n\n` +
                                          `⏱️ *Link válido por 10 minutos*\n\n` +
                                          `0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
                         } else {
                             // Cliente ATIVO normal
-                            mensagemPix = `✅ *CNPJ encontrado!*\n\n` +
+                            mensagemPix = `✅ *CNPJ encontrado!*\n` +
+                                         `🏢 Nome/Razão Social: ${resultado.nome_cliente || 'Não disponível'}\n\n` +
                                          `Clique no link abaixo para acessar sua fatura PIX:\n\n` +
                                          `🔗 ${config.boleto_url}?doc=${doc}\n\n` +
                                          `⏱️ *Link válido por 10 minutos*\n\n` +
@@ -2138,6 +2222,7 @@ async function startBot() {
                         
                         if (resultadoEnvio) {
                             console.log(`${formatarDataHora()} 📄 ✅ Mensagem PIX CNPJ enviada!`);
+                            console.log(`${formatarDataHora()} 📄 Nome/Razão Social exibido: ${resultado.nome_cliente || 'Não disponível'}`);
                             
                             // Configurar timeout para tela PIX
                             atendimentos[numeroCliente] = {
