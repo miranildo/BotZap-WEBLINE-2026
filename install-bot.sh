@@ -861,16 +861,52 @@ echo "✅ Apache configurado com VirtualHost para $BOT_DOMAIN"
 echo "✅ Também configurado alias: www.$DOMAIN_BASE"
 
 # =====================================================
-# CONFIGURAR PHP (CORRIGIDO)
+# CONFIGURAR PHP (TIMEZONE CORRIGIDO)
 # =====================================================
 echo "⚙️ Configurando PHP..."
 
 # Encontrar versão do PHP instalada
 PHP_VERSION=$(php -v | head -1 | cut -d' ' -f2 | cut -d'.' -f1,2)
 PHP_INI_DIR="/etc/php/$PHP_VERSION/apache2/conf.d"
+PHP_CLI_INI="/etc/php/$PHP_VERSION/cli/php.ini"
+PHP_APACHE_INI="/etc/php/$PHP_VERSION/apache2/php.ini"
 
-if [ -d "/etc/php/$PHP_VERSION/apache2/conf.d" ]; then
-    cat > "/etc/php/$PHP_VERSION/apache2/conf.d/99-botzap.ini" <<'PHPINIEOF'
+echo "   🔍 PHP versão detectada: $PHP_VERSION"
+
+# CORREÇÃO: CONFIGURAR TIMEZONE NO PHP.INI
+echo "   🕐 Configurando timezone do PHP para America/Recife..."
+
+# Verificar e configurar timezone em todos os php.ini encontrados
+for PHP_INI in "$PHP_CLI_INI" "$PHP_APACHE_INI" "/etc/php.ini"; do
+    if [ -f "$PHP_INI" ]; then
+        echo "   📄 Configurando: $PHP_INI"
+        
+        # Backup do arquivo original
+        cp "$PHP_INI" "$PHP_INI.backup_$(date +%Y%m%d%H%M%S)"
+        
+        # Remover configurações de timezone existentes
+        sed -i '/^date\.timezone/d' "$PHP_INI"
+        sed -i '/^;date\.timezone/d' "$PHP_INI"
+        
+        # Adicionar configuração correta
+        # Encontrar a seção [Date] ou adicionar no final
+        if grep -q "\[Date\]" "$PHP_INI"; then
+            # Inserir após a linha [Date]
+            sed -i '/\[Date\]/a\date.timezone = America/Recife' "$PHP_INI"
+        else
+            # Se não encontrar a seção, adicionar no final
+            echo "" >> "$PHP_INI"
+            echo "[Date]" >> "$PHP_INI"
+            echo "date.timezone = America/Recife" >> "$PHP_INI"
+        fi
+        
+        echo "   ✅ $PHP_INI configurado com timezone America/Recife"
+    fi
+done
+
+# Também configurar via date_default_timezone_set em arquivos de configuração
+if [ -d "$PHP_INI_DIR" ]; then
+    cat > "$PHP_INI_DIR/99-botzap.ini" <<'PHPINIEOF'
 ; Configurações PHP para BotZap
 upload_max_filesize = 10M
 post_max_size = 10M
@@ -893,11 +929,38 @@ session.use_strict_mode = 1
 allow_url_fopen = Off
 allow_url_include = Off
 expose_php = Off
+
+; CORREÇÃO CRÍTICA: Timezone para Brasil
+date.timezone = America/Recife
 PHPINIEOF
-    echo "✅ Configuração PHP criada em /etc/apache2/sites-available/botzap.ini"
+    
+    echo "✅ Configuração PHP criada em $PHP_INI_DIR/99-botzap.ini"
 else
     echo "⚠️  Diretório PHP não encontrado, usando configurações padrão"
+    # Criar configuração alternativa
+    cat > "/etc/php/$PHP_VERSION/apache2/php.ini.d/99-botzap.ini" <<'PHPINIEOF'
+; Configurações PHP para BotZap
+date.timezone = America/Recife
+PHPINIEOF
 fi
+
+# Testar configuração
+echo "   🧪 Testando configuração do timezone..."
+TEST_OUTPUT=$(php -r "echo date_default_timezone_get();" 2>/dev/null)
+if [ -n "$TEST_OUTPUT" ]; then
+    echo "   ✅ Timezone PHP atual: $TEST_OUTPUT"
+else
+    echo "   ⚠️  Não foi possível obter timezone do PHP"
+fi
+
+# Forçar configuração via script também
+echo "   🔧 Forçando timezone via comando..."
+php -r "date_default_timezone_set('America/Recife'); echo 'Timezone forçado para: ' . date_default_timezone_get() . PHP_EOL;"
+
+# Recarregar Apache para aplicar configurações PHP
+echo "   🔄 Recarregando Apache para aplicar configurações PHP..."
+systemctl reload apache2
+echo "✅ Configuração PHP aplicada"
 
 # =====================================================
 # SYSTEMD – SERVIÇO DO BOT
@@ -980,6 +1043,60 @@ echo "   127.0.0.1 $BOT_DOMAIN"
 echo "   127.0.0.1 www.$DOMAIN_BASE"
 
 # =====================================================
+# VERIFICAR TIMEZONE DO PHP
+# =====================================================
+echo ""
+echo "🕐 Verificando configuração de timezone do PHP..."
+echo "----------------------------------------------"
+
+# Verificar timezone atual
+CURRENT_TZ=$(php -r "echo date_default_timezone_get();")
+EXPECTED_TZ="America/Recife"
+
+echo "   • Timezone esperado: $EXPECTED_TZ"
+echo "   • Timezone atual: $CURRENT_TZ"
+
+if [ "$CURRENT_TZ" = "$EXPECTED_TZ" ]; then
+    echo "   ✅ Timezone configurado corretamente!"
+else
+    echo "   ⚠️  Timezone INCORRETO! Tentando corrigir..."
+    
+    # Tentar corrigir via comando
+    for PHP_INI in /etc/php/*/apache2/php.ini /etc/php/*/cli/php.ini /etc/php.ini; do
+        if [ -f "$PHP_INI" ]; then
+            sed -i '/^date\.timezone/d' "$PHP_INI"
+            sed -i '/^;date\.timezone/d' "$PHP_INI"
+            
+            if grep -q "\[Date\]" "$PHP_INI"; then
+                sed -i '/\[Date\]/a\date.timezone = America/Recife' "$PHP_INI"
+            else
+                echo "" >> "$PHP_INI"
+                echo "[Date]" >> "$PHP_INI"
+                echo "date.timezone = America/Recife" >> "$PHP_INI"
+            fi
+            echo "   ✅ Corrigido: $PHP_INI"
+        fi
+    done
+    
+    # Testar novamente
+    NEW_TZ=$(php -r "echo date_default_timezone_get();")
+    echo "   • Novo timezone: $NEW_TZ"
+    
+    if [ "$NEW_TZ" = "$EXPECTED_TZ" ]; then
+        echo "   ✅ Timezone corrigido com sucesso!"
+    else
+        echo "   ⚠️  Não foi possível corrigir automaticamente"
+        echo "   💡 Dica: Adicione 'date_default_timezone_set('America/Recife');' no início dos seus scripts PHP"
+    fi
+fi
+
+# Mostrar hora atual do PHP
+echo ""
+echo "🕐 Hora atual do PHP:"
+php -r "echo '   • Data/hora: ' . date('d/m/Y H:i:s') . PHP_EOL;"
+echo "   • Sistema: $(date '+%d/%m/%Y %H:%M:%S')"
+
+# =====================================================
 # TESTES FINAIS
 # =====================================================
 echo "🧪 Executando testes finais..."
@@ -1042,6 +1159,16 @@ else
     echo "   ❌ /var/log/pix_acessos não existe!"
 fi
 
+echo ""
+echo "7. Testando configuração de timezone:"
+TIMEZONE_CHECK=$(php -r "echo date_default_timezone_get();")
+echo "   • Timezone PHP: $TIMEZONE_CHECK"
+if [ "$TIMEZONE_CHECK" = "America/Recife" ]; then
+    echo "   ✅ Timezone configurado corretamente!"
+else
+    echo "   ⚠️  Timezone incorreto: $TIMEZONE_CHECK"
+fi
+
 # =====================================================
 # INICIAR O BOT
 # =====================================================
@@ -1100,6 +1227,9 @@ cat << EOF
 • Dashboard Pix:          /var/log/pix_acessos/
 • Credenciais Dashboard:  admin / Admin@123
 
+• Timezone PHP:          America/Recife configurado
+• Verificação timezone:  php -r "echo date_default_timezone_get();"
+
 🌐 ACESSO AO SISTEMA:
 --------------------
 • URL do painel:          http://$BOT_DOMAIN
@@ -1116,6 +1246,8 @@ cat << EOF
 • Reiniciar Apache:       systemctl reload apache2
 • Ver configuração:       cat /etc/apache2/sites-available/botzap.conf
 • Dashboard Pix logs:     ls -la /var/log/pix_acessos/
+• Verificar timezone:     php -r "echo date_default_timezone_get();"
+• Verificar hora PHP:     php -r "echo date('d/m/Y H:i:s');"
 
 🔧 PRÓXIMOS PASSOS:
 ------------------
@@ -1124,6 +1256,7 @@ cat << EOF
 3. Vá em "QR Code WhatsApp" para conectar o bot
 4. Configure o domínio real no seu DNS (apontar para $SERVER_IP)
 5. Dashboard Pix: Os logs estão em /var/log/pix_acessos/
+6. Verifique timezone: php -r "echo date('d/m/Y H:i:s');"
 
 ⚠️  IMPORTANTE:
 --------------
@@ -1131,6 +1264,7 @@ cat << EOF
 • Backup do arquivo users.php: $WEB_DIR/users.php.backup
 • Configure backup dos arquivos em $BOT_DIR/
 • Dashboard Pix configurado em: /var/log/pix_acessos/
+• Timezone configurado para America/Recife (GMT-3)
 
 🎛️  FERRAMENTAS INSTALADAS:
 -------------------------
@@ -1138,6 +1272,7 @@ cat << EOF
 • bash-completion ativado (auto-completar comandos)
 • fzf instalado (use CTRL+R para pesquisa no histórico)
 • Dashboard Pix configurado com diretório de logs
+• Timezone PHP configurado para America/Recife
 • Aliases úteis configurados:
   - ls, ll, l: listagens coloridas
   - grep, egrep: coloridos
@@ -1148,6 +1283,8 @@ cat << EOF
 • Prompt colorido ativado
 
 ✅ Tudo pronto! O bot está instalado e configurado.
+✅ Timezone PHP configurado para America/Recife
+✅ Dashboard Pix com logs no horário correto!
 EOF
 
 echo ""
