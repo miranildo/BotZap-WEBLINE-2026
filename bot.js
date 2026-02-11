@@ -1,27 +1,28 @@
 /*************************************************
- * BOT WHATSAPP - VERSÃO COMPLETA COM FERIADOS
- * Controle de feriados via painel web
- * CORRIGIDO: Bloqueia grupos (@g.us), permite listas (@lid) e individuais (@s.whatsapp.net)
- * ADICIONADO: Data/hora nos logs + Limpeza automática de usuários
- * CORRIGIDO: Bug CPF/CNPJ apenas números (não confundir com telefone)
- * ATUALIZADO: Identificação automática do atendente via conexão QR Code
- * CORRIGIDO: Captura correta do número do WhatsApp conectado (com formato :sessao)
- * CORRIGIDO: Prevenção de duplicação atendente/cliente
- * CORRIGIDO: Ignorar mensagens de sistema/sincronização
- * ADICIONADO: Atualização automática do número do atendente no config.json
- * ADICIONADO: Limpeza automática da pasta auth_info ao detectar desconexão (loggedOut)
- * CORRIGIDO: Comando #FECHAR do atendente agora funciona corretamente
- * ADICIONADO: Timeout automático para tela PIX (10 minutos)
- * ADICIONADO: Comandos #FECHAR [número] e #FECHAR [nome] para encerrar individualmente
- * ADICIONADO: Comando #CLIENTES para listar atendimentos ativos
- * CORRIGIDO: Bot NÃO responde em grupos - apenas individualmente
- * ADICIONADO: Verificação MK-Auth para CPF/CNPJ existentes antes de gerar link PIX
- * ATUALIZADO: Credenciais MK-Auth configuráveis via painel web
- * CORRIGIDO: Não gera link se credenciais não estiverem configuradas
- * CORRIGIDO: "Para Fatura" fora do horário e "Tentar outro CPF" agora vão para tela CPF
- * ATUALIZADO: Permite cliente inativo COM fatura em aberto acessar PIX normalmente
- * ADICIONADO: Exibe nome do cliente quando CPF/CNPJ é encontrado
- * BOT WHATSAPP - VERSÃO LID-PROOF CORRIGIDA
+ * ✅ BOT WHATSAPP - ÍNICIO DO PROJETO EM ‎Segunda-feira, ‎2‎ de ‎fevereiro‎ de ‎2026, ‏‎19:12:50 por MIRANILDO DE LIMA SANTOS
+ * ✅ BOT WHATSAPP - VERSÃO COMPLETA COM FERIADOS
+ * ✅ Controle de feriados via painel web
+ * ✅ CORRIGIDO: Bloqueia grupos (@g.us), permite listas (@lid) e individuais (@s.whatsapp.net)
+ * ✅ ADICIONADO: Data/hora nos logs + Limpeza automática de usuários
+ * ✅ CORRIGIDO: Bug CPF/CNPJ apenas números (não confundir com telefone)
+ * ✅ ATUALIZADO: Identificação automática do atendente via conexão QR Code
+ * ✅ CORRIGIDO: Captura correta do número do WhatsApp conectado (com formato :sessao)
+ * ✅ CORRIGIDO: Prevenção de duplicação atendente/cliente
+ * ✅ CORRIGIDO: Ignorar mensagens de sistema/sincronização
+ * ✅ ADICIONADO: Atualização automática do número do atendente no config.json
+ * ✅ ADICIONADO: Limpeza automática da pasta auth_info ao detectar desconexão (loggedOut)
+ * ✅ CORRIGIDO: Comando #FECHAR do atendente agora funciona corretamente
+ * ✅ ADICIONADO: Timeout automático para tela PIX (10 minutos)
+ * ✅ ADICIONADO: Comandos #FECHAR [número] e #FECHAR [nome] para encerrar individualmente
+ * ✅ ADICIONADO: Comando #CLIENTES para listar atendimentos ativos
+ * ✅ CORRIGIDO: Bot NÃO responde em grupos - apenas individualmente
+ * ✅ ADICIONADO: Verificação MK-Auth para CPF/CNPJ existentes antes de gerar link PIX
+ * ✅ ATUALIZADO: Credenciais MK-Auth configuráveis via painel web
+ * ✅ CORRIGIDO: Não gera link se credenciais não estiverem configuradas
+ * ✅ CORRIGIDO: "Para Fatura" fora do horário e "Tentar outro CPF" agora vão para tela CPF
+ * ✅ ATUALIZADO: Permite cliente inativo COM fatura em aberto acessar PIX normalmente
+ * ✅ ADICIONADO: Exibe nome do cliente quando CPF/CNPJ é encontrado
+ * ✅ BOT WHATSAPP - VERSÃO LID-PROOF CORRIGIDA
  * ✅ CORRIGIDO: Loop de timeout para usuários individuais
  * ✅ MANTIDO: Todas mensagens do fluxo original
  * ✅ CORRIGIDO: Sistema de encerramento completo
