@@ -1173,6 +1173,19 @@ cat << EOF
 • Reiniciar Apache:       systemctl reload apache2
 • Ver configuração:       cat /etc/apache2/sites-available/botzap.conf
 • Dashboard Pix logs:     ls -la /var/log/pix_acessos/
+• node bot.js             Inicia o bot normalmente
+• node bot.js --clear-auth  Limpa sessões corrompidas
+• node bot.js --clean     Mesmo que --clear-auth
+• node bot.js --help      Ajuda
+
+• Usando o comando de limpeza para uma nova sessão whatsapp:
+systemctl stop botzap
+cd /opt/whatsapp-bot
+node bot.js --clear-auth
+systemctl start botzap
+
+Isso limpará automaticamente todas as sessões corrompidas.
+Efetuar a leitura de uma nova sessão com o QRCODE
 
 🔧 PRÓXIMOS PASSOS:
 ------------------
