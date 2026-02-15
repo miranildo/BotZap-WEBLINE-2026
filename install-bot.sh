@@ -28,7 +28,7 @@ fi
 # INSTALAR FERRAMENTAS DE UTILIDADE
 # =====================================================
 echo "🔧 Instalando ferramentas de utilidade..."
-apt install vim bash-completion fzf acl -y
+apt install vim bash-completion fzf file acl -y
 
 echo "🔧 Configurando bash-completion..."
 echo '' >> /etc/bash.bashrc
