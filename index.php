@@ -13,7 +13,8 @@ $config = [
     'menu' => '',
     'boleto_url' => '',
     'atendente_numero' => '',
-    'tempo_atendimento_humano' => '',
+    'tempo_atendimento_humano' => 30,
+    'tempo_inatividade_global' => 30, // NOVO CAMPO
     'feriados_ativos' => 'Sim',
     // Novos campos para MK-Auth
     'mkauth_url' => 'https://www.SEU_DOMINIO.com.br/api',
@@ -36,8 +37,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $config['menu'] = trim($_POST['menu'] ?? '');
     $config['boleto_url'] = trim($_POST['boleto_url'] ?? '');
     $config['atendente_numero'] = trim($_POST['atendente_numero'] ?? '');
-    $config['tempo_atendimento_humano'] =
-        intval($_POST['tempo_atendimento_humano'] ?? '');
+    $config['tempo_atendimento_humano'] = intval($_POST['tempo_atendimento_humano'] ?? 30);
+    $config['tempo_inatividade_global'] = intval($_POST['tempo_inatividade_global'] ?? 30); // NOVO CAMPO
     $config['feriados_ativos'] = trim($_POST['feriados_ativos'] ?? 'Sim');
     
     // Novos campos MK-Auth
@@ -45,8 +46,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $config['mkauth_client_id'] = trim($_POST['mkauth_client_id'] ?? '');
     $config['mkauth_client_secret'] = trim($_POST['mkauth_client_secret'] ?? '');
 
+    // Validações
     if ($config['tempo_atendimento_humano'] <= 0) {
         $config['tempo_atendimento_humano'] = 30;
+    }
+    
+    if ($config['tempo_inatividade_global'] <= 0) {
+        $config['tempo_inatividade_global'] = 30;
     }
 
     // Validar valor do feriado
@@ -326,6 +332,20 @@ button {
     font-size: 13px;
     color: #0369a1;
 }
+
+.timeout-info {
+    background: #fef3c7;
+    border-left: 4px solid #f59e0b;
+    padding: 12px 15px;
+    margin-top: 10px;
+    border-radius: 8px;
+    font-size: 14px;
+    color: #92400e;
+}
+
+.timeout-info p {
+    margin: 5px 0;
+}
 </style>
 </head>
 
@@ -400,8 +420,27 @@ button {
             min="5"
             step="5"
             name="tempo_atendimento_humano"
-            value="<?= (int)$config['tempo_atendimento_humano'] ?>"
+            value="<?= htmlspecialchars($config['tempo_atendimento_humano']) ?>"
         >
+
+        <label>⏱️ Tempo máximo de inatividade global (minutos)</label>
+        <input
+            type="number"
+            min="5"
+            step="5"
+            name="tempo_inatividade_global"
+            value="<?= htmlspecialchars($config['tempo_inatividade_global']) ?>"
+        >
+        <div class="timeout-info">
+            <p><strong>ℹ️ Sobre o tempo de inatividade global:</strong></p>
+            <p>• Aplica-se a <strong>TODAS</strong> as etapas do atendimento:</p>
+            <p>  - Menu inicial</p>
+            <p>  - Aguardando CPF/CNPJ</p>
+            <p>  - Após gerar link PIX</p>
+            <p>  - Atendimento humano (além do tempo específico)</p>
+            <p>• Se o cliente não responder neste período, o atendimento é encerrado automaticamente</p>
+            <p>• Ao reiniciar, o cliente volta ao menu inicial</p>
+        </div>
 
         <label>🎯 Considerar feriados no atendimento?</label>
         <div class="radio-group">
@@ -444,7 +483,7 @@ button {
             <input 
                 name="mkauth_client_id" 
                 value="<?= htmlspecialchars($config['mkauth_client_id']) ?>"
-                placeholder="c582c8ede2c9169c64f29c626fadc38e"
+                placeholder="c582c8ede2c9169c64f29cxxxxxxxxxx"
             >
             <small style="color: #6b7280; font-size: 12px;">
                 Identificador do cliente para autenticação na API
@@ -455,7 +494,7 @@ button {
                 name="mkauth_client_secret" 
                 type="password"
                 value="<?= htmlspecialchars($config['mkauth_client_secret']) ?>"
-                placeholder="9d2367fbf45d2e89d8ee8cb92ca3c02f13bcb0c1"
+                placeholder="9d2367fbf45d2e89d8ee8cb92ca3c0xxxxxxxxxx"
             >
             <small style="color: #6b7280; font-size: 12px;">
                 Senha de acesso à API (chave secreta)
