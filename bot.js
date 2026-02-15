@@ -12,7 +12,6 @@
  * ✅ ADICIONADO: Atualização automática do número do atendente no config.json
  * ✅ ADICIONADO: Limpeza automática da pasta auth_info ao detectar desconexão (loggedOut)
  * ✅ CORRIGIDO: Comando #FECHAR do atendente agora funciona corretamente
- * ✅ ADICIONADO: Timeout automático para tela PIX (10 minutos)
  * ✅ ADICIONADO: Comandos #FECHAR [número] e #FECHAR [nome] para encerrar individualmente
  * ✅ ADICIONADO: Comando #CLIENTES para listar atendimentos ativos
  * ✅ CORRIGIDO: Bot NÃO responde em grupos - apenas individualmente
@@ -39,6 +38,18 @@
  * ✅ Health check e debug integrado
  * ✅ Migração automática V1 → V2
  * ✅ TODAS as mensagens e fluxo ORIGINAIS preservados
+ * 
+ * 🆕 SISTEMA UNIFICADO DE TIMEOUT - v3.0
+ * ✅ Tempo único configurável via index.php (tempo_inatividade_global)
+ * ✅ Aplica-se a TODOS os contextos: menu, CPF, PIX, atendimento humano
+ * ✅ Cliente inativo volta ao menu inicial automaticamente
+ * ✅ Mantém compatibilidade com timeout específico do atendimento humano
+ * ✅ CORREÇÃO: Menu inicial agora é monitorado pelo sistema de timeout
+ * 
+ * 🆕 CORREÇÃO DE MENSAGENS INDEVIDAS - v3.1
+ * ✅ Ignora mensagens de contexto de grupo (participant/participant_lid)
+ * ✅ Ignora mensagens de broadcast não direcionadas
+ * ✅ Processa apenas mensagens diretas (@lid, @s.whatsapp.net)
  * 
  * 🏆 NÍVEL: 10/10 - PREPARADO PARA 2025+
  *************************************************/
@@ -1002,10 +1013,31 @@ async function enviarMensagemParaUsuario(sock, usuario, mensagem) {
     }
 }
 
+// ================= FUNÇÃO PARA ATUALIZAR ATIVIDADE DO USUÁRIO =================
+function atualizarAtividadeUsuario(usuario) {
+    if (!usuario || !usuario.primaryKey) return;
+    
+    const chave = usuario.primaryKey;
+    if (atendimentos[chave]) {
+        atendimentos[chave].ultimaAtividade = Date.now();
+    }
+}
+
 async function enviarMenuPrincipal(sock, usuario, texto = '') {
     try {
         const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
         const pushName = usuario?.pushName || '';
+        
+        // 🔥 CRIA ATENDIMENTO PARA O MENU (se não existir)
+        if (!atendimentos[usuario.primaryKey]) {
+            atendimentos[usuario.primaryKey] = {
+                tipo: 'menu',
+                inicio: Date.now(),
+                ultimaAtividade: Date.now(),
+                usuarioPrimaryKey: usuario.primaryKey
+            };
+            console.log(`${formatarDataHora()} 📋 Atendimento criado para ${pushName} (menu)`);
+        }
         
         const menuText = 
 `Olá! 👋  ${pushName ? pushName + ' ' : ''}
@@ -1039,6 +1071,11 @@ async function encerrarAtendimento(usuario, config, motivo = "encerrado", chaveE
     
     console.log(`${formatarDataHora()} 🚪 Encerrando ${pushName} (${motivo}) - PK: ${chaveAtendimento}`);
     
+    // 🔥 MARCA QUE HOUVE UM ENCERRAMENTO RECENTE (para evitar processamento automático)
+    if (!usuario.metadata) usuario.metadata = {};
+    usuario.metadata.ultimoEncerramento = Date.now();
+    
+    // 🔥 LIMPEZA COMPLETA: Remove TODOS os registros do usuário
     const chavesParaRemover = new Set();
     chavesParaRemover.add(chaveAtendimento);
     chavesParaRemover.add(usuario.primaryKey);
@@ -1069,16 +1106,26 @@ async function encerrarAtendimento(usuario, config, motivo = "encerrado", chaveE
     
     let mensagem = '';
     if (motivo === "timeout") {
-        mensagem = `⏰ *Atendimento encerrado por inatividade*\n\nA *${config.empresa}* agradece o seu contato!`;
+        mensagem = `⏰ *Atendimento encerrado por inatividade*\n\n` +
+                  `A *${config.empresa}* agradece o seu contato! 😊`;
     } else if (motivo === "atendente") {
-        mensagem = `✅ *Atendimento encerrado pelo atendente*\n\nA *${config.empresa}* agradece o seu contato! 😊`;
+        mensagem = `✅ *Atendimento encerrado pelo atendente*\n\n` +
+                  `A *${config.empresa}* agradece o seu contato! 😊`;
+    } else if (motivo === "cliente") {
+        mensagem = `✅ *Atendimento encerrado*\n\n` +
+                  `A *${config.empresa}* agradece o seu contato! 😊`;
     } else {
-        mensagem = `✅ *Atendimento encerrado!*\n\nA *${config.empresa}* agradece o seu contato! 😊`;
+        mensagem = `✅ *Atendimento encerrado!*\n\n` +
+                  `A *${config.empresa}* agradece o seu contato! 😊`;
     }
     
     try {
         await new Promise(resolve => setTimeout(resolve, 500));
         await enviarMensagemParaUsuario(sockInstance, usuario, mensagem);
+        
+        // 🔥 SALVA O USUÁRIO COM A MARCA DE ENCERRAMENTO
+        salvarUsuarios();
+        
         return true;
     } catch (error) {
         console.error(`${formatarDataHora()} ❌ Erro ao enviar mensagem de encerramento:`, error);
@@ -1086,10 +1133,28 @@ async function encerrarAtendimento(usuario, config, motivo = "encerrado", chaveE
     }
 }
 
+// ================= NOVA FUNÇÃO DE VERIFICAÇÃO DE TIMEOUTS (SILENCIOSA) =================
 async function verificarTimeouts() {
     try {
-        const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
+        const configRaw = fs.readFileSync(CONFIG_PATH, 'utf8');
+        const config = JSON.parse(configRaw);
+        
         const agora = Date.now();
+        
+        let tempoGlobalMinutos = config.tempo_inatividade_global;
+        if (!tempoGlobalMinutos || tempoGlobalMinutos < 1) {
+            tempoGlobalMinutos = 30;
+            console.log(`${formatarDataHora()} ⚠️ tempo_inatividade_global não configurado, usando 30 minutos`);
+        }
+        
+        const tempoInatividadeGlobal = tempoGlobalMinutos * 60 * 1000;
+        
+        // 🔥 LOG INICIAL APENAS QUANDO HÁ ATENDIMENTOS
+        const totalAtendimentos = Object.keys(atendimentos).length;
+        if (totalAtendimentos > 0) {
+            // Só mostra a verificação se houver atendimentos ativos
+            console.log(`${formatarDataHora()} 🔍 Verificando ${totalAtendimentos} atendimento(s)...`);
+        }
         
         const chavesAtendimentos = Object.keys(atendimentos);
         
@@ -1112,29 +1177,30 @@ async function verificarTimeouts() {
             
             const pushName = usuario.pushName || 'Cliente';
             
+            // USA ultimaAtividade, se não existir usa inicio, se não existir usa agora
+            const referenciaTempo = atendimento.ultimaAtividade || atendimento.inicio || agora;
+            const tempoInativo = agora - referenciaTempo;
+            
+            const minutosInativo = Math.round(tempoInativo / 60000);
+            
+            // 🔥 VERIFICA SE DEVE ENCERRAR
+            if (tempoInativo > tempoInatividadeGlobal) {
+                console.log(`${formatarDataHora()} ⏰ ENCERRANDO ${pushName} - ${minutosInativo}min inativo > ${tempoGlobalMinutos}min`);
+                await encerrarAtendimento(usuario, config, "timeout", usuario.primaryKey);
+                continue;
+            }
+            
+            // 🔥 LOG APENAS A CADA 5 MINUTOS DE INATIVIDADE (para não poluir)
+            if (minutosInativo % 5 === 0 && minutosInativo > 0) {
+                console.log(`${formatarDataHora()} ⏱️ ${pushName} - ${minutosInativo}min inativo (limite: ${tempoGlobalMinutos}min)`);
+            }
+            
+            // MANTÉM COMPATIBILIDADE COM O TIMEOUT ESPECÍFICO DO ATENDIMENTO HUMANO
             if (atendimento.tipo === 'humano' && atendimento.timeout && agora > atendimento.timeout) {
+                console.log(`${formatarDataHora()} ⏰ Timeout específico do atendimento humano - Encerrando ${pushName}`);
                 await encerrarAtendimento(usuario, config, "timeout", usuario.primaryKey);
                 continue;
             }
-            
-            if (atendimento.tipo === 'aguardando_cpf' && atendimento.inicio && 
-                (agora - atendimento.inicio) > (5 * 60 * 1000)) {
-                await encerrarAtendimento(usuario, config, "timeout", usuario.primaryKey);
-                continue;
-            }
-            
-            if (atendimento.tipo === 'pos_pix' && atendimento.inicio && 
-                (agora - atendimento.inicio) > (10 * 60 * 1000)) {
-                await encerrarAtendimento(usuario, config, "timeout", usuario.primaryKey);
-                continue;
-            }
-        }
-        
-        const totalAtendimentos = Object.keys(atendimentos).length;
-        if (totalAtendimentos !== ultimoLogVerificacao.quantidade) {
-            console.log(`${formatarDataHora()} 🔄 Verificando ${totalAtendimentos} atendimento(s) ativos`);
-            ultimoLogVerificacao.quantidade = totalAtendimentos;
-            ultimoLogVerificacao.timestamp = agora;
         }
         
     } catch (error) {
@@ -1607,63 +1673,134 @@ async function startBot() {
         }
     });
 
-    sock.ev.on('messages.upsert', async ({ messages }) => {
-        if (!messages || !Array.isArray(messages) || messages.length === 0) return;
+// ============ INÍCIO DO BLOCO MESSAGES ============
+sock.ev.on('messages.upsert', async ({ messages }) => {
+    if (!messages || !Array.isArray(messages) || messages.length === 0) return;
 
-        const msg = messages[0];
-        const texto = (
-            msg.message.conversation ||
-            msg.message.extendedTextMessage?.text ||
-            ''
-        ).trim();
-        
-        const jidInfo = extrairJIDCompleto(msg);
-        if (jidInfo.ignore) {
-            if (jidInfo.source === 'status') {
-                console.log(`${formatarDataHora()} 📱 Visualização de STATUS - IGNORANDO`);
-            }
-            return;
-        }
-
-        const jidRemetente = jidInfo.jid;
-        const sourceType = jidInfo.source;
-
-        if (msg.key.fromMe) return;
-        if (!msg.message || msg.message.protocolMessage || msg.message.senderKeyDistributionMessage) return;
-        if (!jidRemetente) {
-            console.error(`${formatarDataHora()} ❌ Não foi possível obter JID do remetente`);
-            return;
-        }
-
-        const pushName = msg.pushName || 'Cliente';
-        console.log(`\n${formatarDataHora()} 📨 MENSAGEM DE: ${pushName} (${jidRemetente}) [fonte: ${sourceType}] - "${texto}"`);
-
-        const usuario = identificarUsuario(jidRemetente, pushName, texto, false);
-        
-        if (!usuario) {
-            console.log(`${formatarDataHora()} ❌ Usuário não identificado`);
-            return;
-        }
-
-        const isStatusView = jidRemetente === 'status@broadcast';
-        if (isStatusView) {
+    const msg = messages[0];
+    
+    // 🔥 PROTEÇÃO CONTRA NULL
+    if (!msg || !msg.message) {
+        console.log(`${formatarDataHora()} ⚠️ Mensagem sem conteúdo ignorada`);
+        return;
+    }
+    
+    // 🔥 EXTRAÇÃO SEGURA DO TEXTO
+    let texto = '';
+    try {
+        texto = msg.message.conversation || 
+                msg.message.extendedTextMessage?.text || 
+                '';
+        texto = texto.trim();
+    } catch (error) {
+        console.log(`${formatarDataHora()} ⚠️ Erro ao extrair texto:`, error.message);
+        texto = '';
+    }
+    
+    const jidInfo = extrairJIDCompleto(msg);
+    if (jidInfo.ignore) {
+        if (jidInfo.source === 'status') {
             console.log(`${formatarDataHora()} 📱 Visualização de STATUS - IGNORANDO`);
-            return;
         }
+        return;
+    }
 
-        if (usuario.identityType === 'lid' || usuario.identityType === 'broadcast' || usuario.identityType === 'encrypted_jid') {
-            console.log(`${formatarDataHora()} 📢 Cliente com formato especial: ${usuario.identityType} - PROCESSANDO NORMALMENTE`);
-        }
+    const jidRemetente = jidInfo.jid;
+    const sourceType = jidInfo.source;
 
-        const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
-        const isAtendente = usuario.tipo === 'atendente';
+    if (msg.key.fromMe) return;
+    if (msg.message.protocolMessage || msg.message.senderKeyDistributionMessage) return;
+    if (!jidRemetente) {
+        console.error(`${formatarDataHora()} ❌ Não foi possível obter JID do remetente`);
+        return;
+    }
+
+    // 🔥 FILTRO PRINCIPAL - IGNORA MENSAGENS DE CONTEXTO
+    const isGroupMessage = jidRemetente.includes('@g.us');
+    const isParticipantSource = sourceType === 'participant' || sourceType === 'participant_lid';
+    const isBroadcastSource = sourceType === 'broadcast';
+    
+    if (isGroupMessage || isParticipantSource || isBroadcastSource) {
+        console.log(`${formatarDataHora()} 🚫 Mensagem IGNORADA - fonte: ${sourceType}, jid: ${jidRemetente}`);
+        return;
+    }
+
+    if (sourceType !== 'remote') {
+        console.log(`${formatarDataHora()} 🚫 Mensagem ignorada - apenas mensagens diretas (remote) são processadas`);
+        return;
+    }
+
+    const pushName = msg.pushName || 'Cliente';
+    console.log(`\n${formatarDataHora()} 📨 MENSAGEM DE: ${pushName} (${jidRemetente}) [fonte: ${sourceType}] - "${texto}"`);
+
+    const usuario = identificarUsuario(jidRemetente, pushName, texto, false);
+    
+    if (!usuario) {
+        console.log(`${formatarDataHora()} ❌ Usuário não identificado`);
+        return;
+    }
+
+    // ============ INÍCIO DA VERIFICAÇÃO DE ENCERRAMENTO RECENTE ============
+    const agora = Date.now();
+    const ultimoEncerramento = usuario.metadata?.ultimoEncerramento || 0;
+    const tempoDesdeEncerramento = agora - ultimoEncerramento;
+    
+    // Se houve encerramento nos últimos 30 segundos
+    if (ultimoEncerramento > 0 && tempoDesdeEncerramento < 30000) {
+        console.log(`${formatarDataHora()} 🔄 Encerramento recente (${Math.round(tempoDesdeEncerramento/1000)}s) - REENVIANDO MENU`);
         
-        if (isAtendente) {
-            console.log(`${formatarDataHora()} 👨‍💼 Mensagem do atendente: ${texto}`);
-            
-            if (texto.toUpperCase() === '#STATUS' || texto.toUpperCase() === '#RELATORIO') {
-                const relatorio = gerarRelatorioSistema();
-                const mensagem = 
+        // 🔥 GARANTE QUE NÃO HÁ ATENDIMENTO RESIDUAL
+        if (atendimentos[usuario.primaryKey]) {
+            delete atendimentos[usuario.primaryKey];
+            console.log(`${formatarDataHora()} 🗑️ Atendimento residual removido`);
+        }
+        if (contextos[usuario.primaryKey]) {
+            delete contextos[usuario.primaryKey];
+            console.log(`${formatarDataHora()} 🗑️ Contexto residual removido`);
+        }
+        
+        // 🔥 REMOVE A MARCA DE ENCERRAMENTO
+        if (usuario.metadata) {
+            delete usuario.metadata.ultimoEncerramento;
+            salvarUsuarios();
+            console.log(`${formatarDataHora()} 🗑️ Marca de encerramento removida`);
+        }
+        
+        await enviarMenuPrincipal(sock, usuario, texto);
+        return;
+    }
+    // ============ FIM DA VERIFICAÇÃO DE ENCERRAMENTO RECENTE ============
+
+    // ============ INÍCIO DA CRIAÇÃO/ATUALIZAÇÃO DE ATENDIMENTO ============
+    
+    // 🔥 VERIFICA SE JÁ EXISTE UM ATENDIMENTO PARA ESTE USUÁRIO
+    const atendimentoExistente = atendimentos[usuario.primaryKey];
+    
+    if (!atendimentoExistente) {
+        // 🔥 NÃO EXISTE ATENDIMENTO - CRIA UM NOVO
+        atendimentos[usuario.primaryKey] = {
+            tipo: 'menu',
+            inicio: Date.now(),
+            ultimaAtividade: Date.now(),
+            usuarioPrimaryKey: usuario.primaryKey
+        };
+        console.log(`${formatarDataHora()} 📋 NOVO atendimento criado para ${usuario.pushName}`);
+    } else {
+        // 🔥 JÁ EXISTE ATENDIMENTO - APENAS ATUALIZA ATIVIDADE
+        atendimentos[usuario.primaryKey].ultimaAtividade = Date.now();
+        console.log(`${formatarDataHora()} 📋 Atendimento existente atualizado para ${usuario.pushName}`);
+    }
+    // ============ FIM DA CRIAÇÃO/ATUALIZAÇÃO DE ATENDIMENTO ============
+
+    const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
+    const isAtendente = usuario.tipo === 'atendente';
+    
+    if (isAtendente) {
+        console.log(`${formatarDataHora()} 👨‍💼 Mensagem do atendente: ${texto}`);
+        
+        if (texto.toUpperCase() === '#STATUS' || texto.toUpperCase() === '#RELATORIO') {
+            const relatorio = gerarRelatorioSistema();
+            const mensagem = 
 `📊 *RELATÓRIO DO SISTEMA v${relatorio.versao}*
 ⏰ ${formatarDataHora()}
 
@@ -1680,56 +1817,148 @@ Total: ${relatorio.estatisticas.atendimentos.ativos}
 🔍 *NOVOS FORMATOS*
 ${relatorio.estatisticas.formatosDetectados} registro(s)`;
 
-                await enviarMensagemParaUsuario(sock, usuario, mensagem);
-                return;
-            }
-            
+            await enviarMensagemParaUsuario(sock, usuario, mensagem);
             return;
         }
-
-        let chaveAtendimento = usuario.primaryKey;
-        const contextoAtual = contextos[chaveAtendimento] || 'menu';
         
-        console.log(`${formatarDataHora()} 🔢 ${pushName} -> ${usuario.primaryKey} (${usuario.tipo})`);
-        console.log(`${formatarDataHora()} 📊 Contexto atual: ${contextoAtual}`);
+        return;
+    }
 
-        if (texto === '0') {
-            console.log(`${formatarDataHora()} 🔄 Cliente digitou "0" - contexto: ${contextoAtual}`);
-            
-            if (contextoAtual === 'pos_pix' || contextoAtual === 'em_atendimento' || contextoAtual === 'aguardando_cpf') {
-                console.log(`${formatarDataHora()} 🚪 Encerrando atendimento por comando do cliente`);
-                await encerrarAtendimento(usuario, config, "cliente", chaveAtendimento);
-                return;
-            } else {
-                console.log(`${formatarDataHora()} ℹ️ Comando "0" ignorado - não está em contexto de atendimento`);
-                await enviarMenuPrincipal(sock, usuario, texto);
-                return;
-            }
-        }
+    let chaveAtendimento = usuario.primaryKey;
+    const contextoAtual = contextos[chaveAtendimento] || 'menu';
+    
+    console.log(`${formatarDataHora()} 🔢 ${pushName} -> ${usuario.primaryKey} (${usuario.tipo})`);
+    console.log(`${formatarDataHora()} 📊 Contexto atual: ${contextoAtual}`);
 
-        if (texto === '9') {
-            console.log(`${formatarDataHora()} 🔄 Cliente digitou "9" - voltando ao menu`);
-            contextos[chaveAtendimento] = 'menu';
-            delete atendimentos[chaveAtendimento];
+    // ============ INÍCIO DO BLOCO COMANDO 0 ============
+    if (texto === '0') {
+        console.log(`${formatarDataHora()} 🔄 Cliente digitou "0" - contexto: ${contextoAtual}`);
+        
+        if (contextoAtual === 'pos_pix' || contextoAtual === 'em_atendimento' || contextoAtual === 'aguardando_cpf') {
+            console.log(`${formatarDataHora()} 🚪 Encerrando atendimento por comando do cliente`);
+            await encerrarAtendimento(usuario, config, "cliente", chaveAtendimento);
+            return;
+        } else {
+            console.log(`${formatarDataHora()} ℹ️ Comando "0" ignorado - não está em contexto de atendimento`);
             await enviarMenuPrincipal(sock, usuario, texto);
             return;
         }
+    }
+    // ============ FIM DO BLOCO COMANDO 0 ============
 
-        if (contextoAtual === 'menu') {
-            if (texto === '1') {
-                console.log(`${formatarDataHora()} 💠 Cliente escolheu PIX`);
-                contextos[chaveAtendimento] = 'aguardando_cpf';
-                atendimentos[chaveAtendimento] = {
-                    tipo: 'aguardando_cpf',
-                    inicio: Date.now(),
-                    usuarioPrimaryKey: usuario.primaryKey
-                };
+    // ============ INÍCIO DO BLOCO COMANDO 9 ============
+    if (texto === '9') {
+        console.log(`${formatarDataHora()} 🔄 Cliente digitou "9" - voltando ao menu`);
+        
+        // 🔥 NÃO DELETA O ATENDIMENTO - APENAS MUDA O CONTEXTO
+        contextos[chaveAtendimento] = 'menu';
+        
+        // 🔥 ATUALIZA O TIPO DO ATENDIMENTO PARA 'menu'
+        if (atendimentos[chaveAtendimento]) {
+            atendimentos[chaveAtendimento].tipo = 'menu';
+            atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
+        }
+        
+        await enviarMenuPrincipal(sock, usuario, texto);
+        return;
+    }
+    // ============ FIM DO BLOCO COMANDO 9 ============
+
+    // ============ INÍCIO DO BLOCO MENU ============
+    if (contextoAtual === 'menu') {
+        
+        // 🔥 VERIFICA SE É A PRIMEIRA INTERAÇÃO DESTE ATENDIMENTO
+        // Compara se a última atividade é muito próxima do início
+        const atendimento = atendimentos[chaveAtendimento];
+        const primeiraInteracao = atendimento && 
+                                  (atendimento.ultimaAtividade - atendimento.inicio) < 2000; // 2 segundos
+        
+        if (primeiraInteracao) {
+            // ✅ PRIMEIRA INTERAÇÃO - SEMPRE RESPONDE COM MENU
+            console.log(`${formatarDataHora()} 📋 Primeira interação - enviando menu`);
+            await enviarMenuPrincipal(sock, usuario, texto);
+            return;
+        }
+        
+        // 🔥 SÓ RESPONDE A COMANDOS VÁLIDOS NAS INTERAÇÕES SEGUINTES
+        if (texto === '1') {
+            console.log(`${formatarDataHora()} 💠 Cliente escolheu PIX`);
+            contextos[chaveAtendimento] = 'aguardando_cpf';
+            atendimentos[chaveAtendimento].tipo = 'aguardando_cpf';
+            
+            await enviarMensagemParaUsuario(sock, usuario, `🔐 Informe seu CPF ou CNPJ:`);
+            return;
+            
+        } else if (texto === '2') {
+            console.log(`${formatarDataHora()} 👨‍💼 Cliente escolheu atendimento`);
+            
+            if (!dentroHorarioComercial()) {
+                console.log(`${formatarDataHora()} ⏰ Fora do horário comercial ou feriado`);
                 
-                await enviarMensagemParaUsuario(sock, usuario, `🔐 Informe seu CPF ou CNPJ:`);
+                const hoje = new Date();
+                const ehFeriadoHoje = ehFeriado(hoje);
+                
+                let mensagemErro = `⏰ *${pushName}*, `;
+                
+                if (ehFeriadoHoje) {
+                    mensagemErro += `hoje é feriado nacional.\n\n`;
+                } else if (hoje.getDay() === 0) {
+                    mensagemErro += `hoje é domingo.\n\n`;
+                } else {
+                    mensagemErro += `porfavor, retorne seu contato em *horário comercial*.\n\n`;
+                }
+                mensagemErro += `${formatarHorarioComercial()}`;
+                mensagemErro += `1️⃣  Para Fatura  |  9️⃣  Retornar ao Menu`;
+                
+                await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
                 return;
-                
-            } else if (texto === '2') {
-                console.log(`${formatarDataHora()} 👨‍💼 Cliente escolheu atendimento`);
+            }
+            
+            const tempoTimeout = config.tempo_atendimento_humano || 5;
+            atendimentos[chaveAtendimento].tipo = 'humano';
+            atendimentos[chaveAtendimento].timeout = Date.now() + (tempoTimeout * 60 * 1000);
+            contextos[chaveAtendimento] = 'em_atendimento';
+            
+            console.log(`${formatarDataHora()} ⏱️ Atendimento iniciado (${tempoTimeout}min)`);
+            
+            await enviarMensagemParaUsuario(sock, usuario, 
+                `👨‍💼 *ATENDIMENTO INICIADO*\n\n*${pushName}*, um atendente falará com você em instantes, aguarde...\n\n⏱️ Duração: ${tempoTimeout} minutos\n\n 0️⃣ Encerrar Atendimento`
+            );
+            return;
+            
+        } else if (texto === '0' || texto === '9') {
+            console.log(`${formatarDataHora()} ℹ️ Comando ${texto} já deveria ter sido tratado`);
+            return;
+            
+        } else {
+            // 🔥 INTERAÇÕES SEGUINTES - IGNORA SILENCIOSAMENTE
+            console.log(`${formatarDataHora()} 🤐 Mensagem ignorada - comando inválido no menu: "${texto}"`);
+            
+            // 🔥 ATUALIZA ATIVIDADE MESMO ASSIM PARA NÃO ENCERRAR POR TIMEOUT
+            if (atendimentos[chaveAtendimento]) {
+                atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
+            }
+            
+            // NÃO ENVIA NADA - APENAS IGNORA
+            return;
+        }
+    }
+    // ============ FIM DO BLOCO MENU ============
+
+    // ============ INÍCIO DO BLOCO AGUARDANDO CPF ============
+    if (contextoAtual === 'aguardando_cpf') {
+        console.log(`${formatarDataHora()} 📄 Contexto aguardando_cpf ATIVADO`);
+        
+        // 🔥 ATUALIZA ATIVIDADE
+        if (atendimentos[chaveAtendimento]) {
+            atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
+        }
+        
+        if (texto === '1' || texto === '2') {
+            console.log(`${formatarDataHora()} 📄 Comando detectado: ${texto}`);
+            
+            if (texto === '2') {
+                console.log(`${formatarDataHora()} 👨‍💼 Cliente escolheu atendimento após erro no CPF`);
                 
                 if (!dentroHorarioComercial()) {
                     console.log(`${formatarDataHora()} ⏰ Fora do horário comercial ou feriado`);
@@ -1757,231 +1986,188 @@ ${relatorio.estatisticas.formatosDetectados} registro(s)`;
                 atendimentos[chaveAtendimento] = {
                     tipo: 'humano',
                     inicio: Date.now(),
+                    ultimaAtividade: Date.now(),
                     timeout: Date.now() + (tempoTimeout * 60 * 1000),
                     usuarioPrimaryKey: usuario.primaryKey
                 };
                 contextos[chaveAtendimento] = 'em_atendimento';
                 
-                console.log(`${formatarDataHora()} ⏱️ Atendimento iniciado (${tempoTimeout}min)`);
+                console.log(`${formatarDataHora()} ⏱️ Atendimento humano iniciado após erro CPF (${tempoTimeout}min)`);
                 
                 await enviarMensagemParaUsuario(sock, usuario, 
                     `👨‍💼 *ATENDIMENTO INICIADO*\n\n*${pushName}*, um atendente falará com você em instantes, aguarde...\n\n⏱️ Duração: ${tempoTimeout} minutos\n\n 0️⃣ Encerrar Atendimento`
                 );
                 return;
-                
-            } else {
-                await enviarMenuPrincipal(sock, usuario, texto);
+            } else if (texto === '1') {
+                await enviarMensagemParaUsuario(sock, usuario, `🔐 Informe seu CPF ou CNPJ:`);
                 return;
             }
-        }
-
-        if (contextoAtual === 'aguardando_cpf') {
-            console.log(`${formatarDataHora()} 📄 Contexto aguardando_cpf ATIVADO`);
-            
-            if (atendimentos[chaveAtendimento]) {
-                atendimentos[chaveAtendimento].inicio = Date.now();
-            }
-            
-            if (texto === '1' || texto === '2') {
-                console.log(`${formatarDataHora()} 📄 Comando detectado: ${texto}`);
-                
-                if (texto === '2') {
-                    console.log(`${formatarDataHora()} 👨‍💼 Cliente escolheu atendimento após erro no CPF`);
-                    
-                    if (!dentroHorarioComercial()) {
-                        console.log(`${formatarDataHora()} ⏰ Fora do horário comercial ou feriado`);
-                        
-                        const hoje = new Date();
-                        const ehFeriadoHoje = ehFeriado(hoje);
-                        
-                        let mensagemErro = `⏰ *${pushName}*, `;
-                        
-                        if (ehFeriadoHoje) {
-                            mensagemErro += `hoje é feriado nacional.\n\n`;
-                        } else if (hoje.getDay() === 0) {
-                            mensagemErro += `hoje é domingo.\n\n`;
-                        } else {
-                            mensagemErro += `porfavor, retorne seu contato em *horário comercial*.\n\n`;
-                        }
-                        mensagemErro += `${formatarHorarioComercial()}`;
-                        mensagemErro += `1️⃣  Para Fatura  |  9️⃣  Retornar ao Menu`;
-                        
-                        await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
-                        return;
-                    }
-                    
-                    const tempoTimeout = config.tempo_atendimento_humano || 5;
-                    atendimentos[chaveAtendimento] = {
-                        tipo: 'humano',
-                        inicio: Date.now(),
-                        timeout: Date.now() + (tempoTimeout * 60 * 1000),
-                        usuarioPrimaryKey: usuario.primaryKey
-                    };
-                    contextos[chaveAtendimento] = 'em_atendimento';
-                    
-                    console.log(`${formatarDataHora()} ⏱️ Atendimento humano iniciado após erro CPF (${tempoTimeout}min)`);
-                    
-                    await enviarMensagemParaUsuario(sock, usuario, 
-                        `👨‍💼 *ATENDIMENTO INICIADO*\n\n*${pushName}*, um atendente falará com você em instantes, aguarde...\n\n⏱️ Duração: ${tempoTimeout} minutos\n\n 0️⃣ Encerrar Atendimento`
-                    );
-                    return;
-                } else if (texto === '1') {
-                    await enviarMensagemParaUsuario(sock, usuario, `🔐 Informe seu CPF ou CNPJ:`);
-                    return;
-                }
-            }
-            
-            const doc = limparDoc(texto);
-            console.log(`${formatarDataHora()} 📄 Documento após limpar: "${doc}"`);
-            
-            const temApenasNumeros = /^\d+$/.test(doc);
-            
-            if ((doc.length === 11 || doc.length === 14) && temApenasNumeros) {
-                console.log(`${formatarDataHora()} 📄 ✅ DOCUMENTO VÁLIDO DETECTADO!`);
-                
-                try {
-                    await enviarMensagemParaUsuario(sock, usuario, 
-                        `🔍 Verificando ${doc.length === 11 ? 'CPF' : 'CNPJ'} ${doc} na base de clientes...`
-                    );
-                    
-                    const resultado = await verificarClienteMKAuth(doc);
-                    
-                    if (!resultado.sucesso) {
-                        console.log(`${formatarDataHora()} 📄 ❌ Documento não encontrado ou inativo: ${doc}`);
-                        
-                        let mensagemErro = `❌ *`;
-                        
-                        if (resultado.ativo === false) {
-                            mensagemErro += `${doc.length === 11 ? 'CPF' : 'CNPJ'} com cadastro inativo*\n\n`;
-                            mensagemErro += `O ${doc.length === 11 ? 'CPF' : 'CNPJ'} *${doc}* está com o cadastro *INATIVO*.\n\n`;
-                            mensagemErro += `*Favor entrar em contato com o Atendente.*\n\n`;
-                            mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
-                            
-                            await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
-                            return;
-                        } else if (resultado.existe === false) {
-                            mensagemErro += `${doc.length === 11 ? 'CPF' : 'CNPJ'} não encontrado*\n\n`;
-                            mensagemErro += `O ${doc.length === 11 ? 'CPF' : 'CNPJ'} *${doc}* não foi encontrado na base de clientes da *${config.empresa}*.\n\n`;
-                        } else if (resultado.temFaturas === false) {
-                            mensagemErro += `Cliente sem faturas*\n\n`;
-                            mensagemErro += `Cliente encontrado, mas não há faturas disponíveis.\n\n`;
-                        } else if (resultado.temPix === false) {
-                            mensagemErro += `Cliente sem PIX*\n\n`;
-                            mensagemErro += `Cliente encontrado, mas não há faturas para pagamento via PIX.\n\n`;
-                        } else {
-                            mensagemErro += `${resultado.mensagem}*\n\n`;
-                        }
-                        
-                        mensagemErro += `Verifique se o ${doc.length === 11 ? 'CPF' : 'CNPJ'} está correto ou entre em contato com nosso atendimento.\n\n`;
-                        mensagemErro += `1️⃣  Tentar outro ${doc.length === 11 ? 'CPF' : 'CNPJ'}  |  2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
-                        
-                        await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
-                        return;
-                    }
-                    
-                    console.log(`${formatarDataHora()} 📄 ✅ Documento válido no MK-Auth! Gerando link...`);
-                    
-                    let mensagemPix = '';
-                    
-                    if (resultado.ativo === false) {
-                        mensagemPix = `⚠️ *ATENÇÃO: Cadastro INATIVO*\n\n` +
-                                     `Seu cadastro está *INATIVO* na *${config.empresa}*.\n\n` +
-                                     `Você possui faturas em aberto que precisam ser pagas.\n\n` +
-                                     `🔍 ${doc.length === 11 ? 'CPF' : 'CNPJ'} encontrado!\n\n` +
-                                     `${doc.length === 11 ? '👤 Nome' : '🏢 Nome/Razão Social'}: ${resultado.nome_cliente || 'Não disponível'}\n\n` +
-                                     `🔗 Clique no link abaixo para acessar suas faturas PIX:\n\n` +
-                                     `${config.boleto_url}?doc=${doc}\n\n` +
-                                     `⏱️ *Link válido por 10 minutos*\n\n` +
-                                     `0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
-                    } else {
-                        mensagemPix = `✅ *${doc.length === 11 ? 'CPF' : 'CNPJ'} encontrado!*\n\n` +
-                                     `${doc.length === 11 ? '👤 Nome' : '🏢 Nome/Razão Social'}: ${resultado.nome_cliente || 'Não disponível'}\n\n` +
-                                     `Clique no link abaixo para acessar sua fatura PIX:\n\n` +
-                                     `🔗 ${config.boleto_url}?doc=${doc}\n\n` +
-                                     `⏱️ *Link válido por 10 minutos*\n\n` +
-                                     `0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
-                    }
-                    
-                    const resultadoEnvio = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
-                    
-                    if (resultadoEnvio) {
-                        console.log(`${formatarDataHora()} 📄 ✅ Mensagem PIX enviada com sucesso!`);
-                        
-                        atendimentos[chaveAtendimento] = {
-                            tipo: 'pos_pix',
-                            inicio: Date.now(),
-                            timeout: Date.now() + (10 * 60 * 1000),
-                            usuarioPrimaryKey: usuario.primaryKey
-                        };
-                        
-                        contextos[chaveAtendimento] = 'pos_pix';
-                    } else {
-                        console.log(`${formatarDataHora()} 📄 ❌ Falha ao enviar mensagem PIX!`);
-                        await enviarMensagemParaUsuario(sock, usuario, 
-                            `❌ Ocorreu um erro ao gerar o link. Tente novamente.`
-                        );
-                    }
-                    
-                } catch (error) {
-                    console.error(`${formatarDataHora()} 📄 ❌ ERRO:`, error);
-                    await enviarMensagemParaUsuario(sock, usuario, 
-                        `❌ Erro ao consultar ${doc.length === 11 ? 'CPF' : 'CNPJ'}. Tente novamente em alguns instantes.\n\n2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`
-                    );
-                }
-                return;
-                
-            } else {
-                console.log(`${formatarDataHora()} 📄 ❌ DOCUMENTO INVÁLIDO`);
-                
-                try {
-                    let mensagemErro = `❌ ${pushName}, formato inválido.\n\n`;
-                    
-                    if (doc.length > 0 && !temApenasNumeros) {
-                        mensagemErro += `⚠️ Contém caracteres inválidos.\n`;
-                    }
-                    
-                    mensagemErro += `\n📋 *Formatos aceitos:*\n`;
-                    mensagemErro += `• CPF: 11 dígitos (ex: 12345678901)\n`;
-                    mensagemErro += `• CNPJ: 14 dígitos (ex: 12345678000199)\n\n`;
-                    mensagemErro += `Digite novamente:\n\n`;
-                    mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
-                    
-                    await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
-                    
-                } catch (error) {
-                    console.error(`${formatarDataHora()} 📄 ❌ ERRO ao enviar mensagem de erro:`, error);
-                }
-            }
-            
-            return;
-        }
-
-        if (contextoAtual === 'pos_pix') {
-            await enviarMensagemParaUsuario(sock, usuario, 
-                `PIX já gerado. Acesse o link enviado anteriormente.\n\n⏱️ *Link válido por 10 minutos*\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`
-            );
-            return;
-        }
-
-        if (contextoAtual === 'em_atendimento') {
-            console.log(`${formatarDataHora()} 🤐 Cliente em atendimento humano`);
-            
-            if (atendimentos[chaveAtendimento]) {
-                const tempoTimeout = (config.tempo_atendimento_humano || 5) * 60 * 1000;
-                atendimentos[chaveAtendimento].timeout = Date.now() + tempoTimeout;
-                console.log(`${formatarDataHora()} ⏰ Timeout renovado para ${pushName}`);
-            }
-            return;
         }
         
-        await enviarMenuPrincipal(sock, usuario, texto);
-    });
+        const doc = limparDoc(texto);
+        console.log(`${formatarDataHora()} 📄 Documento após limpar: "${doc}"`);
+        
+        const temApenasNumeros = /^\d+$/.test(doc);
+        
+        if ((doc.length === 11 || doc.length === 14) && temApenasNumeros) {
+            console.log(`${formatarDataHora()} 📄 ✅ DOCUMENTO VÁLIDO DETECTADO!`);
+            
+            try {
+                await enviarMensagemParaUsuario(sock, usuario, 
+                    `🔍 Verificando ${doc.length === 11 ? 'CPF' : 'CNPJ'} ${doc} na base de clientes...`
+                );
+                
+                const resultado = await verificarClienteMKAuth(doc);
+                
+                if (!resultado.sucesso) {
+                    console.log(`${formatarDataHora()} 📄 ❌ Documento não encontrado ou inativo: ${doc}`);
+                    
+                    let mensagemErro = `❌ *`;
+                    
+                    if (resultado.ativo === false) {
+                        mensagemErro += `${doc.length === 11 ? 'CPF' : 'CNPJ'} com cadastro inativo*\n\n`;
+                        mensagemErro += `O ${doc.length === 11 ? 'CPF' : 'CNPJ'} *${doc}* está com o cadastro *INATIVO*.\n\n`;
+                        mensagemErro += `*Favor entrar em contato com o Atendente.*\n\n`;
+                        mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                        
+                        await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                        return;
+                    } else if (resultado.existe === false) {
+                        mensagemErro += `${doc.length === 11 ? 'CPF' : 'CNPJ'} não encontrado*\n\n`;
+                        mensagemErro += `O ${doc.length === 11 ? 'CPF' : 'CNPJ'} *${doc}* não foi encontrado na base de clientes da *${config.empresa}*.\n\n`;
+                    } else if (resultado.temFaturas === false) {
+                        mensagemErro += `Cliente sem faturas*\n\n`;
+                        mensagemErro += `Cliente encontrado, mas não há faturas disponíveis.\n\n`;
+                    } else if (resultado.temPix === false) {
+                        mensagemErro += `Cliente sem PIX*\n\n`;
+                        mensagemErro += `Cliente encontrado, mas não há faturas para pagamento via PIX.\n\n`;
+                    } else {
+                        mensagemErro += `${resultado.mensagem}*\n\n`;
+                    }
+                    
+                    mensagemErro += `Verifique se o ${doc.length === 11 ? 'CPF' : 'CNPJ'} está correto ou entre em contato com nosso atendimento.\n\n`;
+                    mensagemErro += `1️⃣  Tentar outro ${doc.length === 11 ? 'CPF' : 'CNPJ'}  |  2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                    
+                    await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                    return;
+                }
+                
+                console.log(`${formatarDataHora()} 📄 ✅ Documento válido no MK-Auth! Gerando link...`);
+                
+                let mensagemPix = '';
+                
+                if (resultado.ativo === false) {
+                    mensagemPix = `⚠️ *ATENÇÃO: Cadastro INATIVO*\n\n` +
+                                 `Seu cadastro está *INATIVO* na *${config.empresa}*.\n\n` +
+                                 `Você possui faturas em aberto que precisam ser pagas.\n\n` +
+                                 `🔍 ${doc.length === 11 ? 'CPF' : 'CNPJ'} encontrado!\n\n` +
+                                 `${doc.length === 11 ? '👤 Nome' : '🏢 Nome/Razão Social'}: ${resultado.nome_cliente || 'Não disponível'}\n\n` +
+                                 `🔗 Clique no link abaixo para acessar suas faturas PIX:\n\n` +
+                                 `${config.boleto_url}?doc=${doc}\n\n` +
+                                 `⏱️ *Link válido por 10 minutos*\n\n` +
+                                 `0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                } else {
+                    mensagemPix = `✅ *${doc.length === 11 ? 'CPF' : 'CNPJ'} encontrado!*\n\n` +
+                                 `${doc.length === 11 ? '👤 Nome' : '🏢 Nome/Razão Social'}: ${resultado.nome_cliente || 'Não disponível'}\n\n` +
+                                 `Clique no link abaixo para acessar sua fatura PIX:\n\n` +
+                                 `🔗 ${config.boleto_url}?doc=${doc}\n\n` +
+                                 `⏱️ *Link válido por 10 minutos*\n\n` +
+                                 `0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                }
+                
+                const resultadoEnvio = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
+                
+                if (resultadoEnvio) {
+                    console.log(`${formatarDataHora()} 📄 ✅ Mensagem PIX enviada com sucesso!`);
+                    
+                    atendimentos[chaveAtendimento] = {
+                        tipo: 'pos_pix',
+                        inicio: Date.now(),
+                        ultimaAtividade: Date.now(),
+                        usuarioPrimaryKey: usuario.primaryKey
+                    };
+                    
+                    contextos[chaveAtendimento] = 'pos_pix';
+                } else {
+                    console.log(`${formatarDataHora()} 📄 ❌ Falha ao enviar mensagem PIX!`);
+                    await enviarMensagemParaUsuario(sock, usuario, 
+                        `❌ Ocorreu um erro ao gerar o link. Tente novamente.`
+                    );
+                }
+                
+            } catch (error) {
+                console.error(`${formatarDataHora()} 📄 ❌ ERRO:`, error);
+                await enviarMensagemParaUsuario(sock, usuario, 
+                    `❌ Erro ao consultar ${doc.length === 11 ? 'CPF' : 'CNPJ'}. Tente novamente em alguns instantes.\n\n2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`
+                );
+            }
+            return;
+            
+        } else {
+            console.log(`${formatarDataHora()} 📄 ❌ DOCUMENTO INVÁLIDO`);
+            
+            try {
+                let mensagemErro = `❌ ${pushName}, formato inválido.\n\n`;
+                
+                if (doc.length > 0 && !temApenasNumeros) {
+                    mensagemErro += `⚠️ Contém caracteres inválidos.\n`;
+                }
+                
+                mensagemErro += `\n📋 *Formatos aceitos:*\n`;
+                mensagemErro += `• CPF: 11 dígitos (ex: 12345678901)\n`;
+                mensagemErro += `• CNPJ: 14 dígitos (ex: 12345678000199)\n\n`;
+                mensagemErro += `Digite novamente:\n\n`;
+                mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                
+                await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                
+            } catch (error) {
+                console.error(`${formatarDataHora()} 📄 ❌ ERRO ao enviar mensagem de erro:`, error);
+            }
+        }
+        
+        return;
+    }
+    // ============ FIM DO BLOCO AGUARDANDO CPF ============
+
+    // ============ INÍCIO DO BLOCO PÓS PIX ============
+    if (contextoAtual === 'pos_pix') {
+        // 🔥 ATUALIZA ATIVIDADE
+        if (atendimentos[chaveAtendimento]) {
+            atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
+        }
+        
+        await enviarMensagemParaUsuario(sock, usuario, 
+            `PIX já gerado. Acesse o link enviado anteriormente.\n\n⏱️ *Link válido por 10 minutos*\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`
+        );
+        return;
+    }
+    // ============ FIM DO BLOCO PÓS PIX ============
+
+    // ============ INÍCIO DO BLOCO EM ATENDIMENTO ============
+    if (contextoAtual === 'em_atendimento') {
+        console.log(`${formatarDataHora()} 🤐 Cliente em atendimento humano`);
+        
+        if (atendimentos[chaveAtendimento]) {
+            // 🔥 ATUALIZA ATIVIDADE
+            atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
+            
+            const tempoTimeout = (config.tempo_atendimento_humano || 5) * 60 * 1000;
+            atendimentos[chaveAtendimento].timeout = Date.now() + tempoTimeout;
+            console.log(`${formatarDataHora()} ⏰ Timeout renovado para ${pushName}`);
+        }
+        return;
+    }
+    // ============ FIM DO BLOCO EM ATENDIMENTO ============
+    
+    await enviarMenuPrincipal(sock, usuario, texto);
+});
 }
 
 // ================= INICIALIZAÇÃO =================
 
 console.log('\n' + '='.repeat(70));
-console.log('🤖 BOT WHATSAPP - VERSÃO LID-PROOF ULTRA v2.0');
+console.log('🤖 BOT WHATSAPP - VERSÃO LID-PROOF ULTRA v3.1');
 console.log('✅ 100% AGNÓSTICO A NÚMERO');
 console.log('✅ LID como tipo próprio');
 console.log('✅ Primary Key universal com Stable ID');
@@ -1991,6 +2177,15 @@ console.log('✅ Gerenciamento profissional de intervalos');
 console.log('✅ Health check e debug integrado');
 console.log('✅ Pronto para futuras mudanças da Meta');
 console.log('✅ Fluxo e mensagens 100% originais');
+console.log('🆕 SISTEMA UNIFICADO DE TIMEOUT v3.0');
+console.log('   • Tempo único configurável no painel');
+console.log('   • Aplica-se a TODOS os contextos');
+console.log('   • Cliente inativo volta ao menu');
+console.log('   • Menu inicial agora é monitorado!');
+console.log('🆕 FILTRO DE MENSAGENS v3.1');
+console.log('   • Ignora mensagens de contexto de grupo');
+console.log('   • Ignora broadcasts não direcionados');
+console.log('   • Processa apenas mensagens diretas');
 console.log('='.repeat(70));
 console.log('🚀 INICIANDO BOT...');
 console.log('='.repeat(70));
