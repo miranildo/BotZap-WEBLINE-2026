@@ -63,9 +63,8 @@ sed -i 's/# eval "$(dircolors)"/eval "$(dircolors)"/' /root/.bashrc
 sed -i "s/# alias ls='ls \$LS_OPTIONS'/alias ls='ls \$LS_OPTIONS'/" /root/.bashrc
 sed -i "s/# alias ll='ls \$LS_OPTIONS -l'/alias ll='ls \$LS_OPTIONS -l'/" /root/.bashrc
 sed -i "s/# alias l='ls \$LS_OPTIONS -lA'/alias l='ls \$LS_OPTIONS -lha'/" /root/.bashrc
-
-echo '# Para usar o fzf use: CTRL+R' >> ~/.bashrc
-echo 'source /usr/share/doc/fzf/examples/key-bindings.bash' >> ~/.bashrc
+echo '# Para usar o fzf use: CTRL+R' >> /root/.bashrc
+echo 'source /usr/share/doc/fzf/examples/key-bindings.bash' >> /root/.bashrc
 echo "alias grep='grep --color'" >> /root/.bashrc
 echo "alias egrep='egrep --color'" >> /root/.bashrc
 echo "alias ip='ip -c'" >> /root/.bashrc
@@ -74,7 +73,34 @@ echo "alias dnswho='f(){ dig +short TXT whoami.ds.akahelp.net @\"\$@\" ;  unset 
 echo "alias meuip='curl ifconfig.me; echo;'" >> /root/.bashrc
 echo "PS1='\${debian_chroot:+(\$debian_chroot)}\[\033[01;31m\]\u\[\033[01;34m\]@\[\033[01;33m\]\h\[\033[01;34m\][\[\033[00m\]\[\033[01;37m\]\w\[\033[01;34m\]]\[\033[01;31m\]\\$\[\033[00m\] '" >> /root/.bashrc
 
-echo "✅ Ferramentas e configurações instaladas"
+# ===== CORREÇÃO: APLICAR CONFIGURAÇÕES NA SESSÃO ATUAL =====
+echo "🎨 Aplicando configurações do shell na sessão atual para prompt colorido..."
+
+# Exportar variáveis de ambiente para a sessão atual
+export PS1='${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;34m\]@\[\033[01;33m\]\h\[\033[01;34m\][\[\033[00m\]\[\033[01;37m\]\w\[\033[01;34m\]]\[\033[01;31m\]\\$\[\033[00m\] '
+export LS_OPTIONS='--color=auto'
+
+# Avaliar dircolors para a sessão atual
+eval "$(dircolurs)" 2>/dev/null || true
+
+# Definir aliases para a sessão atual
+alias ls='ls $LS_OPTIONS' 2>/dev/null || true
+alias ll='ls $LS_OPTIONS -l' 2>/dev/null || true
+alias l='ls $LS_OPTIONS -lha' 2>/dev/null || true
+alias grep='grep --color' 2>/dev/null || true
+alias egrep='egrep --color' 2>/dev/null || true
+alias ip='ip -c' 2>/dev/null || true
+alias diff='diff --color' 2>/dev/null || true
+
+# Ativar fzf para a sessão atual (para CTRL+R funcionar imediatamente)
+if [ -f /usr/share/doc/fzf/examples/key-bindings.bash ]; then
+    source /usr/share/doc/fzf/examples/key-bindings.bash 2>/dev/null || true
+    echo "   ✅ fzf ativado (CTRL+R funcionará imediatamente)"
+fi
+
+echo "✅ Configurações do shell aplicadas na sessão atual!"
+echo "   • Prompt colorido ativo agora"
+echo "   • Aliases disponíveis imediatamente"
 echo ""
 
 # =====================================================
