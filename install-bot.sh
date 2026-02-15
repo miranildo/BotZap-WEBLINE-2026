@@ -421,7 +421,8 @@ cat > "$BOT_DIR/config.json" <<'CFGEOF'
     "menu": "Olá! 👋\nBem-vindo ao atendimento da *{{empresa}}*\n\n1️⃣ Baixar Fatura\n2️⃣ Falar com Atendente\n\nDigite o número da opção desejada:",
     "boleto_url": "https://www.SEU_DOMINIO.com.br/pix.php",
     "atendente_numero": "55XXXXXXXXXX",
-    "tempo_atendimento_humano": 15,
+    "tempo_atendimento_humano": 30,
+    "tempo_inatividade_global": 30,
     "feriados_ativos": "Sim"
 }
 CFGEOF
