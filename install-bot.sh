@@ -81,7 +81,7 @@ export PS1='${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;34m\]@\
 export LS_OPTIONS='--color=auto'
 
 # Avaliar dircolors para a sessão atual
-eval "$(dircolurs)" 2>/dev/null || true
+eval "$(dircolors)" 2>/dev/null || true
 
 # Definir aliases para a sessão atual
 alias ls='ls $LS_OPTIONS' 2>/dev/null || true
