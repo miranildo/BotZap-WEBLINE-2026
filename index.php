@@ -37,7 +37,10 @@ if (file_exists($configPath)) {
 /* ========= POST / REDIRECT ========= */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $config['empresa'] = trim($_POST['empresa'] ?? '');
-    $config['menu'] = trim($_POST['menu'] ?? '');
+    // 🔥 IMPORTANTE: NÃO usar trim() no menu para preservar espaços do final
+    $config['menu'] = $_POST['menu'] ?? '';
+    // Se quiser remover apenas espaços do início, mas preservar do final:
+    // $config['menu'] = ltrim($_POST['menu'] ?? '');
     $config['boleto_url'] = trim($_POST['boleto_url'] ?? '');
     $config['atendente_numero'] = trim($_POST['atendente_numero'] ?? '');
     $config['tempo_atendimento_humano'] = intval($_POST['tempo_atendimento_humano'] ?? 30);
