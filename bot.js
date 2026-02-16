@@ -608,7 +608,7 @@ function getMensagemFeriadoLocal() {
     try {
         const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
         // Retorna a mensagem configurada ou uma padrão
-        return config.feriado_local_mensagem || "📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊";
+        return config.feriado_local_mensagem || "📅 *Comunicado importante:*\r\n\r\nDeixe  aqui a mensagem do feriado!!!\r\n\r\nO acesso a faturas PIX continua disponível 24\/7! 🎉";
     } catch (error) {
         return "📅 Hoje é feriado local. Retornaremos amanhã!";
     }
