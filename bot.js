@@ -51,6 +51,13 @@
  * ✅ Ignora mensagens de broadcast não direcionadas
  * ✅ Processa apenas mensagens diretas (@lid, @s.whatsapp.net)
  * 
+ * 🆕 FERIADO LOCAL PERSONALIZÁVEL - v4.0
+ * ✅ Checkbox no painel para ativar/desativar feriado local
+ * ✅ Mensagem personalizável para feriados locais
+ * ✅ Mantém compatibilidade com feriados nacionais
+ * ✅ Se ativado, bloqueia atendimento humano com mensagem customizada
+ * ✅ Fluxo do PIX permanece 100% intacto
+ * 
  * 🏆 NÍVEL: 10/10 - PREPARADO PARA 2025+
  *************************************************/
 
@@ -573,6 +580,7 @@ function atualizarAtendenteNoConfig(numeroAtendente) {
     }
 }
 
+// ================= FUNÇÕES DE VERIFICAÇÃO DE FERIADOS (ATUALIZADO) =================
 function ehFeriado(data = new Date()) {
     try {
         const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
@@ -584,23 +592,26 @@ function ehFeriado(data = new Date()) {
     }
 }
 
-function dentroHorarioComercial() {
-    const d = new Date();
-    const dia = d.getDay();
-    const h = d.getHours() + d.getMinutes() / 60;
+// 🔥 NOVA FUNÇÃO: Verifica feriado local (personalizável)
+function ehFeriadoLocal() {
+    try {
+        const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
+        // Verifica se o feriado local está ativado
+        return config.feriado_local_ativado === 'Sim';
+    } catch (error) {
+        return false;
+    }
+}
 
-    if (ehFeriado(d)) return false;
-    if (dia === 0) return false;
-    
-    if (dia >= 1 && dia <= 5) {
-        return (h >= 8 && h < 12) || (h >= 14 && h < 18);
+// 🔥 NOVA FUNÇÃO: Retorna a mensagem personalizada do feriado local
+function getMensagemFeriadoLocal() {
+    try {
+        const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
+        // Retorna a mensagem configurada ou uma padrão
+        return config.feriado_local_mensagem || "📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊";
+    } catch (error) {
+        return "📅 Hoje é feriado local. Retornaremos amanhã!";
     }
-    
-    if (dia === 6) {
-        return (h >= 8 && h < 12);
-    }
-    
-    return false;
 }
 
 function formatarHorarioComercial() {
@@ -612,8 +623,17 @@ function formatarHorarioComercial() {
         mensagem += "• Domingo: Fechado\n";
         
         if (config.feriados_ativos === 'Sim') {
-            mensagem += "• Feriados: Fechado\n\n";
-        } else {
+            mensagem += "• Feriados Nacionais: Fechado\n";
+        }
+        
+        // 🔥 NOVO: Adiciona informação sobre feriado local se ativo
+        if (config.feriado_local_ativado === 'Sim') {
+            mensagem += "• Feriado Local ATIVO (verifique comunicado)\n";
+        }
+        
+        mensagem += "\n";
+        
+        if (config.feriados_ativos === 'Não' && config.feriado_local_ativado !== 'Sim') {
             mensagem += "\n*Feriados não estão sendo considerados* (configurado no painel)";
         }
         
@@ -621,6 +641,30 @@ function formatarHorarioComercial() {
     } catch (error) {
         return "🕐 Horário comercial padrão";
     }
+}
+
+function dentroHorarioComercial() {
+    const d = new Date();
+    const dia = d.getDay();
+    const h = d.getHours() + d.getMinutes() / 60;
+
+    // 🔥 Verifica feriado nacional
+    if (ehFeriado(d)) return false;
+    
+    // 🔥 NOVO: Verifica feriado local (se ativo, bloqueia atendimento)
+    if (ehFeriadoLocal()) return false;
+    
+    if (dia === 0) return false;
+    
+    if (dia >= 1 && dia <= 5) {
+        return (h >= 8 && h < 12) || (h >= 14 && h < 18);
+    }
+    
+    if (dia === 6) {
+        return (h >= 8 && h < 12);
+    }
+    
+    return false;
 }
 
 // ================= GESTÃO DE USUÁRIOS - VERSÃO 2.0 =================
@@ -1897,17 +1941,24 @@ ${relatorio.estatisticas.formatosDetectados} registro(s)`;
                 
                 const hoje = new Date();
                 const ehFeriadoHoje = ehFeriado(hoje);
+                const ehFeriadoLocalHoje = ehFeriadoLocal();
                 
                 let mensagemErro = `⏰ *${pushName}*, `;
                 
                 if (ehFeriadoHoje) {
                     mensagemErro += `hoje é feriado nacional.\n\n`;
+                } else if (ehFeriadoLocalHoje) {
+                    mensagemErro = getMensagemFeriadoLocal() + `\n\n`;
                 } else if (hoje.getDay() === 0) {
                     mensagemErro += `hoje é domingo.\n\n`;
                 } else {
-                    mensagemErro += `porfavor, retorne seu contato em *horário comercial*.\n\n`;
+                    mensagemErro += `por favor, retorne seu contato em *horário comercial*.\n\n`;
                 }
-                mensagemErro += `${formatarHorarioComercial()}`;
+                
+                if (!ehFeriadoLocalHoje) {
+                    mensagemErro += `${formatarHorarioComercial()}`;
+                }
+                
                 mensagemErro += `1️⃣  Para Fatura  |  9️⃣  Retornar ao Menu`;
                 
                 await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
@@ -1965,17 +2016,24 @@ ${relatorio.estatisticas.formatosDetectados} registro(s)`;
                     
                     const hoje = new Date();
                     const ehFeriadoHoje = ehFeriado(hoje);
+                    const ehFeriadoLocalHoje = ehFeriadoLocal();
                     
                     let mensagemErro = `⏰ *${pushName}*, `;
                     
                     if (ehFeriadoHoje) {
                         mensagemErro += `hoje é feriado nacional.\n\n`;
+                    } else if (ehFeriadoLocalHoje) {
+                        mensagemErro = getMensagemFeriadoLocal() + `\n\n`;
                     } else if (hoje.getDay() === 0) {
                         mensagemErro += `hoje é domingo.\n\n`;
                     } else {
-                        mensagemErro += `porfavor, retorne seu contato em *horário comercial*.\n\n`;
+                        mensagemErro += `por favor, retorne seu contato em *horário comercial*.\n\n`;
                     }
-                    mensagemErro += `${formatarHorarioComercial()}`;
+                    
+                    if (!ehFeriadoLocalHoje) {
+                        mensagemErro += `${formatarHorarioComercial()}`;
+                    }
+                    
                     mensagemErro += `1️⃣  Para Fatura  |  9️⃣  Retornar ao Menu`;
                     
                     await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
@@ -2167,7 +2225,7 @@ ${relatorio.estatisticas.formatosDetectados} registro(s)`;
 // ================= INICIALIZAÇÃO =================
 
 console.log('\n' + '='.repeat(70));
-console.log('🤖 BOT WHATSAPP - VERSÃO LID-PROOF ULTRA v3.1');
+console.log('🤖 BOT WHATSAPP - VERSÃO LID-PROOF ULTRA v4.0');
 console.log('✅ 100% AGNÓSTICO A NÚMERO');
 console.log('✅ LID como tipo próprio');
 console.log('✅ Primary Key universal com Stable ID');
@@ -2186,6 +2244,10 @@ console.log('🆕 FILTRO DE MENSAGENS v3.1');
 console.log('   • Ignora mensagens de contexto de grupo');
 console.log('   • Ignora broadcasts não direcionados');
 console.log('   • Processa apenas mensagens diretas');
+console.log('🆕 FERIADO LOCAL PERSONALIZÁVEL v4.0');
+console.log('   • Ative/desative com checkbox no painel');
+console.log('   • Mensagem personalizada para cada situação');
+console.log('   • PIX continua 24/7 normalmente');
 console.log('='.repeat(70));
 console.log('🚀 INICIANDO BOT...');
 console.log('='.repeat(70));
