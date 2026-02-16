@@ -1083,15 +1083,22 @@ async function enviarMenuPrincipal(sock, usuario, texto = '') {
             console.log(`${formatarDataHora()} 📋 Atendimento criado para ${pushName} (menu)`);
         }
         
-        const menuText = 
+        // 🔥 USA A MENSAGEM DO CONFIG (com substituição da variável {{empresa}})
+        let menuText = config.menu || 
 `Olá! 👋  ${pushName ? pushName + ' ' : ''}
 
 Bem-vindo ao atendimento da *${config.empresa}*
 
- 1️⃣ Baixar Fatura PIX
+ 1️⃣ Baixar Fatura
  2️⃣ Falar com Atendente
 
 Digite o número da opção desejada:`;
+
+        // Substitui a variável {{empresa}} pelo nome da empresa
+        menuText = menuText.replace(/\{\{empresa\}\}/g, config.empresa);
+        
+        // Adiciona o nome do cliente se tiver a variável
+        menuText = menuText.replace(/\{\{nome\}\}/g, pushName || 'Cliente');
 
         const resultado = await enviarMensagemParaUsuario(sock, usuario, menuText);
         
