@@ -18,7 +18,7 @@ $config = [
     'feriados_ativos' => 'Sim',
     // NOVOS CAMPOS: Feriado Local
     'feriado_local_ativado' => 'Não',
-    'feriado_local_mensagem' => "📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊",
+    'feriado_local_mensagem' => "📅 *Comunicado importante:*\r\n\r\nDeixe  aqui a mensagem do feriado!!!\r\n\r\nO acesso a faturas PIX continua disponível 24\/7! 🎉",
     // Novos campos para MK-Auth
     'mkauth_url' => 'https://www.SEU_DOMINIO.com.br/api',
     'mkauth_client_id' => '',
