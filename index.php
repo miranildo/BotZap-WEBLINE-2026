@@ -14,8 +14,11 @@ $config = [
     'boleto_url' => '',
     'atendente_numero' => '',
     'tempo_atendimento_humano' => 30,
-    'tempo_inatividade_global' => 30, // NOVO CAMPO
+    'tempo_inatividade_global' => 30,
     'feriados_ativos' => 'Sim',
+    // NOVOS CAMPOS: Feriado Local
+    'feriado_local_ativado' => 'Não',
+    'feriado_local_mensagem' => "📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊",
     // Novos campos para MK-Auth
     'mkauth_url' => 'https://www.SEU_DOMINIO.com.br/api',
     'mkauth_client_id' => '',
@@ -38,8 +41,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $config['boleto_url'] = trim($_POST['boleto_url'] ?? '');
     $config['atendente_numero'] = trim($_POST['atendente_numero'] ?? '');
     $config['tempo_atendimento_humano'] = intval($_POST['tempo_atendimento_humano'] ?? 30);
-    $config['tempo_inatividade_global'] = intval($_POST['tempo_inatividade_global'] ?? 30); // NOVO CAMPO
+    $config['tempo_inatividade_global'] = intval($_POST['tempo_inatividade_global'] ?? 30);
     $config['feriados_ativos'] = trim($_POST['feriados_ativos'] ?? 'Sim');
+    
+    // 🔥 NOVOS CAMPOS: Feriado Local
+    $config['feriado_local_ativado'] = trim($_POST['feriado_local_ativado'] ?? 'Não');
+    $config['feriado_local_mensagem'] = trim($_POST['feriado_local_mensagem'] ?? '');
     
     // Novos campos MK-Auth
     $config['mkauth_url'] = trim($_POST['mkauth_url'] ?? '');
@@ -55,10 +62,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $config['tempo_inatividade_global'] = 30;
     }
 
-    // Validar valor do feriado
+    // Validar valor do feriado nacional
     $config['feriados_ativos'] = in_array($config['feriados_ativos'], ['Sim', 'Não']) 
         ? $config['feriados_ativos'] 
         : 'Sim';
+    
+    // Validar valor do feriado local
+    $config['feriado_local_ativado'] = in_array($config['feriado_local_ativado'], ['Sim', 'Não']) 
+        ? $config['feriado_local_ativado'] 
+        : 'Não';
+    
+    // Se a mensagem estiver vazia, usar padrão
+    if (empty($config['feriado_local_mensagem'])) {
+        $config['feriado_local_mensagem'] = "📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊";
+    }
 
     $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 
@@ -346,6 +363,22 @@ button {
 .timeout-info p {
     margin: 5px 0;
 }
+
+.feriado-local-box {
+    background: #fff3e0;
+    border-left: 4px solid #f97316;
+    padding: 20px;
+    margin: 20px 0;
+    border-radius: 8px;
+}
+
+.feriado-local-box h3 {
+    margin-top: 0;
+    color: #c2410c;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
 </style>
 </head>
 
@@ -442,7 +475,7 @@ button {
             <p>• Ao reiniciar, o cliente volta ao menu inicial</p>
         </div>
 
-        <label>🎯 Considerar feriados no atendimento?</label>
+        <label>🎯 Considerar feriados nacionais no atendimento?</label>
         <div class="radio-group">
             <label class="radio-option">
                 <input type="radio" name="feriados_ativos" value="Sim" 
@@ -457,10 +490,46 @@ button {
         </div>
 
         <div class="feriado-info">
-            <p><strong>ℹ️ Informações sobre feriados:</strong></p>
+            <p><strong>ℹ️ Informações sobre feriados nacionais:</strong></p>
             <p>• <strong>Sim:</strong> O bot não oferece atendimento humano em feriados nacionais</p>
             <p>• <strong>Não:</strong> Atendimento humano funciona mesmo em feriados</p>
             <p>• PIX continua disponível 24/7 independentemente desta configuração</p>
+        </div>
+
+        <!-- 🔥 NOVA SEÇÃO: Feriado Local Personalizável -->
+        <div class="feriado-local-box">
+            <h3>
+                <span>🏮</span> Feriado Local (Personalizável)
+            </h3>
+            
+            <label style="margin-top: 5px;">Ativar feriado local?</label>
+            <div class="radio-group" style="margin-bottom: 15px;">
+                <label class="radio-option">
+                    <input type="radio" name="feriado_local_ativado" value="Sim" 
+                        <?= (isset($config['feriado_local_ativado']) && $config['feriado_local_ativado'] === 'Sim') ? 'checked' : '' ?>>
+                    Sim (bloquear atendimento)
+                </label>
+                <label class="radio-option">
+                    <input type="radio" name="feriado_local_ativado" value="Não"
+                        <?= (!isset($config['feriado_local_ativado']) || $config['feriado_local_ativado'] === 'Não') ? 'checked' : '' ?>>
+                    Não (atendimento normal)
+                </label>
+            </div>
+
+            <label>Mensagem para feriado local:</label>
+            <textarea 
+                name="feriado_local_mensagem" 
+                placeholder="Digite a mensagem que será enviada quando cliente tentar atendimento em feriado local..."
+                style="height: 120px;"
+            ><?= htmlspecialchars($config['feriado_local_mensagem'] ?? '📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊') ?></textarea>
+            
+            <div style="background: #fef9e7; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 13px;">
+                <p style="margin: 0;"><strong>ℹ️ Como funciona:</strong></p>
+                <p style="margin: 5px 0 0 0;">• Quando ativado, o bot NÃO oferecerá atendimento humano</p>
+                <p style="margin: 2px 0 0 0;">• Clientes que tentarem falar com atendente receberão esta mensagem personalizada</p>
+                <p style="margin: 2px 0 0 0;">• PIX continua funcionando normalmente 24/7</p>
+                <p style="margin: 2px 0 0 0;">• Ideal para feriados locais (carnaval, ponto facultativo, etc.)</p>
+            </div>
         </div>
 
         <div class="config-section">
