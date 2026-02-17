@@ -229,7 +229,6 @@ apt install -y nginx
 apt install -y php${PHP_VERSION}-fpm \
   php${PHP_VERSION}-cli \
   php${PHP_VERSION}-curl \
-  php${PHP_VERSION}-json \
   php${PHP_VERSION}-mbstring \
   php${PHP_VERSION}-zip \
   php${PHP_VERSION}-xml \
