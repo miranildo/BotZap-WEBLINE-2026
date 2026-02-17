@@ -497,6 +497,7 @@ cd "$TEMP_DIR"
 WEB_FILES=(
     "auth.php"
     "index.php"
+    "info.php"
     "login.php"
     "logo.jpg"
     "logout.php"
