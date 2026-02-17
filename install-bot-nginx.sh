@@ -900,40 +900,22 @@ EOF
 fi
 
 # =====================================================
-# CONFIGURAR NGINX COM VIRTUALHOST
+# CONFIGURAR NGINX COM VIRTUALHOST (SEM SSL)
 # =====================================================
-echo "🌐 Configurando Nginx com VirtualHost..."
+echo "🌐 Configurando Nginx com VirtualHost (aguardando Certbot para SSL)..."
 
 # Remover configuração padrão
 rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 
-# Criar VirtualHost com o domínio configurado
+# Criar VirtualHost com o domínio configurado (apenas HTTP)
 cat > /etc/nginx/sites-available/botzap <<EOF
 server {
     listen 80;
     listen [::]:80;
     server_name $BOT_DOMAIN www.$DOMAIN_BASE;
     
-    # Redirecionar para HTTPS
-    return 301 https://\$server_name\$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name $BOT_DOMAIN www.$DOMAIN_BASE;
-    
     root $WEB_DIR;
     index index.php index.html index.htm;
-
-    # Configurações SSL (serão preenchidas pelo Certbot)
-    # ssl_certificate /etc/letsencrypt/live/$BOT_DOMAIN/fullchain.pem;
-    # ssl_certificate_key /etc/letsencrypt/live/$BOT_DOMAIN/privkey.pem;
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-    ssl_prefer_server_ciphers on;
-    ssl_session_cache shared:SSL:10m;
 
     client_max_body_size 100M;
 
@@ -946,7 +928,7 @@ server {
         try_files \$uri \$uri/ /index.php?\$args;
     }
 
-    location ~ \.php$ {
+    location ~ \.php\$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/php${PHP_VERSION}-fpm.sock;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
@@ -957,7 +939,7 @@ server {
         deny all;
     }
 
-    location ~* \.(jpg|jpeg|png|gif|ico|css|js|pdf|svg|woff|woff2|ttf|eot)$ {
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js|pdf|svg|woff|woff2|ttf|eot)\$ {
         expires 30d;
         add_header Cache-Control "public, immutable";
     }
@@ -965,12 +947,18 @@ server {
     error_log /var/log/nginx/botzap_error.log;
     access_log /var/log/nginx/botzap_access.log;
 }
+
+# Configuração HTTPS será adicionada pelo Certbot
+# Após executar 'certbot --nginx', o Certbot irá:
+# 1. Adicionar o bloco server para HTTPS
+# 2. Configurar os certificados
+# 3. Adicionar redirecionamento HTTP -> HTTPS
 EOF
 
 # Habilitar o site
 ln -sf /etc/nginx/sites-available/botzap /etc/nginx/sites-enabled/
 
-# Testar configuração
+# Testar configuração (agora sem SSL, deve passar)
 nginx -t && systemctl reload nginx
 
 # Recarregar Nginx
@@ -1201,22 +1189,24 @@ fi
 # INSTRUÇÕES PARA SSL
 # =====================================================
 echo ""
-echo "🔐 INSTRUÇÕES PARA SSL LET'S ENCRYPT"
-echo "===================================="
+echo "🔐 ATENÇÃO: Configuração SSL"
+echo "============================"
 cat << SSL_EOF
 
-Para instalar o SSL Let's Encrypt (recomendado):
+O Nginx foi configurado apenas com HTTP (porta 80).
+
+Para ativar HTTPS com Let's Encrypt:
 
 1. Instalar Certbot:
    sudo apt install certbot python3-certbot-nginx -y
 
-2. Obter certificado:
+2. Executar Certbot:
    sudo certbot --nginx -d $BOT_DOMAIN -d www.$DOMAIN_BASE
 
 3. O Certbot irá:
    - Obter o certificado
    - Configurar automaticamente o Nginx
-   - Ativar renovação automática
+   - Adicionar redirecionamento HTTP → HTTPS
 
 4. Verificar renovação automática:
    sudo systemctl status certbot.timer
