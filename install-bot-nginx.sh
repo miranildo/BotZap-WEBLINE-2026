@@ -1202,15 +1202,22 @@ Para ativar HTTPS com Let's Encrypt:
    sudo apt install certbot python3-certbot-nginx -y
 
 2. Executar Certbot:
-   sudo certbot --nginx -d $BOT_DOMAIN -d www.$DOMAIN_BASE
+   EX:
+   sudo certbot --nginx -d bot.weblinetelecom.com.br
+   Seu Memail
+   Yes
+   No
 
 3. O Certbot irá:
    - Obter o certificado
    - Configurar automaticamente o Nginx
    - Adicionar redirecionamento HTTP → HTTPS
 
-4. Verificar renovação automática:
-   sudo systemctl status certbot.timer
+4. Verificar renovação automática
+   # Teste a renovação (dry run)
+     sudo certbot renew --dry-run
+   # Verifique o timer
+     sudo systemctl status certbot.timer
 
 SSL_EOF
 
