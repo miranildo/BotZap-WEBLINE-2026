@@ -508,6 +508,7 @@ WEB_FILES=(
     "qrcode_wait.png"
     "save.php"
     "status.php"
+    "teste_ipv6.php"
     "users.php"
     "bot.js"
 )
