@@ -1204,7 +1204,7 @@ Para ativar HTTPS com Let's Encrypt:
 2. Executar Certbot:
    EX:
    sudo certbot --nginx -d bot.weblinetelecom.com.br
-   Seu Memail
+   Seu Email
    Yes
    No
 
