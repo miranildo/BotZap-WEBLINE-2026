@@ -630,19 +630,6 @@ EOF
 fi
 
 # =====================================================
-# ADICIONAR date_default_timezone_set NO INDEX.PHP
-# =====================================================
-echo "🕐 Corrigindo timezone no index.php..."
-if [ -f "$WEB_DIR/index.php" ]; then
-    # Fazer backup
-    cp "$WEB_DIR/index.php" "$WEB_DIR/index.php.backup"
-    
-    # Adicionar date_default_timezone_set após o primeiro <?php
-    sed -i 's/<?php/<?php\n\/\/ Forçar timezone correto\ndate_default_timezone_set('\''America\/Recife'\'');/' "$WEB_DIR/index.php"
-    echo "✅ date_default_timezone_set adicionado ao index.php"
-fi
-
-# =====================================================
 # CONFIGURAR NGINX COM VIRTUALHOST
 # =====================================================
 echo "🌐 Configurando Nginx com VirtualHost..."
