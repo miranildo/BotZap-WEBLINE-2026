@@ -11,7 +11,7 @@ echo ""
 BOT_DIR="/opt/whatsapp-bot"
 WEB_DIR="/var/www/botzap"
 BOT_USER="botzap"
-WEB_GROUP="www-data"        # Grupo do Nginx (mesmo nome do Apache)
+WEB_GROUP="www-data"
 NODE_VERSION="20"
 LOG_FILE="/var/log/botzap.log"
 REPO_URL="https://raw.githubusercontent.com/miranildo/BotZap-WEBLINE-2026/main"
@@ -32,76 +32,58 @@ echo "🔧 Instalando ferramentas de utilidade..."
 apt install -y vim bash-completion fzf file acl curl wget
 
 echo "🔧 Configurando bash-completion..."
-echo '' >> /etc/bash.bashrc
-echo '# Autocompletar extra' >> /etc/bash.bashrc
-echo 'if ! shopt -oq posix; then' >> /etc/bash.bashrc
-echo '  if [ -f /usr/share/bash-completion/bash_completion ]; then' >> /etc/bash.bashrc
-echo '    . /usr/share/bash-completion/bash_completion' >> /etc/bash.bashrc
-echo '  elif [ -f /etc/bash_completion ]; then' >> /etc/bash.bashrc
-echo '    . /etc/bash_completion' >> /etc/bash.bashrc
-echo '  fi' >> /etc/bash.bashrc
-echo 'fi' >> /etc/bash.bashrc
+grep -q "bash-completion" /etc/bash.bashrc || cat >> /etc/bash.bashrc << 'EOF'
+
+# Autocompletar extra
+if ! shopt -oq posix; then
+  if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+  elif [ -f /etc/bash_completion ]; then
+    . /etc/bash_completion
+  fi
+fi
+EOF
 
 echo "🔧 Configurando VIM..."
 sed -i 's/"syntax on/syntax on/' /etc/vim/vimrc
 sed -i 's/"set background=dark/set background=dark/' /etc/vim/vimrc
-cat <<EOF >/root/.vimrc
-set showmatch " Mostrar colchetes correspondentes
-set ts=4 " Ajuste tab
-set sts=4 " Ajuste tab
-set sw=4 " Ajuste tab
-set autoindent " Ajuste tab
-set smartindent " Ajuste tab
-set smarttab " Ajuste tab
-set expandtab " Ajuste tab
-"set number " Mostra numero da linhas
+cat > /root/.vimrc << 'EOF'
+set showmatch
+set ts=4
+set sts=4
+set sw=4
+set autoindent
+set smartindent
+set smarttab
+set expandtab
 EOF
 
 echo "🔧 Configurando aliases e variáveis de ambiente..."
-sed -i "s/# export LS_OPTIONS='--color=auto'/export LS_OPTIONS='--color=auto'/" /root/.bashrc
-sed -i 's/# eval "`dircolors`"/eval "`dircolors`"/' /root/.bashrc
-sed -i 's/# eval "$(dircolors)"/eval "$(dircolors)"/' /root/.bashrc
-sed -i "s/# alias ls='ls \$LS_OPTIONS'/alias ls='ls \$LS_OPTIONS'/" /root/.bashrc
-sed -i "s/# alias ll='ls \$LS_OPTIONS -l'/alias ll='ls \$LS_OPTIONS -l'/" /root/.bashrc
-sed -i "s/# alias l='ls \$LS_OPTIONS -lA'/alias l='ls \$LS_OPTIONS -lha'/" /root/.bashrc
-echo '# Para usar o fzf use: CTRL+R' >> /root/.bashrc
-echo 'source /usr/share/doc/fzf/examples/key-bindings.bash' >> /root/.bashrc
-echo "alias grep='grep --color'" >> /root/.bashrc
-echo "alias egrep='egrep --color'" >> /root/.bashrc
-echo "alias ip='ip -c'" >> /root/.bashrc
-echo "alias diff='diff --color'" >> /root/.bashrc
-echo "alias dnswho='f(){ dig +short TXT whoami.ds.akahelp.net @\"\$@\" ;  unset -f f; }; f' " >> /root/.bashrc 
-echo "alias meuip='curl ifconfig.me; echo;'" >> /root/.bashrc
-echo "PS1='\${debian_chroot:+(\$debian_chroot)}\[\033[01;31m\]\u\[\033[01;34m\]@\[\033[01;33m\]\h\[\033[01;34m\][\[\033[00m\]\[\033[01;37m\]\w\[\033[01;34m\]]\[\033[01;31m\]\\$\[\033[00m\] '" >> /root/.bashrc
+cat >> /root/.bashrc << 'EOF'
+export LS_OPTIONS='--color=auto'
+eval "$(dircolors)"
+alias ls='ls $LS_OPTIONS'
+alias ll='ls $LS_OPTIONS -l'
+alias l='ls $LS_OPTIONS -lha'
+alias grep='grep --color'
+alias egrep='egrep --color'
+alias ip='ip -c'
+alias diff='diff --color'
+alias dnswho='f(){ dig +short TXT whoami.ds.akahelp.net @"$@" ; unset -f f; }; f'
+alias meuip='curl -s ifconfig.me; echo'
+[ -f /usr/share/doc/fzf/examples/key-bindings.bash ] && source /usr/share/doc/fzf/examples/key-bindings.bash
+PS1='${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;34m\]@\[\033[01;33m\]\h\[\033[01;34m\][\[\033[00m\]\[\033[01;37m\]\w\[\033[01;34m\]]\[\033[01;31m\]\\$\[\033[00m\] '
+EOF
 
-# ===== CORREÇÃO: APLICAR CONFIGURAÇÕES NA SESSÃO ATUAL =====
-echo "🎨 Aplicando configurações do shell na sessão atual para prompt colorido..."
-
-# Exportar variáveis de ambiente para a sessão atual
+# Aplicar configurações na sessão atual
 export PS1='${debian_chroot:+($debian_chroot)}\[\033[01;31m\]\u\[\033[01;34m\]@\[\033[01;33m\]\h\[\033[01;34m\][\[\033[00m\]\[\033[01;37m\]\w\[\033[01;34m\]]\[\033[01;31m\]\\$\[\033[00m\] '
 export LS_OPTIONS='--color=auto'
-
-# Avaliar dircolors para a sessão atual
 eval "$(dircolors)" 2>/dev/null || true
-
-# Definir aliases para a sessão atual
 alias ls='ls $LS_OPTIONS' 2>/dev/null || true
 alias ll='ls $LS_OPTIONS -l' 2>/dev/null || true
 alias l='ls $LS_OPTIONS -lha' 2>/dev/null || true
-alias grep='grep --color' 2>/dev/null || true
-alias egrep='egrep --color' 2>/dev/null || true
-alias ip='ip -c' 2>/dev/null || true
-alias diff='diff --color' 2>/dev/null || true
 
-# Ativar fzf para a sessão atual (para CTRL+R funcionar imediatamente)
-if [ -f /usr/share/doc/fzf/examples/key-bindings.bash ]; then
-    source /usr/share/doc/fzf/examples/key-bindings.bash 2>/dev/null || true
-    echo "   ✅ fzf ativado (CTRL+R funcionará imediatamente)"
-fi
-
-echo "✅ Configurações do shell aplicadas na sessão atual!"
-echo "   • Prompt colorido ativo agora"
-echo "   • Aliases disponíveis imediatamente"
+echo "✅ Configurações do shell aplicadas"
 echo ""
 
 # =====================================================
@@ -114,24 +96,20 @@ echo "Deixe em branco para usar o padrão: bot.weblinetelecom.com.br"
 echo -n "Domínio: "
 read BOT_DOMAIN
 
-# Se não digitou nada, usar padrão
 if [ -z "$BOT_DOMAIN" ]; then
     BOT_DOMAIN="bot.weblinetelecom.com.br"
     echo "✅ Usando domínio padrão: $BOT_DOMAIN"
 else
-    # Remover http:// ou https:// se o usuário digitou
     BOT_DOMAIN=$(echo "$BOT_DOMAIN" | sed 's|^https://||; s|^http://||')
     echo "✅ Domínio configurado: $BOT_DOMAIN"
 fi
 
-# Extrair apenas o domínio base (sem www)
 DOMAIN_BASE=$(echo "$BOT_DOMAIN" | sed 's|^www\.||')
 
 echo ""
 echo "   Resumo da configuração:"
 echo "   • Domínio principal: $BOT_DOMAIN"
 echo "   • Domínio base: $DOMAIN_BASE"
-echo "   • www.$DOMAIN_BASE também será configurado"
 echo ""
 
 # =====================================================
@@ -143,23 +121,19 @@ echo "==================================="
 echo "Configure o usuário e senha para acesso ao painel web"
 echo ""
 
-# Solicitar nome de usuário
 echo -n "Digite o nome de usuário [admin]: "
 read WEB_USERNAME
 WEB_USERNAME=${WEB_USERNAME:-admin}
 echo "✅ Usuário: $WEB_USERNAME"
 
-# Solicitar senha com verificação
 while true; do
     echo -n "Digite a senha: "
     read -s WEB_PASSWORD
     echo ""
     
     if [ -z "$WEB_PASSWORD" ]; then
-        echo "⚠️  A senha não pode ser vazia"
-        echo "⚠️  Usando senha padrão: admin123"
-        WEB_PASSWORD="admin123"
-        break
+        echo "⚠️  A senha não pode ser vazia. Tente novamente."
+        continue
     fi
     
     echo -n "Confirme a senha: "
@@ -182,6 +156,42 @@ echo "   • Senha: [********]"
 echo ""
 
 # =====================================================
+# SOLICITAR EMAIL PARA SSL
+# =====================================================
+echo ""
+echo "📧 CONFIGURAÇÃO DE EMAIL PARA SSL"
+echo "================================"
+echo "O Let's Encrypt precisa de um email válido para alertas"
+echo "de expiração do certificado e comunicações de segurança."
+echo "Recomendamos usar um email real que você acompanhe."
+echo ""
+echo -n "Digite seu email [admin@$DOMAIN_BASE]: "
+read SSL_EMAIL
+
+if [ -z "$SSL_EMAIL" ]; then
+    SSL_EMAIL="admin@$DOMAIN_BASE"
+    echo ""
+    echo "⚠️  AVISO: Você usou o email padrão $SSL_EMAIL"
+    echo "   Certifique-se de que este email existe e você tem acesso!"
+    echo "   Caso contrário, não receberá alertas importantes."
+    echo ""
+    echo -n "Continuar com este email? (s/N): "
+    read CONFIRM_EMAIL
+    if [[ ! "$CONFIRM_EMAIL" =~ ^[Ss]$ ]]; then
+        echo ""
+        echo -n "Digite seu email real: "
+        read SSL_EMAIL
+        while [ -z "$SSL_EMAIL" ]; do
+            echo -n "Email não pode ser vazio. Digite novamente: "
+            read SSL_EMAIL
+        done
+    fi
+fi
+
+echo "✅ Email configurado: $SSL_EMAIL"
+echo ""
+
+# =====================================================
 # ATUALIZA SISTEMA
 # =====================================================
 echo "🔄 Atualizando sistema..."
@@ -198,7 +208,8 @@ apt install -y \
   ca-certificates \
   gnupg \
   lsb-release \
-  sudo
+  sudo \
+  software-properties-common
 
 # =====================================================
 # NODE.JS LTS
@@ -211,7 +222,7 @@ echo "✅ Node.js $(node -v)"
 echo "✅ npm $(npm -v)"
 
 # =====================================================
-# REMOVER APACHE2 SE INSTALADO (PARA EVITAR CONFLITOS)
+# REMOVER APACHE2 SE INSTALADO
 # =====================================================
 echo "🛑 Removendo Apache2 se existente..."
 systemctl stop apache2 2>/dev/null || true
@@ -225,7 +236,6 @@ apt autoremove -y 2>/dev/null || true
 echo "🌐 Instalando Nginx e PHP ${PHP_VERSION}-FPM..."
 apt install -y nginx
 
-# Instalar PHP 8.2 e extensões
 apt install -y php${PHP_VERSION}-fpm \
   php${PHP_VERSION}-cli \
   php${PHP_VERSION}-curl \
@@ -237,10 +247,8 @@ apt install -y php${PHP_VERSION}-fpm \
   php${PHP_VERSION}-intl \
   php${PHP_VERSION}-bcmath
 
-# Criar link simbólico para php
 update-alternatives --set php /usr/bin/php${PHP_VERSION} 2>/dev/null || true
 
-# Habilitar e iniciar serviços
 systemctl enable nginx
 systemctl start nginx
 systemctl enable php${PHP_VERSION}-fpm
@@ -254,37 +262,23 @@ echo "✅ PHP $(php -v | head -1) instalado"
 # =====================================================
 echo "⏰ Configurando timezone do PHP para America/Recife..."
 
-# Configurar para PHP-FPM
-PHP_INI_FILE="/etc/php/$PHP_VERSION/fpm/php.ini"
-if [ -f "$PHP_INI_FILE" ]; then
-    echo "   Configurando PHP $PHP_VERSION (FPM)..."
-    cp "$PHP_INI_FILE" "$PHP_INI_FILE.backup.$(date +%Y%m%d%H%M%S)"
-    sed -i "s/^;date\.timezone =$/date.timezone = America\/Recife/" "$PHP_INI_FILE"
-    sed -i "s/^;date\.timezone = .*/date.timezone = America\/Recife/" "$PHP_INI_FILE"
-    if ! grep -q "^date\.timezone" "$PHP_INI_FILE"; then
-        echo "" >> "$PHP_INI_FILE"
-        echo "date.timezone = America/Recife" >> "$PHP_INI_FILE"
+for PHP_INI in /etc/php/${PHP_VERSION}/fpm/php.ini /etc/php/${PHP_VERSION}/cli/php.ini; do
+    if [ -f "$PHP_INI" ]; then
+        cp "$PHP_INI" "$PHP_INI.backup.$(date +%Y%m%d%H%M%S)"
+        sed -i "s/^;date\.timezone =/date.timezone = America\/Recife/" "$PHP_INI"
+        sed -i "s/^date\.timezone =.*/date.timezone = America\/Recife/" "$PHP_INI"
+        if ! grep -q "^date\.timezone" "$PHP_INI"; then
+            echo "date.timezone = America/Recife" >> "$PHP_INI"
+        fi
+        echo "   ✅ $(basename $(dirname $(dirname $PHP_INI))) configurado"
     fi
-    echo "   ✅ PHP $PHP_VERSION (FPM) configurado"
-fi
+done
 
-# Configurar para CLI
-PHP_CLI_INI="/etc/php/$PHP_VERSION/cli/php.ini"
-if [ -f "$PHP_CLI_INI" ]; then
-    sed -i "s/^;date\.timezone =$/date.timezone = America\/Recife/" "$PHP_CLI_INI"
-    sed -i "s/^;date\.timezone = .*/date.timezone = America\/Recife/" "$PHP_CLI_INI"
-    if ! grep -q "^date\.timezone" "$PHP_CLI_INI"; then
-        echo "" >> "$PHP_CLI_INI"
-        echo "date.timezone = America/Recife" >> "$PHP_CLI_INI"
-    fi
-fi
-
-# Reiniciar PHP-FPM para aplicar configurações
 systemctl restart php${PHP_VERSION}-fpm
 echo "✅ Timezone configurado e PHP-FPM reiniciado"
 
 # =====================================================
-# GERAR HASH DA SENHA AGORA QUE PHP ESTÁ INSTALADO
+# GERAR HASH DA SENHA
 # =====================================================
 echo "🔑 Gerando hash da senha..."
 PASSWORD_HASH=$(php -r "echo password_hash('$WEB_PASSWORD', PASSWORD_DEFAULT);" 2>/dev/null)
@@ -305,7 +299,6 @@ else
   echo "✅ Usuário $BOT_USER já existe"
 fi
 
-# Adicionar usuário botzap ao grupo www-data para acesso a arquivos
 usermod -a -G "$WEB_GROUP" "$BOT_USER"
 echo "✅ $BOT_USER adicionado ao grupo $WEB_GROUP"
 
@@ -328,18 +321,13 @@ echo "📊 Criando diretório para Dashboard Pix..."
 mkdir -p /var/log/pix_acessos
 chown www-data:www-data /var/log/pix_acessos
 chmod 0750 /var/log/pix_acessos
-echo "✅ Diretório /var/log/pix_acessos criado com permissões 0750"
+echo "✅ Diretório /var/log/pix_acessos criado"
 
-# Criar arquivos internos do dashboard
-echo "📝 Criando arquivos do Dashboard Pix..."
 touch /var/log/pix_acessos/usuarios.json
 touch /var/log/pix_acessos/acessos_usuarios.log
-
-# Configurar permissões dos arquivos
 chown www-data:www-data /var/log/pix_acessos/*
 chmod 0660 /var/log/pix_acessos/*
 
-# Criar usuário admin padrão no dashboard
 cat > /var/log/pix_acessos/usuarios.json << 'PIX_EOF'
 {
     "admin": {
@@ -356,10 +344,7 @@ cat > /var/log/pix_acessos/usuarios.json << 'PIX_EOF'
 }
 PIX_EOF
 
-echo "✅ Arquivos do Dashboard Pix criados com sucesso"
-echo "   • Diretório: /var/log/pix_acessos"
-echo "   • Arquivo usuários: /var/log/pix_acessos/usuarios.json"
-echo "   • Arquivo logs: /var/log/pix_acessos/acessos_usuarios.log"
+echo "✅ Arquivos do Dashboard Pix criados"
 echo "   • Credenciais: admin / Admin@123"
 echo ""
 
@@ -368,29 +353,23 @@ echo ""
 # =====================================================
 echo "🔐 Configurando permissões compartilhadas..."
 
-# 1. Diretório principal do bot - ACESSO COMPARTILHADO
 chown -R "$BOT_USER:$WEB_GROUP" "$BOT_DIR"
 chmod 775 "$BOT_DIR"
-echo "✅ Permissões de $BOT_DIR ajustadas"
 
-# 2. Node_modules
 mkdir -p "$BOT_DIR/node_modules"
 chown -R "$BOT_USER:$WEB_GROUP" "$BOT_DIR/node_modules"
 find "$BOT_DIR/node_modules" -type d -exec chmod 775 {} \;
 find "$BOT_DIR/node_modules" -type f -exec chmod 664 {} \;
-echo "✅ Diretório node_modules configurado"
 
-# 3. Auth_info - PRIVADO (apenas botzap)
 mkdir -p "$BOT_DIR/auth_info"
 chown "$BOT_USER:$BOT_USER" "$BOT_DIR/auth_info"
 chmod 700 "$BOT_DIR/auth_info"
-echo "✅ Diretório auth_info configurado (privado)"
 
-# 4. Diretório .well-known para Let's Encrypt
 chown -R "$WEB_GROUP:$WEB_GROUP" "$WEB_DIR/.well-known"
 chmod 755 "$WEB_DIR/.well-known"
 chmod 755 "$WEB_DIR/.well-known/acme-challenge"
-echo "✅ Diretório .well-known configurado para Let's Encrypt"
+
+echo "✅ Permissões configuradas"
 
 # =====================================================
 # PACKAGE.JSON E DEPENDÊNCIAS
@@ -416,7 +395,6 @@ cat > "$BOT_DIR/package.json" <<'PKGEOF'
 }
 PKGEOF
 
-# Package.json - privado do bot
 chown "$BOT_USER:$BOT_USER" "$BOT_DIR/package.json"
 chmod 640 "$BOT_DIR/package.json"
 echo "✅ package.json criado"
@@ -428,7 +406,6 @@ echo "📥 Instalando dependências Node.js..."
 cd "$BOT_DIR"
 sudo -u "$BOT_USER" npm install --silent
 
-# Ajustar permissões do package-lock.json
 if [ -f "$BOT_DIR/package-lock.json" ]; then
     chown "$BOT_USER:$BOT_USER" "$BOT_DIR/package-lock.json"
     chmod 640 "$BOT_DIR/package-lock.json"
@@ -440,7 +417,6 @@ echo "✅ Dependências Node.js instaladas"
 # =====================================================
 echo "⚙️ Criando arquivos de configuração do bot..."
 
-# 1. config.json - COMPARTILHADO (bot e php podem ler/escrever)
 cat > "$BOT_DIR/config.json" <<'CFGEOF'
 {
     "empresa": "PROVEDOR",
@@ -451,14 +427,12 @@ cat > "$BOT_DIR/config.json" <<'CFGEOF'
     "tempo_inatividade_global": 30,
     "feriados_ativos": "Sim",
     "feriado_local_ativado": "Não",
-    "feriado_local_mensagem": "📅 *Comunicado importante:*\r\n\r\nDeixe  aqui a mensagem do feriado!!!\r\n\r\nO acesso a faturas PIX continua disponível 24\/7! 🎉"
+    "feriado_local_mensagem": "📅 *Comunicado importante:*\r\n\r\nDeixe aqui a mensagem do feriado!!!\r\n\r\nO acesso a faturas PIX continua disponível 24/7! 🎉"
 }
 CFGEOF
 chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/config.json"
 chmod 664 "$BOT_DIR/config.json"
-echo "✅ config.json criado"
 
-# 2. status.json - COMPARTILHADO (bot escreve, php lê)
 cat > "$BOT_DIR/status.json" <<'STATEOF'
 {
   "status": "offline",
@@ -467,35 +441,28 @@ cat > "$BOT_DIR/status.json" <<'STATEOF'
 STATEOF
 chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/status.json"
 chmod 664 "$BOT_DIR/status.json"
-echo "✅ status.json criado"
 
-# 3. usuarios.json - COMPARTILHADO (bot escreve, php lê)
-cat > "$BOT_DIR/usuarios.json" <<'USEREOF'
-{}
-USEREOF
+echo "{}" > "$BOT_DIR/usuarios.json"
 chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/usuarios.json"
 chmod 664 "$BOT_DIR/usuarios.json"
-echo "✅ usuarios.json criado"
 
-# 4. qrcode.txt - COMPARTILHADO (bot escreve, php lê)
 touch "$BOT_DIR/qrcode.txt"
 chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/qrcode.txt"
 chmod 664 "$BOT_DIR/qrcode.txt"
-echo "✅ qrcode.txt criado"
+echo "✅ Arquivos de configuração criados"
 
 # =====================================================
 # BAIXAR ARQUIVOS DO GITHUB
 # =====================================================
 echo "📥 Baixando arquivos do repositório GitHub..."
-echo "🌐 Repositório: $REPO_URL"
 
 TEMP_DIR="/tmp/botzap_install_$(date +%s)"
 mkdir -p "$TEMP_DIR"
 cd "$TEMP_DIR"
 
-# LISTA DOS ARQUIVOS WEB
 WEB_FILES=(
     "auth.php"
+    "hora.php"
     "index.php"
     "info.php"
     "login.php"
@@ -513,10 +480,6 @@ WEB_FILES=(
     "bot.js"
 )
 
-echo "📋 Baixando arquivos necessários:"
-echo "---------------------------------"
-
-# Baixar arquivos principais
 DOWNLOAD_COUNT=0
 for FILE in "${WEB_FILES[@]}"; do
     echo -n "   📄 $FILE ... "
@@ -525,202 +488,11 @@ for FILE in "${WEB_FILES[@]}"; do
         DOWNLOAD_COUNT=$((DOWNLOAD_COUNT + 1))
     else
         echo "❌ (não encontrado)"
-        # Criar versões básicas para arquivos essenciais
-        case "$FILE" in
-            "index.php")
-                cat > "$FILE" <<'EOF'
-<?php
-session_start();
-
-// Simples verificação de login para teste
-if (!isset($_SESSION['loggedin'])) {
-    $_SESSION['loggedin'] = true;
-    $_SESSION['username'] = 'admin';
-}
-
-// Carregar configurações do bot
-$config_file = '/opt/whatsapp-bot/config.json';
-$status_file = '/opt/whatsapp-bot/status.json';
-$qrcode_file = '/opt/whatsapp-bot/qrcode.txt';
-
-$config = file_exists($config_file) ? json_decode(file_get_contents($config_file), true) : ['empresa' => 'WebLine Telecom'];
-$status = file_exists($status_file) ? json_decode(file_get_contents($status_file), true) : ['status' => 'offline', 'updated' => date('c')];
-$qrcode = file_exists($qrcode_file) ? file_get_contents($qrcode_file) : '';
-?>
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bot WhatsApp - <?php echo htmlspecialchars($config['empresa']); ?></title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
-        .header { text-align: center; margin-bottom: 30px; }
-        .status { padding: 10px; border-radius: 5px; margin: 10px 0; }
-        .online { background: #d4edda; color: #155724; }
-        .offline { background: #f8d7da; color: #721c24; }
-        .qrcode-container { text-align: center; margin: 20px 0; }
-        .qrcode-img { max-width: 300px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🤖 Bot WhatsApp - <?php echo htmlspecialchars($config['empresa']); ?></h1>
-            <p>Painel de Controle</p>
-        </div>
-        
-        <div class="status <?php echo $status['status']; ?>">
-            Status: <strong><?php echo strtoupper($status['status']); ?></strong>
-            <br>Atualizado: <?php echo $status['updated']; ?>
-        </div>
-        
-        <div class="qrcode-container">
-            <h3>QR Code para Login</h3>
-            <?php if (!empty($qrcode) && $status['status'] === 'offline'): ?>
-                <img src="data:image/png;base64,<?php echo base64_encode($qrcode); ?>" 
-                     alt="QR Code" class="qrcode-img">
-                <p>Escaneie com o WhatsApp</p>
-            <?php elseif ($status['status'] === 'online'): ?>
-                <p>✅ Bot conectado e pronto!</p>
-            <?php else: ?>
-                <p>⏳ Aguardando QR Code...</p>
-            <?php endif; ?>
-        </div>
-        
-        <div style="text-align: center; margin-top: 30px;">
-            <a href="status.php">Status</a> | 
-            <a href="users.php">Usuários</a> | 
-            <a href="logout.php">Sair</a>
-        </div>
-    </div>
-</body>
-</html>
-EOF
-                echo "   ✅ index.php criado (básico)"
-                DOWNLOAD_COUNT=$((DOWNLOAD_COUNT + 1))
-                ;;
-            "auth.php")
-                cat > "$FILE" <<'EOF'
-<?php
-session_start();
-
-// Configurações de autenticação simples
-$valid_username = 'admin';
-$valid_password = 'admin123'; // Senha padrão
-
-// Verificar se usuário está logado
-function check_login() {
-    return isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true;
-}
-
-// Verificar credenciais
-function verify_credentials($username, $password) {
-    global $valid_username, $valid_password;
-    return $username === $valid_username && $password === $valid_password;
-}
-?>
-EOF
-                echo "   ✅ auth.php criado (básico)"
-                DOWNLOAD_COUNT=$((DOWNLOAD_COUNT + 1))
-                ;;
-            "login.php")
-                cat > "$FILE" <<'EOF'
-<?php
-session_start();
-
-// Se já estiver logado, redirecionar
-if (isset($_SESSION['loggedin']) && $_SESSION['loggedin'] === true) {
-    header('Location: index.php');
-    exit;
-}
-
-$error = '';
-
-// Processar login
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = $_POST['username'] ?? '';
-    $password = $_POST['password'] ?? '';
-    
-    if ($username === 'admin' && $password === 'admin123') {
-        $_SESSION['loggedin'] = true;
-        $_SESSION['username'] = $username;
-        header('Location: index.php');
-        exit;
-    } else {
-        $error = 'Usuário ou senha inválidos';
-    }
-}
-?>
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Bot WhatsApp</title>
-    <style>
-        body { font-family: Arial, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; height: 100vh; }
-        .login-box { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); width: 300px; }
-        h2 { text-align: center; margin-bottom: 30px; }
-        .input-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 5px; }
-        input[type="text"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
-        button { width: 100%; padding: 10px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; }
-        .error { color: #dc3545; text-align: center; margin-bottom: 15px; }
-    </style>
-</head>
-<body>
-    <div class="login-box">
-        <h2>🔐 Login</h2>
-        
-        <?php if ($error): ?>
-            <div class="error"><?php echo $error; ?></div>
-        <?php endif; ?>
-        
-        <form method="POST" action="">
-            <div class="input-group">
-                <label for="username">Usuário:</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            
-            <div class="input-group">
-                <label for="password">Senha:</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            
-            <button type="submit">Entrar</button>
-        </form>
-        
-        <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #666;">
-            Usuário: admin<br>
-            Senha: admin123
-        </div>
-    </div>
-</body>
-</html>
-EOF
-                echo "   ✅ login.php criado (básico)"
-                DOWNLOAD_COUNT=$((DOWNLOAD_COUNT + 1))
-                ;;
-            "logout.php")
-                cat > "$FILE" <<'EOF'
-<?php
-session_start();
-session_destroy();
-header('Location: login.php');
-exit;
-?>
-EOF
-                echo "   ✅ logout.php criado (básico)"
-                DOWNLOAD_COUNT=$((DOWNLOAD_COUNT + 1))
-                ;;
-        esac
     fi
 done
 
 echo ""
-echo "📊 Total de arquivos baixados/criados: $DOWNLOAD_COUNT"
+echo "📊 Total de arquivos baixados: $DOWNLOAD_COUNT"
 
 # =====================================================
 # COPIAR ARQUIVOS PARA DESTINOS FINAIS
@@ -728,19 +500,14 @@ echo "📊 Total de arquivos baixados/criados: $DOWNLOAD_COUNT"
 echo ""
 echo "📋 Copiando arquivos para destinos finais..."
 
-# 1. Copiar bot.js para diretório do bot
 if [ -f "bot.js" ]; then
     cp "bot.js" "$BOT_DIR/"
     chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/bot.js"
     chmod 664 "$BOT_DIR/bot.js"
     echo "✅ bot.js copiado para $BOT_DIR/"
-else
-    echo "⚠️  bot.js não encontrado! O bot pode não funcionar."
 fi
 
-# 2. Copiar TODOS os arquivos web para diretório web
 WEB_FILES_COPIED=0
-echo "🌐 Copiando arquivos para $WEB_DIR/:"
 for file in *; do
     if [ "$file" != "bot.js" ] && [ -f "$file" ]; then
         cp "$file" "$WEB_DIR/"
@@ -751,77 +518,42 @@ done
 
 echo "📦 Total de $WEB_FILES_COPIED arquivos web copiados"
 
-# 3. Ajustar permissões dos arquivos web
-echo "🔐 Ajustando permissões dos arquivos web..."
 chown -R "$WEB_GROUP:$WEB_GROUP" "$WEB_DIR"/
-
-# Permissões específicas por tipo de arquivo
 find "$WEB_DIR" -type f -name "*.php" -exec chmod 755 {} \;
 find "$WEB_DIR" -type f \( -name "*.css" -o -name "*.js" -o -name "*.json" \) -exec chmod 644 {} \;
-find "$WEB_DIR" -type f \( -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" -o -name "*.gif" \) -exec chmod 644 {} \;
-find "$WEB_DIR" -type f -name "*.txt" -exec chmod 644 {} \;
 
-echo "✅ Permissões dos arquivos web ajustadas"
-
-# Limpar diretório temporário
 cd /
 rm -rf "$TEMP_DIR"
 
 # =====================================================
-# ATUALIZAR ARQUIVO USERS.PHP COM AS CREDENCIAIS CONFIGURADAS
+# ATUALIZAR USERS.PHP COM AS CREDENCIAIS
 # =====================================================
 echo ""
-echo "🔧 Atualizando arquivo users.php com as credenciais configuradas..."
+echo "🔧 Configurando arquivo users.php..."
 
-# Verificar se o arquivo users.php foi baixado
 if [ -f "$WEB_DIR/users.php" ]; then
-    echo "   ✅ Arquivo users.php encontrado, atualizando..."
-    
-    # Fazer backup do arquivo original
     cp "$WEB_DIR/users.php" "$WEB_DIR/users.php.backup"
-    
-    # Substituir o conteúdo com as credenciais configuradas
-    cat > "$WEB_DIR/users.php" <<USERS_PHP_EOF
-<?php
-return [
-    '$WEB_USERNAME' => [
-        // senha: $WEB_PASSWORD (configurada durante a instalação)
-        'password' => '$PASSWORD_HASH'
-    ]
-];
-USERS_PHP_EOF
-    
-    echo "   ✅ users.php atualizado com sucesso!"
-    echo "   • Usuário: $WEB_USERNAME"
-    echo "   • Backup salvo em: $WEB_DIR/users.php.backup"
-else
-    echo "   ⚠️  Arquivo users.php não encontrado, criando novo..."
-    
-    # Criar arquivo users.php com as credenciais configuradas
-    cat > "$WEB_DIR/users.php" <<USERS_PHP_EOF
-<?php
-return [
-    '$WEB_USERNAME' => [
-        // senha: $WEB_PASSWORD (configurada durante a instalação)
-        'password' => '$PASSWORD_HASH'
-    ]
-];
-USERS_PHP_EOF
-    
-    echo "   ✅ users.php criado com as credenciais configuradas"
 fi
 
-# Ajustar permissões do arquivo users.php
+cat > "$WEB_DIR/users.php" <<USERS_PHP_EOF
+<?php
+return [
+    '$WEB_USERNAME' => [
+        // senha: $WEB_PASSWORD (configurada durante a instalação)
+        'password' => '$PASSWORD_HASH'
+    ]
+];
+USERS_PHP_EOF
+
 chown "$WEB_GROUP:$WEB_GROUP" "$WEB_DIR/users.php"
 chmod 640 "$WEB_DIR/users.php"
-echo "   ✅ Permissões do users.php ajustadas para 640"
+echo "✅ users.php configurado com usuário: $WEB_USERNAME"
 
 # =====================================================
 # CRIAR ARQUIVOS BÁSICOS FALTANTES
 # =====================================================
 echo "📝 Criando arquivos básicos faltantes..."
 
-# Criar status.php se não existe
 if [ ! -f "$WEB_DIR/status.php" ]; then
     cat > "$WEB_DIR/status.php" <<'EOF'
 <?php
@@ -873,10 +605,9 @@ if (!isset($_SESSION['loggedin'])) {
 </body>
 </html>
 EOF
-    echo "✅ status.php criado (básico)"
+    echo "✅ status.php criado"
 fi
 
-# Criar save.php se não existe
 if [ ! -f "$WEB_DIR/save.php" ]; then
     cat > "$WEB_DIR/save.php" <<'EOF'
 <?php
@@ -886,10 +617,8 @@ if (!isset($_SESSION['loggedin'])) {
     exit;
 }
 
-// Processar salvamento (simplificado)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $data = $_POST;
-    // Aqui iria a lógica de salvamento
     echo json_encode(['success' => true, 'message' => 'Configurações salvas']);
     exit;
 }
@@ -897,18 +626,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 header('Location: index.php');
 ?>
 EOF
-    echo "✅ save.php criado (básico)"
+    echo "✅ save.php criado"
 fi
 
 # =====================================================
-# CONFIGURAR NGINX COM VIRTUALHOST (SEM SSL)
+# ADICIONAR date_default_timezone_set NO INDEX.PHP
 # =====================================================
-echo "🌐 Configurando Nginx com VirtualHost (aguardando Certbot para SSL)..."
+echo "🕐 Corrigindo timezone no index.php..."
+if [ -f "$WEB_DIR/index.php" ]; then
+    # Fazer backup
+    cp "$WEB_DIR/index.php" "$WEB_DIR/index.php.backup"
+    
+    # Adicionar date_default_timezone_set após o primeiro <?php
+    sed -i 's/<?php/<?php\n\/\/ Forçar timezone correto\ndate_default_timezone_set('\''America\/Recife'\'');/' "$WEB_DIR/index.php"
+    echo "✅ date_default_timezone_set adicionado ao index.php"
+fi
 
-# Remover configuração padrão
+# =====================================================
+# CONFIGURAR NGINX COM VIRTUALHOST
+# =====================================================
+echo "🌐 Configurando Nginx com VirtualHost..."
+
 rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
 
-# Criar VirtualHost com o domínio configurado (apenas HTTP)
 cat > /etc/nginx/sites-available/botzap <<EOF
 server {
     listen 80;
@@ -948,64 +688,57 @@ server {
     error_log /var/log/nginx/botzap_error.log;
     access_log /var/log/nginx/botzap_access.log;
 }
-
-# Configuração HTTPS será adicionada pelo Certbot
-# Após executar 'certbot --nginx', o Certbot irá:
-# 1. Adicionar o bloco server para HTTPS
-# 2. Configurar os certificados
-# 3. Adicionar redirecionamento HTTP -> HTTPS
 EOF
 
-# Habilitar o site
 ln -sf /etc/nginx/sites-available/botzap /etc/nginx/sites-enabled/
-
-# Testar configuração (agora sem SSL, deve passar)
 nginx -t && systemctl reload nginx
-
-# Recarregar Nginx
-systemctl reload nginx
-echo "✅ Nginx configurado com VirtualHost para $BOT_DOMAIN"
-echo "✅ Também configurado alias: www.$DOMAIN_BASE"
+echo "✅ Nginx configurado para $BOT_DOMAIN"
 
 # =====================================================
-# CONFIGURAR PHP (MANTIDO DO ORIGINAL, ADAPTADO PARA NGINX)
+# SEÇÃO SSL - CERTBOT
 # =====================================================
-echo "⚙️ Configurando PHP..."
+echo ""
+echo "🔐 Instalando Certbot para SSL..."
+apt install -y certbot python3-certbot-nginx
 
-# Criar configurações PHP para o bot
-cat > "/etc/php/$PHP_VERSION/fpm/conf.d/99-botzap.ini" <<'PHPINIEOF'
-; Configurações PHP para BotZap
-upload_max_filesize = 10M
-post_max_size = 10M
-memory_limit = 256M
-max_execution_time = 300
-max_input_time = 300
+echo ""
+echo "Deseja instalar o certificado SSL AGORA para $BOT_DOMAIN?"
+echo "Isso tornará seu site acessível via HTTPS (recomendado)"
+echo ""
+echo -n "Instalar SSL agora? (s/N): "
+read INSTALL_SSL
 
-; Exibição de erros
-display_errors = Off
-display_startup_errors = Off
-log_errors = On
-error_log = /var/log/php_errors.log
-
-; Configurações de sessão
-session.gc_maxlifetime = 1440
-session.cookie_httponly = 1
-session.use_strict_mode = 1
-
-; Segurança
-allow_url_fopen = Off
-allow_url_include = Off
-expose_php = Off
-PHPINIEOF
-
-# Criar arquivo de log PHP
-touch /var/log/php_errors.log
-chown www-data:www-data /var/log/php_errors.log
-chmod 644 /var/log/php_errors.log
-
-# Reiniciar PHP-FPM
-systemctl restart php${PHP_VERSION}-fpm
-echo "✅ Configuração PHP criada em /etc/php/$PHP_VERSION/fpm/conf.d/99-botzap.ini"
+if [[ "$INSTALL_SSL" =~ ^[Ss]$ ]]; then
+    echo ""
+    echo "🔐 Instalando SSL para $BOT_DOMAIN com email $SSL_EMAIL..."
+    
+    certbot --nginx \
+        -d "$BOT_DOMAIN" \
+        --non-interactive \
+        --agree-tos \
+        --email "$SSL_EMAIL" \
+        --no-eff-email \
+        --redirect
+    
+    if [ $? -eq 0 ]; then
+        echo "✅ SSL instalado com sucesso!"
+        echo "   Site disponível em: https://$BOT_DOMAIN"
+        
+        echo ""
+        echo "🔄 Renovação automática:"
+        systemctl status certbot.timer --no-pager | grep "Trigger"
+    else
+        echo "❌ Falha na instalação do SSL"
+        echo "   Execute manualmente depois:"
+        echo "   sudo certbot --nginx -d $BOT_DOMAIN"
+    fi
+else
+    echo ""
+    echo "⚠️  SSL não instalado agora."
+    echo "   Para instalar manualmente depois, use:"
+    echo "   sudo certbot --nginx -d $BOT_DOMAIN"
+    echo ""
+fi
 
 # =====================================================
 # SYSTEMD – SERVIÇO DO BOT
@@ -1033,10 +766,8 @@ Environment=NODE_ENV=production
 StandardOutput=append:/var/log/botzap.log
 StandardError=append:/var/log/botzap.log
 
-# Adicionar grupo suplementar para acesso a arquivos
 SupplementaryGroups=www-data
 
-# Limites de sistema
 LimitNOFILE=65535
 NoNewPrivileges=true
 PrivateTmp=true
@@ -1073,86 +804,13 @@ LOGEOF
 echo "✅ Logrotate configurado"
 
 # =====================================================
-# CONFIGURAR HOSTS LOCAL (PARA TESTE)
+# CONFIGURAR HOSTS LOCAL
 # =====================================================
 echo ""
-echo "🌐 Configurando hosts local para teste..."
-# Remover entradas antigas se existirem
+echo "🌐 Configurando hosts local..."
 sed -i "/$DOMAIN_BASE/d" /etc/hosts
-
-# Adicionar nova entrada
 echo "127.0.0.1 $BOT_DOMAIN www.$DOMAIN_BASE" >> /etc/hosts
-echo "✅ Hosts local configurado:"
-echo "   127.0.0.1 $BOT_DOMAIN"
-echo "   127.0.0.1 www.$DOMAIN_BASE"
-
-# =====================================================
-# TESTES FINAIS
-# =====================================================
-echo "🧪 Executando testes finais..."
-
-echo ""
-echo "1. Testando Nginx:"
-NGINX_STATUS=$(systemctl is-active nginx)
-echo "   • Nginx: $NGINX_STATUS"
-
-echo ""
-echo "2. Testando PHP-FPM:"
-PHPFPM_STATUS=$(systemctl is-active php${PHP_VERSION}-fpm)
-echo "   • PHP-FPM: $PHPFPM_STATUS"
-
-echo ""
-echo "3. Testando VirtualHost:"
-echo "   • Arquivo: /etc/nginx/sites-available/botzap"
-if [ -f "/etc/nginx/sites-available/botzap" ]; then
-    echo "     ✅ Existe"
-    echo "     📋 Configuração:"
-    grep -E "server_name" /etc/nginx/sites-available/botzap | sed 's/^/       /'
-else
-    echo "     ❌ Não existe!"
-fi
-
-echo ""
-echo "4. Testando arquivo de usuários:"
-if [ -f "$WEB_DIR/users.php" ]; then
-    echo "   ✅ $WEB_DIR/users.php existe"
-    # Verificar se tem o usuário configurado
-    if grep -q "'$WEB_USERNAME'" "$WEB_DIR/users.php"; then
-        echo "   ✅ Usuário '$WEB_USERNAME' configurado"
-    else
-        echo "   ❌ Usuário '$WEB_USERNAME' não encontrado no arquivo"
-    fi
-else
-    echo "   ❌ Arquivo users.php não existe!"
-fi
-
-echo ""
-echo "5. Testando diretório web:"
-if [ -d "$WEB_DIR" ]; then
-    echo "   ✅ $WEB_DIR existe"
-    FILE_COUNT=$(find "$WEB_DIR" -type f | wc -l)
-    echo "   📁 Arquivos encontrados: $FILE_COUNT"
-else
-    echo "   ❌ $WEB_DIR não existe!"
-fi
-
-echo ""
-echo "6. Testando configuração do bot:"
-if [ -f "$BOT_DIR/bot.js" ]; then
-    echo "   ✅ bot.js existe"
-else
-    echo "   ⚠️  bot.js não encontrado (o bot não funcionará)"
-fi
-
-echo ""
-echo "7. Testando diretório Dashboard Pix:"
-if [ -d "/var/log/pix_acessos" ]; then
-    echo "   ✅ /var/log/pix_acessos existe"
-    echo "   📋 Permissões: $(ls -ld /var/log/pix_acessos | awk '{print $1, $3, $4}')"
-    echo "   📁 Arquivos encontrados: $(ls -la /var/log/pix_acessos/ | grep -E 'usuarios\.json|acessos_usuarios\.log' | wc -l)"
-else
-    echo "   ❌ /var/log/pix_acessos não existe!"
-fi
+echo "✅ Hosts local configurado"
 
 # =====================================================
 # INICIAR O BOT
@@ -1167,59 +825,21 @@ if [ "$BOT_STATUS" = "active" ]; then
     echo "✅ Bot iniciado com sucesso!"
 else
     echo "⚠️  Bot não iniciou automaticamente"
-    echo "   Verifique: systemctl status botzap"
 fi
 
 # =====================================================
-# VERIFICAR SE O SITE ESTÁ ACESSÍVEL
+# VERIFICAR ACESSO
 # =====================================================
 echo ""
 echo "🔍 Verificando acesso ao site..."
 sleep 2
 if curl -s -o /dev/null -w "%{http_code}" http://localhost/ | grep -q "200\|302\|301"; then
-    echo "✅ Site está respondendo corretamente!"
+    echo "✅ Site está respondendo!"
     HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/)
     echo "   Status HTTP: $HTTP_STATUS"
 else
     echo "⚠️  Site pode não estar acessível"
-    echo "   Verifique: systemctl status nginx"
-    echo "   Verifique logs: tail -f /var/log/nginx/botzap_error.log"
 fi
-
-# =====================================================
-# INSTRUÇÕES PARA SSL
-# =====================================================
-echo ""
-echo "🔐 ATENÇÃO: Configuração SSL"
-echo "============================"
-cat << SSL_EOF
-
-O Nginx foi configurado apenas com HTTP (porta 80).
-
-Para ativar HTTPS com Let's Encrypt:
-
-1. Instalar Certbot:
-   sudo apt install certbot python3-certbot-nginx -y
-
-2. Executar Certbot:
-   EX:
-   sudo certbot --nginx -d bot.weblinetelecom.com.br
-   Seu Email
-   Yes
-   No
-
-3. O Certbot irá:
-   - Obter o certificado
-   - Configurar automaticamente o Nginx
-   - Adicionar redirecionamento HTTP → HTTPS
-
-4. Verificar renovação automática
-   # Teste a renovação (dry run)
-     sudo certbot renew --dry-run
-   # Verifique o timer
-     sudo systemctl status certbot.timer
-
-SSL_EOF
 
 # =====================================================
 # RESUMO FINAL
@@ -1229,7 +849,15 @@ echo "================================================"
 echo "🎉 INSTALAÇÃO CONCLUÍDA!"
 echo "================================================"
 echo ""
-SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
+SERVER_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+
+# Verificar status do SSL
+SSL_STATUS="❌ Não instalado"
+SSL_URL="http://$BOT_DOMAIN"
+if [ -f "/etc/letsencrypt/live/$BOT_DOMAIN/fullchain.pem" ]; then
+    SSL_STATUS="✅ ATIVO"
+    SSL_URL="https://$BOT_DOMAIN"
+fi
 
 cat << EOF
 
@@ -1238,41 +866,27 @@ cat << EOF
 • Domínio configurado:     $BOT_DOMAIN
 • Alias configurado:       www.$DOMAIN_BASE
 • Usuário do painel:       $WEB_USERNAME
-• Senha configurada:       [Configurada durante a instalação]
+• Email para SSL:          $SSL_EMAIL
 
 • Diretório do bot:        $BOT_DIR
 • Diretório web:           $WEB_DIR
-• VirtualHost Nginx:       /etc/nginx/sites-available/botzap
-• Arquivo de usuários:     $WEB_DIR/users.php
+• Configuração Nginx:      /etc/nginx/sites-available/botzap
 
 • Dashboard Pix:           /var/log/pix_acessos/
 • Credenciais Dashboard:   admin / Admin@123
 
-• Servidor Web:            Nginx + PHP $PHP_VERSION-FPM
-• Timezone PHP:            ✅ Configurado para America/Recife
-
-🌐 ACESSO AO SISTEMA:
---------------------
-• URL do painel:          http://$BOT_DOMAIN
-• URL alternativa:        http://www.$DOMAIN_BASE
-• URL por IP:             http://$SERVER_IP
-• Login:                  $WEB_USERNAME / [Sua senha]
+🔐 STATUS DO SSL:
+----------------
+$SSL_STATUS
+• URL de acesso:           $SSL_URL
 
 ⚡ COMANDOS ÚTEIS:
 -----------------
 • Status do bot:          systemctl status botzap
 • Logs do bot:            journalctl -u botzap -f
-• Logs tail do bot:       tail -f /var/log/botzap.log
 • Reiniciar bot:          systemctl restart botzap
 • Reiniciar Nginx:        systemctl reload nginx
-• Reiniciar PHP-FPM:      systemctl restart php${PHP_VERSION}-fpm
-• Ver configuração:       cat /etc/nginx/sites-available/botzap
-• Dashboard Pix logs:     ls -la /var/log/pix_acessos/
-
-• node bot.js             Inicia o bot normalmente
-• node bot.js --clear-auth  Limpa sessões corrompidas
-• node bot.js --clean     Mesmo que --clear-auth
-• node bot.js --help      Ajuda
+• Logs Nginx:             tail -f /var/log/nginx/botzap_error.log
 
 • Limpar sessão WhatsApp:
   systemctl stop botzap
@@ -1280,25 +894,10 @@ cat << EOF
   node bot.js --clear-auth
   systemctl start botzap
 
-🔧 PRÓXIMOS PASSOS:
-------------------
-1. Acesse: http://$BOT_DOMAIN
-2. Faça login com: $WEB_USERNAME / [Sua senha]
-3. Configure o SSL com Let's Encrypt (veja instruções acima)
-4. Configure o domínio real no seu DNS (apontar para $SERVER_IP)
-
-🎛️  FERRAMENTAS INSTALADAS:
--------------------------
-• VIM configurado com syntax highlight
-• bash-completion ativado (auto-completar comandos)
-• fzf instalado (use CTRL+R para pesquisa no histórico)
-• Aliases úteis configurados
-• Prompt colorido ativado
-
-✅ Tudo pronto! O bot está instalado e configurado com Nginx!
+✅ INSTALAÇÃO CONCLUÍDA COM SUCESSO!
 EOF
 
 echo ""
 echo "================================================"
-echo "🌟 Seu bot WhatsApp está pronto para uso com Nginx!"
+echo "🌟 Bot WhatsApp pronto para uso com Nginx!"
 echo "================================================"
