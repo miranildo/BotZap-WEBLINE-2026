@@ -871,10 +871,17 @@ $SSL_STATUS
 -----------------
 • Status do bot:          systemctl status botzap
 • Logs do bot:            journalctl -u botzap -f
+• Logs tail do bot:       tail -f /var/log/botzap.log
 • Reiniciar bot:          systemctl restart botzap
 • Reiniciar Nginx:        systemctl reload nginx
 • Logs Nginx:             tail -f /var/log/nginx/botzap_error.log
-
+• Reiniciar Apache:       systemctl reload apache2
+• Ver configuração:       cat /etc/apache2/sites-available/botzap.conf
+• Dashboard Pix logs:     ls -la /var/log/pix_acessos/
+• node bot.js             Inicia o bot normalmente
+• node bot.js --clear-auth  Limpa sessões corrompidas
+• node bot.js --clean     Mesmo que --clear-auth
+• node bot.js --help      Ajuda
 • Limpar sessão WhatsApp:
   systemctl stop botzap
   cd $BOT_DIR
