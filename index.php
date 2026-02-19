@@ -3,10 +3,12 @@ require __DIR__ . '/auth.php';
 
 $configPath = '/opt/whatsapp-bot/config.json';
 $statusPath = '/opt/whatsapp-bot/status.json';
-$pixPath = '/var/www/botzap/pix.php'; // Caminho para o pix.php
+$pixPath = '/var/www/botzap/pix.php';
+$logPath = '/var/log/botzap.log';
 
 $mensagem = '';
 $erro = '';
+$abaAtiva = isset($_GET['aba']) ? $_GET['aba'] : 'config';
 
 $config = [
     'empresa' => '',
@@ -18,7 +20,7 @@ $config = [
     'feriados_ativos' => 'Sim',
     // NOVOS CAMPOS: Feriado Local
     'feriado_local_ativado' => 'Não',
-    'feriado_local_mensagem' => "📅 *Comunicado importante:*\r\n\r\nDeixe  aqui a mensagem do feriado!!!\r\n\r\nO acesso a faturas PIX continua disponível 24\/7! 🎉",
+    'feriado_local_mensagem' => "📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊",
     // Novos campos para MK-Auth
     'mkauth_url' => 'https://www.SEU_DOMINIO.com.br/api',
     'mkauth_client_id' => '',
@@ -35,12 +37,9 @@ if (file_exists($configPath)) {
 }
 
 /* ========= POST / REDIRECT ========= */
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
     $config['empresa'] = trim($_POST['empresa'] ?? '');
-    // 🔥 IMPORTANTE: NÃO usar trim() no menu para preservar espaços do final
-    $config['menu'] = $_POST['menu'] ?? '';
-    // Se quiser remover apenas espaços do início, mas preservar do final:
-    // $config['menu'] = ltrim($_POST['menu'] ?? '');
+    $config['menu'] = trim($_POST['menu'] ?? '');
     $config['boleto_url'] = trim($_POST['boleto_url'] ?? '');
     $config['atendente_numero'] = trim($_POST['atendente_numero'] ?? '');
     $config['tempo_atendimento_humano'] = intval($_POST['tempo_atendimento_humano'] ?? 30);
@@ -146,12 +145,110 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         // ============ FIM DA SINCRONIZAÇÃO ============
         
-        header('Location: index.php?salvo=1');
+        header('Location: index.php?salvo=1&aba=config');
         exit;
     } else {
         $erro = 'Erro ao salvar configurações';
     }
 }
+
+// ============================================================================
+// INÍCIO - API PARA LOG (GET_LOG)
+// ============================================================================
+if (isset($_GET['get_log'])) {
+    header('Content-Type: text/plain');
+    
+    if (!file_exists($logPath)) {
+        echo "Arquivo de log não encontrado: {$logPath}";
+        exit;
+    }
+    
+    if (!is_readable($logPath)) {
+        echo "Arquivo de log sem permissão de leitura";
+        exit;
+    }
+    
+    $ultimoTamanho = isset($_GET['ultimo_tamanho']) ? intval($_GET['ultimo_tamanho']) : 0;
+    $linhas = isset($_GET['linhas']) ? intval($_GET['linhas']) : 500;
+    $buscar = isset($_GET['buscar']) ? $_GET['buscar'] : '';
+    
+    if (isset($_GET['tail']) && $ultimoTamanho > 0) {
+        $tamanhoAtual = filesize($logPath);
+        
+        if ($tamanhoAtual < $ultimoTamanho) {
+            echo "=== LOG_RESET ===";
+            exit;
+        }
+        
+        if ($tamanhoAtual <= $ultimoTamanho) {
+            echo "=== NO_UPDATE ===";
+            exit;
+        }
+        
+        $handle = fopen($logPath, 'r');
+        fseek($handle, $ultimoTamanho);
+        $novasLinhas = '';
+        while (!feof($handle)) {
+            $novasLinhas .= fgets($handle);
+        }
+        fclose($handle);
+        
+        echo $novasLinhas;
+        exit;
+    }
+    
+    $conteudo = file_get_contents($logPath);
+    if ($conteudo === false) {
+        echo "Erro ao ler arquivo de log";
+        exit;
+    }
+    
+    $linhasArray = explode("\n", $conteudo);
+    
+    if (!empty($buscar)) {
+        $linhasArray = array_filter($linhasArray, function($linha) use ($buscar) {
+            return stripos($linha, $buscar) !== false;
+        });
+        $linhasArray = array_values($linhasArray);
+    }
+    
+    if ($linhas > 0) {
+        $linhasArray = array_slice($linhasArray, -$linhas);
+    }
+    
+    $tamanho = filesize($logPath);
+    $ultimaModificacao = filemtime($logPath);
+    
+    echo "=== METADATA:{$tamanho}:{$ultimaModificacao} ===\n";
+    echo implode("\n", $linhasArray);
+    exit;
+}
+// ============================================================================
+// FIM - API PARA LOG (GET_LOG)
+// ============================================================================
+
+// ============================================================================
+// INÍCIO - MANIPULAÇÃO DO LOG (LIMPAR/ATUALIZAR)
+// ============================================================================
+if (isset($_POST['acao_log'])) {
+    if ($_POST['acao_log'] === 'limpar' && file_exists($logPath)) {
+        if (is_writable($logPath)) {
+            if (file_put_contents($logPath, "=== Log reiniciado em " . date('d/m/Y H:i:s') . " ===\n") !== false) {
+                $mensagem = 'Log limpo com sucesso!';
+            } else {
+                $erro = 'Erro ao limpar o arquivo de log!';
+            }
+        } else {
+            $erro = 'Arquivo de log sem permissão de escrita!';
+        }
+    } elseif ($_POST['acao_log'] === 'atualizar') {
+        header('Location: index.php?aba=log');
+        exit;
+    }
+}
+// ============================================================================
+// FIM - MANIPULAÇÃO DO LOG (LIMPAR/ATUALIZAR)
+// ============================================================================
 
 /* ========= MENSAGEM ========= */
 if (isset($_GET['salvo']) && $_GET['salvo'] == 1) {
@@ -190,9 +287,12 @@ if ($status === 'online') {
 <html lang="pt-br">
 <head>
 <meta charset="utf-8">
-<title>Bot WhatsApp – Painel</title>
+<title>Painel Bot WhatsApp – PROVEDOR (xx)xxxx.xxxx</title>
 
 <style>
+/* ============================================================================
+   INÍCIO - ESTILOS GLOBAIS (ORIGINAIS)
+   ============================================================================ */
 body {
     margin:0;
     font-family: Inter, Arial, sans-serif;
@@ -382,13 +482,306 @@ button {
     align-items: center;
     gap: 8px;
 }
+/* ============================================================================
+   FIM - ESTILOS GLOBAIS (ORIGINAIS)
+   ============================================================================ */
+
+/* ============================================================================
+   INÍCIO - ESTILOS DO TERMINAL (APENAS PARA ABA LOG)
+   ============================================================================ */
+.container.aba-log {
+    display: block;
+    max-width: 1200px;
+}
+
+.terminal-container {
+    background: #0C0C0C;
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 10px 25px rgba(124,252,0,0.1);
+    border: 1px solid #2d3748;
+    font-family: 'Courier New', monospace;
+}
+
+.terminal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #2d3748;
+}
+
+.terminal-title {
+    color: #7CFC00;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    text-shadow: 0 0 5px rgba(124,252,0,0.5);
+    font-family: 'Courier New', monospace;
+}
+
+.terminal-title span {
+    color: #7CFC00;
+    margin-right: 10px;
+    text-shadow: 0 0 8px rgba(124,252,0,0.8);
+}
+
+.terminal-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.terminal-btn {
+    background: #1e293b;
+    color: #7CFC00;
+    border: 1px solid #334155;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-shadow: 0 0 3px rgba(124,252,0,0.3);
+}
+
+.terminal-btn:hover {
+    background: #334155;
+    border-color: #7CFC00;
+    color: #ffffff;
+    box-shadow: 0 0 8px rgba(124,252,0,0.3);
+}
+
+.terminal-btn.warning {
+    background: #92400e;
+    border-color: #f59e0b;
+    color: #fef3c7;
+}
+
+.terminal-search {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+    background: #111827;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid #2d3748;
+    flex-wrap: wrap;
+}
+
+.terminal-search input {
+    flex: 1;
+    min-width: 200px;
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #7CFC00;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+}
+
+.terminal-search input:focus {
+    outline: none;
+    border-color: #7CFC00;
+    box-shadow: 0 0 8px rgba(124,252,0,0.3);
+}
+
+.terminal-search input::placeholder {
+    color: #4a5568;
+}
+
+.terminal-content {
+    background: #0C0C0C;
+    border-radius: 8px;
+    padding: 20px;
+    min-height: 280px;
+    max-height: 280px;
+    overflow-y: auto;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: #CCCCCC;
+    border: 1px solid #1e293b;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.9);
+    scroll-behavior: smooth;
+}
+
+.terminal-content .log-line {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    border-bottom: 1px solid #1a1a1a;
+    padding: 2px 0;
+    font-family: 'Courier New', monospace;
+    transition: background-color 0.2s;
+}
+
+.terminal-content .log-line:nth-child(even) {
+    background: rgba(124, 252, 0, 0.03);
+}
+
+.terminal-content .log-line:hover {
+    background: #1e293b;
+}
+
+.terminal-content .timestamp {
+    color: #7CFC00 !important;
+    font-weight: bold;
+    text-shadow: 0 0 5px rgba(124,252,0,0.8);
+}
+
+.terminal-content .phone {
+    color: #5C5CFF !important;
+    text-shadow: 0 0 3px rgba(92,92,255,0.5);
+}
+
+.terminal-content .success {
+    color: #7CFC00 !important;
+    font-weight: bold;
+    text-shadow: 0 0 5px rgba(124,252,0,0.8);
+}
+
+.terminal-content .emoji {
+    color: #FFFF00 !important;
+    text-shadow: 0 0 5px rgba(255,255,0,0.5);
+}
+
+.terminal-content .info {
+    color: #00FFFF !important;
+    text-shadow: 0 0 3px rgba(0,255,255,0.5);
+}
+
+.terminal-content .error {
+    color: #FF5F5F !important;
+    font-weight: bold;
+    text-shadow: 0 0 3px rgba(255,95,95,0.5);
+}
+
+.terminal-content::-webkit-scrollbar {
+    width: 10px;
+}
+
+.terminal-content::-webkit-scrollbar-track {
+    background: #0C0C0C;
+}
+
+.terminal-content::-webkit-scrollbar-thumb {
+    background: #7CFC00;
+    border-radius: 5px;
+    box-shadow: 0 0 5px #7CFC00;
+}
+
+.terminal-content::-webkit-scrollbar-thumb:hover {
+    background: #90EE90;
+}
+
+.terminal-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 15px;
+    color: #7CFC00;
+    font-size: 12px;
+    font-family: 'Courier New', monospace;
+    text-shadow: 0 0 3px rgba(124,252,0,0.5);
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.terminal-stats {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.terminal-stats span {
+    color: #7CFC00;
+    font-weight: bold;
+}
+
+.terminal-autorefresh {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.terminal-autorefresh input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+    accent-color: #7CFC00;
+}
+
+.terminal-loader {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 2px solid #7CFC00;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 1s linear infinite;
+    margin-left: 5px;
+    box-shadow: 0 0 5px #7CFC00;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+/* ============================================================================
+   FIM - ESTILOS DO TERMINAL
+   ============================================================================ */
+
+/* ============================================================================
+   INÍCIO - ABAS DE NAVEGAÇÃO
+   ============================================================================ */
+.tabs-container {
+    max-width: 1100px;
+    margin: 0 auto 20px auto;
+    padding: 0 20px;
+}
+
+.tabs {
+    display: flex;
+    gap: 5px;
+    border-bottom: 2px solid #e5e7eb;
+    padding-bottom: 0;
+}
+
+.tab {
+    padding: 12px 24px;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    font-weight: 600;
+    color: #6b7280;
+    transition: all 0.2s;
+    text-decoration: none;
+    display: inline-block;
+    font-family: Inter, Arial, sans-serif;
+}
+
+.tab:hover {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+.tab.active {
+    background: #ffffff;
+    color: #2563eb;
+    border-bottom: 2px solid #2563eb;
+    margin-bottom: -2px;
+}
+/* ============================================================================
+   FIM - ABAS DE NAVEGAÇÃO
+   ============================================================================ */
 </style>
 </head>
 
 <body>
 
 <header style="display:flex; justify-content:space-between; align-items:center;">
-    <span>🤖 Painel – Bot WhatsApp Atendimento</span>
+    <span>🤖 Painel – Bot WhatsApp Atendimento - PROVEDOR - (xx)xxxx.xxxx</span>
 
     <a href="logout.php"
        style="
@@ -405,282 +798,795 @@ button {
     </a>
 </header>
 
-<div class="container">
-
-<div class="card qr-box">
-    <h2>Status do WhatsApp</h2>
-    <img id="qrImg" src="<?= $imgSrc ?>" alt="Status WhatsApp">
-    <div class="status <?= htmlspecialchars($status) ?>">
-        <?= strtoupper($status) ?>
+<!-- ============================================================================
+     INÍCIO - ABAS DE NAVEGAÇÃO
+     ============================================================================ -->
+<div class="tabs-container">
+    <div class="tabs">
+        <a href="?aba=config" class="tab <?= $abaAtiva === 'config' ? 'active' : '' ?>">⚙️ Configurações</a>
+        <a href="?aba=log" class="tab <?= $abaAtiva === 'log' ? 'active' : '' ?>">📋 Exibir Log</a>
     </div>
 </div>
+<!-- ============================================================================
+     FIM - ABAS DE NAVEGAÇÃO
+     ============================================================================ -->
 
-<div class="card">
-    <h2>Configurações</h2>
+<?php if ($abaAtiva === 'config'): ?>
+<!-- ============================================================================
+     INÍCIO - CONFIGURAÇÕES (100% ORIGINAL)
+     ============================================================================ -->
+<div class="container">
 
-    <?php if ($mensagem): ?>
-        <div id="msg" class="alert success"><?= $mensagem ?></div>
-    <?php endif; ?>
-
-    <?php if ($erro): ?>
-        <div class="alert error"><?= $erro ?></div>
-    <?php endif; ?>
-
-    <form method="post">
-        <label>Empresa</label>
-        <input name="empresa" value="<?= htmlspecialchars($config['empresa']) ?>">
-
-        <label>Mensagem do Menu</label>
-        <textarea name="menu"><?= htmlspecialchars($config['menu']) ?></textarea>
-
-        <label>URL do Boleto</label>
-        <input name="boleto_url" value="<?= htmlspecialchars($config['boleto_url']) ?>">
-
-        <label>Número do Atendente</label>
-        <input 
-            name="atendente_numero" 
-            value="<?= htmlspecialchars($config['atendente_numero']) ?>"
-            readonly
-            placeholder="Preenchido automaticamente via QR Code"
-            class="atendente-readonly"
-        >
-        <div class="atendente-info-box">
-            <p style="margin: 0;">
-                <strong>ℹ️ Informação:</strong> Este número é configurado automaticamente através da leitura do QR Code no WhatsApp e não pode ser editado manualmente.
-            </p>
+    <div class="card qr-box">
+        <h2>Status do WhatsApp</h2>
+        <img id="qrImg" src="<?= $imgSrc ?>" alt="Status WhatsApp">
+        <div class="status <?= htmlspecialchars($status) ?>">
+            <?= strtoupper($status) ?>
         </div>
+    </div>
 
-        <label>⏱️ Tempo máximo de atendimento humano (minutos)</label>
-        <input
-            type="number"
-            min="5"
-            step="5"
-            name="tempo_atendimento_humano"
-            value="<?= htmlspecialchars($config['tempo_atendimento_humano']) ?>"
-        >
+    <div class="card">
+        <h2>Configurações</h2>
 
-        <label>⏱️ Tempo máximo de inatividade global (minutos)</label>
-        <input
-            type="number"
-            min="5"
-            step="5"
-            name="tempo_inatividade_global"
-            value="<?= htmlspecialchars($config['tempo_inatividade_global']) ?>"
-        >
-        <div class="timeout-info">
-            <p><strong>ℹ️ Sobre o tempo de inatividade global:</strong></p>
-            <p>• Aplica-se a <strong>TODAS</strong> as etapas do atendimento:</p>
-            <p>  - Menu inicial</p>
-            <p>  - Aguardando CPF/CNPJ</p>
-            <p>  - Após gerar link PIX</p>
-            <p>  - Atendimento humano (além do tempo específico)</p>
-            <p>• Se o cliente não responder neste período, o atendimento é encerrado automaticamente</p>
-            <p>• Ao reiniciar, o cliente volta ao menu inicial</p>
-        </div>
+        <?php if ($mensagem): ?>
+            <div id="msg" class="alert success"><?= $mensagem ?></div>
+        <?php endif; ?>
 
-        <label>🎯 Considerar feriados nacionais no atendimento?</label>
-        <div class="radio-group">
-            <label class="radio-option">
-                <input type="radio" name="feriados_ativos" value="Sim" 
-                    <?= ($config['feriados_ativos'] === 'Sim') ? 'checked' : '' ?>>
-                Sim
-            </label>
-            <label class="radio-option">
-                <input type="radio" name="feriados_ativos" value="Não"
-                    <?= ($config['feriados_ativos'] === 'Não') ? 'checked' : '' ?>>
-                Não
-            </label>
-        </div>
+        <?php if ($erro): ?>
+            <div class="alert error"><?= $erro ?></div>
+        <?php endif; ?>
 
-        <div class="feriado-info">
-            <p><strong>ℹ️ Informações sobre feriados nacionais:</strong></p>
-            <p>• <strong>Sim:</strong> O bot não oferece atendimento humano em feriados nacionais</p>
-            <p>• <strong>Não:</strong> Atendimento humano funciona mesmo em feriados</p>
-            <p>• PIX continua disponível 24/7 independentemente desta configuração</p>
-        </div>
-
-        <!-- 🔥 NOVA SEÇÃO: Feriado Local Personalizável -->
-        <div class="feriado-local-box">
-            <h3>
-                <span>🏮</span> Feriado Local (Personalizável)
-            </h3>
+        <form method="post">
+            <input type="hidden" name="salvar_config" value="1">
             
-            <label style="margin-top: 5px;">Ativar feriado local?</label>
-            <div class="radio-group" style="margin-bottom: 15px;">
-                <label class="radio-option">
-                    <input type="radio" name="feriado_local_ativado" value="Sim" 
-                        <?= (isset($config['feriado_local_ativado']) && $config['feriado_local_ativado'] === 'Sim') ? 'checked' : '' ?>>
-                    Sim (bloquear atendimento)
-                </label>
-                <label class="radio-option">
-                    <input type="radio" name="feriado_local_ativado" value="Não"
-                        <?= (!isset($config['feriado_local_ativado']) || $config['feriado_local_ativado'] === 'Não') ? 'checked' : '' ?>>
-                    Não (atendimento normal)
-                </label>
-            </div>
+            <label>Empresa</label>
+            <input name="empresa" value="<?= htmlspecialchars($config['empresa']) ?>">
 
-            <label>Mensagem para feriado local:</label>
-            <textarea 
-                name="feriado_local_mensagem" 
-                placeholder="Digite a mensagem que será enviada quando cliente tentar atendimento em feriado local..."
-                style="height: 120px;"
-            ><?= htmlspecialchars($config['feriado_local_mensagem'] ?? '📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊') ?></textarea>
-            
-            <div style="background: #fef9e7; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 13px;">
-                <p style="margin: 0;"><strong>ℹ️ Como funciona:</strong></p>
-                <p style="margin: 5px 0 0 0;">• Quando ativado, o bot NÃO oferecerá atendimento humano</p>
-                <p style="margin: 2px 0 0 0;">• Clientes que tentarem falar com atendente receberão esta mensagem personalizada</p>
-                <p style="margin: 2px 0 0 0;">• PIX continua funcionando normalmente 24/7</p>
-                <p style="margin: 2px 0 0 0;">• Ideal para feriados locais (carnaval, ponto facultativo, etc.)</p>
-            </div>
-        </div>
+            <label>Mensagem do Menu</label>
+            <textarea name="menu"><?= htmlspecialchars($config['menu']) ?></textarea>
 
-        <div class="config-section">
-            <h3>🔐 Configurações MK-Auth (Verificação de Clientes)</h3>
-            <p style="margin-top: 0; font-size: 14px; color: #6b7280;">
-                Configurações para verificação de CPF/CNPJ na base de clientes antes de gerar link PIX
-            </p>
+            <label>URL do Boleto</label>
+            <input name="boleto_url" value="<?= htmlspecialchars($config['boleto_url']) ?>">
 
-            <label>URL do MK-Auth</label>
+            <label>Número do Atendente</label>
             <input 
-                name="mkauth_url" 
-                value="<?= htmlspecialchars($config['mkauth_url']) ?>"
-                placeholder="https://www.SEU_DOMINIO.com.br/api"
+                name="atendente_numero" 
+                value="<?= htmlspecialchars($config['atendente_numero']) ?>"
+                readonly
+                placeholder="Preenchido automaticamente via QR Code"
+                class="atendente-readonly"
             >
-            <small style="color: #6b7280; font-size: 12px;">
-                URL base do sistema MK-Auth (deve terminar com / se for API completa)
-            </small>
-
-            <label>Client ID</label>
-            <input 
-                name="mkauth_client_id" 
-                value="<?= htmlspecialchars($config['mkauth_client_id']) ?>"
-                placeholder="c582c8ede2c9169c64f29cxxxxxxxxxx"
-            >
-            <small style="color: #6b7280; font-size: 12px;">
-                Identificador do cliente para autenticação na API
-            </small>
-
-            <label>Client Secret</label>
-            <input 
-                name="mkauth_client_secret" 
-                type="password"
-                value="<?= htmlspecialchars($config['mkauth_client_secret']) ?>"
-                placeholder="9d2367fbf45d2e89d8ee8cb92ca3c0xxxxxxxxxx"
-            >
-            <small style="color: #6b7280; font-size: 12px;">
-                Senha de acesso à API (chave secreta)
-            </small>
-
-            <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 10px 12px; margin-top: 15px; border-radius: 6px; font-size: 13px;">
-                <p style="margin: 0; color: #92400e;"><strong>⚠️ Importante:</strong></p>
-                <p style="margin: 5px 0 0 0; color: #92400e;">
-                    • As credenciais MK-Auth serão sincronizadas automaticamente com o arquivo pix.php<br>
-                    • Se as credenciais não forem configuradas, o bot NÃO permitirá acesso direto ao PIX<br>
-                    • Configure corretamente para filtrar apenas clientes da base
+            <div class="atendente-info-box">
+                <p style="margin: 0;">
+                    <strong>ℹ️ Informação:</strong> Este número é configurado automaticamente através da leitura do QR Code no WhatsApp e não pode ser editado manualmente.
                 </p>
             </div>
+
+            <label>⏱️ Tempo máximo de atendimento humano (minutos)</label>
+            <input
+                type="number"
+                min="5"
+                step="5"
+                name="tempo_atendimento_humano"
+                value="<?= htmlspecialchars($config['tempo_atendimento_humano']) ?>"
+            >
+
+            <label>⏱️ Tempo máximo de inatividade global (minutos)</label>
+            <input
+                type="number"
+                min="5"
+                step="5"
+                name="tempo_inatividade_global"
+                value="<?= htmlspecialchars($config['tempo_inatividade_global']) ?>"
+            >
+            <div class="timeout-info">
+                <p><strong>ℹ️ Sobre o tempo de inatividade global:</strong></p>
+                <p>• Aplica-se a <strong>TODAS</strong> as etapas do atendimento:</p>
+                <p>  - Menu inicial</p>
+                <p>  - Aguardando CPF/CNPJ</p>
+                <p>  - Após gerar link PIX</p>
+                <p>  - Atendimento humano (além do tempo específico)</p>
+                <p>• Se o cliente não responder neste período, o atendimento é encerrado automaticamente</p>
+                <p>• Ao reiniciar, o cliente volta ao menu inicial</p>
+            </div>
+
+            <label>🎯 Considerar feriados nacionais no atendimento?</label>
+            <div class="radio-group">
+                <label class="radio-option">
+                    <input type="radio" name="feriados_ativos" value="Sim" 
+                        <?= ($config['feriados_ativos'] === 'Sim') ? 'checked' : '' ?>>
+                    Sim
+                </label>
+                <label class="radio-option">
+                    <input type="radio" name="feriados_ativos" value="Não"
+                        <?= ($config['feriados_ativos'] === 'Não') ? 'checked' : '' ?>>
+                    Não
+                </label>
+            </div>
+
+            <div class="feriado-info">
+                <p><strong>ℹ️ Informações sobre feriados nacionais:</strong></p>
+                <p>• <strong>Sim:</strong> O bot não oferece atendimento humano em feriados nacionais</p>
+                <p>• <strong>Não:</strong> Atendimento humano funciona mesmo em feriados</p>
+                <p>• PIX continua disponível 24/7 independentemente desta configuração</p>
+            </div>
+
+            <!-- 🔥 NOVA SEÇÃO: Feriado Local Personalizável -->
+            <div class="feriado-local-box">
+                <h3>
+                    <span>🏮</span> Feriado Local (Personalizável)
+                </h3>
+                
+                <label style="margin-top: 5px;">Ativar feriado local?</label>
+                <div class="radio-group" style="margin-bottom: 15px;">
+                    <label class="radio-option">
+                        <input type="radio" name="feriado_local_ativado" value="Sim" 
+                            <?= (isset($config['feriado_local_ativado']) && $config['feriado_local_ativado'] === 'Sim') ? 'checked' : '' ?>>
+                        Sim (bloquear atendimento)
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="feriado_local_ativado" value="Não"
+                            <?= (!isset($config['feriado_local_ativado']) || $config['feriado_local_ativado'] === 'Não') ? 'checked' : '' ?>>
+                        Não (atendimento normal)
+                    </label>
+                </div>
+
+                <label>Mensagem para feriado local:</label>
+                <textarea 
+                    name="feriado_local_mensagem" 
+                    placeholder="Digite a mensagem que será enviada quando cliente tentar atendimento em feriado local..."
+                    style="height: 120px;"
+                ><?= htmlspecialchars($config['feriado_local_mensagem'] ?? '📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊') ?></textarea>
+                
+                <div style="background: #fef9e7; padding: 10px; border-radius: 6px; margin-top: 10px; font-size: 13px;">
+                    <p style="margin: 0;"><strong>ℹ️ Como funciona:</strong></p>
+                    <p style="margin: 5px 0 0 0;">• Quando ativado, o bot NÃO oferecerá atendimento humano</p>
+                    <p style="margin: 2px 0 0 0;">• Clientes que tentarem falar com atendente receberão esta mensagem personalizada</p>
+                    <p style="margin: 2px 0 0 0;">• PIX continua funcionando normalmente 24/7</p>
+                    <p style="margin: 2px 0 0 0;">• Ideal para feriados locais (carnaval, ponto facultativo, etc.)</p>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h3>🔐 Configurações MK-Auth (Verificação de Clientes)</h3>
+                <p style="margin-top: 0; font-size: 14px; color: #6b7280;">
+                    Configurações para verificação de CPF/CNPJ na base de clientes antes de gerar link PIX
+                </p>
+
+                <label>URL do MK-Auth</label>
+                <input 
+                    name="mkauth_url" 
+                    value="<?= htmlspecialchars($config['mkauth_url']) ?>"
+                    placeholder="https://www.SEU_DOMINIO.com.br/api"
+                >
+                <small style="color: #6b7280; font-size: 12px;">
+                    URL base do sistema MK-Auth (deve terminar com / se for API completa)
+                </small>
+
+                <label>Client ID</label>
+                <input 
+                    name="mkauth_client_id" 
+                    value="<?= htmlspecialchars($config['mkauth_client_id']) ?>"
+                    placeholder="c582c8ede2c9169c64f29cxxxxxxxxxx"
+                >
+                <small style="color: #6b7280; font-size: 12px;">
+                    Identificador do cliente para autenticação na API
+                </small>
+
+                <label>Client Secret</label>
+                <input 
+                    name="mkauth_client_secret" 
+                    type="password"
+                    value="<?= htmlspecialchars($config['mkauth_client_secret']) ?>"
+                    placeholder="9d2367fbf45d2e89d8ee8cb92ca3c0xxxxxxxxxx"
+                >
+                <small style="color: #6b7280; font-size: 12px;">
+                    Senha de acesso à API (chave secreta)
+                </small>
+
+                <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 10px 12px; margin-top: 15px; border-radius: 6px; font-size: 13px;">
+                    <p style="margin: 0; color: #92400e;"><strong>⚠️ Importante:</strong></p>
+                    <p style="margin: 5px 0 0 0; color: #92400e;">
+                        • As credenciais MK-Auth serão sincronizadas automaticamente com o arquivo pix.php<br>
+                        • Se as credenciais não forem configuradas, o bot NÃO permitirá acesso direto ao PIX<br>
+                        • Configure corretamente para filtrar apenas clientes da base
+                    </p>
+                </div>
+            </div>
+
+            <button type="submit">Salvar configurações</button>
+        </form>
+    </div>
+
+</div>
+<!-- ============================================================================
+     FIM - CONFIGURAÇÕES (100% ORIGINAL)
+     ============================================================================ -->
+
+<?php else: ?>
+<!-- ============================================================================
+     INÍCIO - ABA DE LOG (COM FONTE COURIER NEW)
+     ============================================================================ -->
+<div class="tabs-container">
+    <div class="terminal-container">
+        <div class="terminal-header">
+            <div class="terminal-title">
+                <span>📋</span> botzap.log @ /var/log/botzap.log
+            </div>
+            <div class="terminal-controls">
+                <button class="terminal-btn warning" onclick="confirmarLimparLog()">🗑️ Limpar Log</button>
+                <button class="terminal-btn" onclick="atualizarLog()">🔄 Atualizar</button>
+            </div>
         </div>
 
-        <button type="submit">Salvar configurações</button>
-    </form>
-</div>
+        <div class="terminal-search">
+            <input type="text" id="buscarLog" placeholder="🔍 Buscar no log...">
+            <select id="linhasLog" class="terminal-btn" style="width: auto;">
+                <option value="100">Últimas 100 linhas</option>
+                <option value="250">Últimas 250 linhas</option>
+                <option value="500" selected>Últimas 500 linhas</option>
+                <option value="1000">Últimas 1000 linhas</option>
+                <option value="5000">Últimas 5000 linhas</option>
+                <option value="0">Todas as linhas</option>
+            </select>
+        </div>
 
+        <div id="terminalContent" class="terminal-content">
+            <div style="color: #7CFC00; text-align: center; padding: 20px;">
+                <span class="terminal-loader"></span> Carregando log...
+            </div>
+        </div>
+
+        <div class="terminal-footer">
+            <div class="terminal-stats">
+                <span>Linhas: <span id="linhasCount">0</span></span>
+                <span>Tamanho: <span id="tamanhoLog">0 KB</span></span>
+                <span>Atualizado: <span id="dataAtualizacao">-</span></span>
+            </div>
+            <div class="terminal-autorefresh">
+                <input type="checkbox" id="autoRefresh" checked>
+                <label for="autoRefresh">Auto-atualizar (2s)</label>
+            </div>
+        </div>
+    </div>
 </div>
+<!-- ============================================================================
+     FIM - ABA DE LOG
+     ============================================================================ -->
+<?php endif; ?>
 
 <script>
-// ⚠️ SOLUÇÃO COMPLETA - monitora QR → ONLINE e ONLINE → QR
-const statusDiv = document.querySelector('.status');
+// ============================================================================
+// INÍCIO - VARIÁVEIS GLOBAIS DO LOG
+// ============================================================================
+let autoRefreshInterval;
+let ultimoTamanhoArquivo = 0;
+let buscandoAtivo = false;
+let linhasSelecionadas = 500;
+let buscaAtiva = '';
 
-if (statusDiv) {
-    console.log('🔍 Monitorando status do WhatsApp...');
-    
-    // Determinar status atual
-    let statusAtual;
-    if (statusDiv.classList.contains('online')) {
-        statusAtual = 'online';
-    } else if (statusDiv.classList.contains('qr')) {
-        statusAtual = 'qr';
-    } else {
-        statusAtual = 'offline';
-    }
-    
-    console.log('Status inicial:', statusAtual);
-    
-    // ⚠️ VERIFICAR MUDANÇAS DE STATUS A CADA 3 SEGUNDOS
-    const intervalo = setInterval(() => {
-        fetch('?api_status=1&t=' + Date.now())
-            .then(r => r.text())
-            .then(novoStatus => {
-                console.log('Status verificado:', novoStatus, '(atual:', statusAtual, ')');
-                
-                // Se o status mudou
-                if (novoStatus !== statusAtual) {
-                    console.log('✅ Status mudou de', statusAtual, 'para', novoStatus, 'Recarregando página...');
-                    clearInterval(intervalo);
-                    location.reload();
-                }
-            })
-            .catch(() => {
-                console.log('Erro na verificação');
+const coresTerminal = {
+    fundo: '#0C0C0C',
+    texto: '#CCCCCC',
+    timestamp: '#7CFC00',
+    verdeFluor: '#7CFC00',
+    verdeClaro: '#90EE90',
+    azul: '#5C5CFF',
+    amarelo: '#FFFF00',
+    laranja: '#FFA500',
+    vermelho: '#FF5F5F',
+    ciano: '#00FFFF',
+    magenta: '#FF77FF',
+    cinza: '#888888'
+};
+// ============================================================================
+// FIM - VARIÁVEIS GLOBAIS DO LOG
+// ============================================================================
+
+// ============================================================================
+// INÍCIO - FUNÇÃO PARA MANTER TELA ATIVA NO CELULAR
+// ============================================================================
+let wakeLock = null;
+
+async function ativarWakeLock() {
+    if ('wakeLock' in navigator) {
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            console.log('✅ Tela será mantida ativa');
+            
+            wakeLock.addEventListener('release', () => {
+                console.log('📴 Wake lock liberado - tela pode desligar');
             });
-    }, 3000); // Verificar a cada 3 segundos
-    
-    // ⚠️ ATUALIZAR IMAGEM DO QR APENAS SE FOR QR CODE
-    if (statusAtual === 'qr') {
-        setInterval(() => {
-            const img = document.getElementById('qrImg');
-            if (img && img.src.includes('qrcode_view.php')) {
-                img.src = 'qrcode_view.php?t=' + Date.now();
-            }
-        }, 3000);
+        } catch (err) {
+            console.error(`❌ Erro ao ativar wake lock: ${err.message}`);
+        }
+    } else {
+        console.log('⚠️ Navegador não suporta manter tela ativa');
     }
 }
 
-// Mensagem de sucesso
-if (window.location.search.includes('salvo=1')) {
-    window.history.replaceState({}, document.title, window.location.pathname);
+function desativarWakeLock() {
+    if (wakeLock !== null) {
+        wakeLock.release()
+            .then(() => {
+                wakeLock = null;
+                console.log('✅ Wake lock desativado');
+            });
+    }
 }
+// ============================================================================
+// FIM - FUNÇÃO PARA MANTER TELA ATIVA NO CELULAR
+// ============================================================================
 
-const msg = document.getElementById('msg');
-if (msg) {
-    setTimeout(() => {
-        msg.style.opacity = '0';
-        setTimeout(() => msg.remove(), 500);
-    }, 3000);
+// ============================================================================
+// INÍCIO - FUNÇÃO FORMATAR LOG
+// ============================================================================
+function formatarLog(conteudo) {
+    if (!conteudo || conteudo.includes('Nenhuma entrada')) {
+        return '<div style="color: ' + coresTerminal.cinza + '; text-align: center; padding: 20px;">📭 Nenhuma entrada no log</div>';
+    }
+    
+    let linhas = conteudo.split('\n');
+    if (linhas[0] && linhas[0].startsWith('=== METADATA:')) {
+        linhas = linhas.slice(1);
+    }
+    
+    linhas = linhas.filter(linha => linha.trim() !== '');
+    
+    return linhas.map(linha => {
+        let linhaEscapada = linha
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+        
+        linhaEscapada = linhaEscapada.replace(
+            /\[(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2})\]/g,
+            '<span class="timestamp">[$1]</span>'
+        );
+        
+        linhaEscapada = linhaEscapada.replace(
+            /\[(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2})\]/g,
+            '<span class="timestamp">[$1]</span>'
+        );
+        
+        linhaEscapada = linhaEscapada.replace(
+            /(\d{11,13}@s\.whatsapp\.net|\d{10,13})/g,
+            '<span class="phone">$1</span>'
+        );
+        
+        linhaEscapada = linhaEscapada
+            .replace(/(✅|✔️|sucesso|enviado|válido|encontrado|sucesso\!)/gi, 
+                '<span class="success">$1</span>')
+            .replace(/(❌|erro|falha|inválido|não encontrado|falhou)/gi, 
+                '<span class="error">$1</span>')
+            .replace(/(📨|📥|📤|📋|📊|📄|📅)/g, 
+                '<span class="emoji">$1</span>')
+            .replace(/(🔍|🔢|ℹ️|⚠️|⚡|💠|🔐)/g, 
+                '<span class="info">$1</span>')
+            .replace(/(✅|✔️)/g, 
+                '<span class="success">$1</span>');
+        
+        linhaEscapada = linhaEscapada
+            .replace(/(menu|aguardando_cpf|pos_pix|atendimento_humano)/gi,
+                '<span style="color: ' + coresTerminal.magenta + ';">$1</span>')
+            .replace(/(PIX|BOLETO|FATURA)/g,
+                '<span style="color: ' + coresTerminal.laranja + '; font-weight: bold;">$1</span>');
+        
+        return `<div class="log-line" style="color: ${coresTerminal.texto};">${linhaEscapada}</div>`;
+    }).join('');
 }
+// ============================================================================
+// FIM - FUNÇÃO FORMATAR LOG
+// ============================================================================
 
-// Mostrar/ocultar senha MK-Auth
-const secretField = document.querySelector('input[name="mkauth_client_secret"]');
-if (secretField) {
-    const showPasswordBtn = document.createElement('button');
-    showPasswordBtn.type = 'button';
-    showPasswordBtn.innerHTML = '👁️';
-    showPasswordBtn.style.cssText = `
-        position: absolute;
-        right: 10px;
-        top: 50%;
-        transform: translateY(-50%);
-        background: transparent;
-        border: none;
-        cursor: pointer;
-        font-size: 16px;
-    `;
-    
-    const parent = secretField.parentElement;
-    parent.style.position = 'relative';
-    parent.appendChild(showPasswordBtn);
-    
-    showPasswordBtn.addEventListener('click', function() {
-        if (secretField.type === 'password') {
-            secretField.type = 'text';
-            this.innerHTML = '🙈';
-        } else {
-            secretField.type = 'password';
-            this.innerHTML = '👁️';
+// ============================================================================
+// INÍCIO - FUNÇÃO EXTRAIR METADATA
+// ============================================================================
+function extrairMetadata(conteudo) {
+    const linhas = conteudo.split('\n');
+    if (linhas[0] && linhas[0].startsWith('=== METADATA:')) {
+        const metadata = linhas[0].match(/=== METADATA:(\d+):(\d+) ===/);
+        if (metadata) {
+            return {
+                tamanho: parseInt(metadata[1]),
+                modificacao: parseInt(metadata[2]),
+                conteudo: linhas.slice(1).join('\n')
+            };
         }
+    }
+    return {
+        tamanho: 0,
+        modificacao: 0,
+        conteudo: conteudo
+    };
+}
+// ============================================================================
+// FIM - FUNÇÃO EXTRAIR METADATA
+// ============================================================================
+
+// ============================================================================
+// INÍCIO - FUNÇÃO CARREGAR LOG (VERSÃO ESTÁVEL - RECENTES EM BAIXO)
+// ============================================================================
+function carregarLog(forcarCompleto = false) {
+    const terminal = document.getElementById('terminalContent');
+    const buscar = document.getElementById('buscarLog')?.value || '';
+    const linhas = parseInt(document.getElementById('linhasLog')?.value || 500);
+    
+    if (!terminal || buscandoAtivo) return;
+    
+    // Salvar posição do scroll e verificar se está no final
+    const scrollPos = terminal.scrollTop;
+    const estavaNoFinal = terminal.scrollHeight - terminal.clientHeight <= scrollPos + 50;
+    
+    if (!forcarCompleto) {
+        linhasSelecionadas = linhas;
+        buscaAtiva = buscar;
+    }
+    
+    let url = `?get_log=1&linhas=${linhasSelecionadas}`;
+    
+    // Modo tail: só se não tiver busca e não for forçado
+    if (!forcarCompleto && ultimoTamanhoArquivo > 0 && buscaAtiva === '') {
+        url += `&tail=1&ultimo_tamanho=${ultimoTamanhoArquivo}`;
+    } else if (buscaAtiva !== '') {
+        url += `&buscar=${encodeURIComponent(buscaAtiva)}`;
+    }
+    
+    buscandoAtivo = true;
+    
+    fetch(url + '&t=' + Date.now())
+        .then(response => response.text())
+        .then(conteudo => {
+            buscandoAtivo = false;
+            
+            // Se não há novas linhas no modo tail, não faz nada
+            if (conteudo === '=== NO_UPDATE ===') {
+                return;
+            }
+            
+            // Se o log foi resetado/rotacionado
+            if (conteudo === '=== LOG_RESET ===' || conteudo.includes('=== METADATA:0:')) {
+                ultimoTamanhoArquivo = 0;
+                terminal.innerHTML = '';
+                carregarLog(true);
+                return;
+            }
+            
+            const metadata = extrairMetadata(conteudo);
+            const tamanhoAtual = metadata.tamanho;
+            const conteudoReal = metadata.conteudo;
+            
+            // MODO TAIL: adiciona APENAS as linhas novas no final
+            if (!forcarCompleto && ultimoTamanhoArquivo > 0 && buscaAtiva === '' && conteudoReal.trim()) {
+                const linhasNovas = formatarLog(conteudoReal);
+                if (linhasNovas && !linhasNovas.includes('Nenhuma entrada')) {
+                    // Verificar se o terminal está vazio
+                    if (terminal.innerHTML.includes('Nenhuma entrada') || terminal.innerHTML.trim() === '') {
+                        terminal.innerHTML = linhasNovas;
+                    } else {
+                        terminal.insertAdjacentHTML('beforeend', linhasNovas);
+                    }
+                    // Só rolar se o usuário já estava no final
+                    if (estavaNoFinal) {
+                        terminal.scrollTop = terminal.scrollHeight;
+                    }
+                }
+            } 
+            // MODO NORMAL OU BUSCA: recarrega tudo
+            else {
+                if (!conteudoReal.trim() || conteudoReal.includes('Nenhuma entrada')) {
+                    terminal.innerHTML = '<div style="color: ' + coresTerminal.cinza + '; text-align: center; padding: 20px;">📭 Nenhuma entrada no log</div>';
+                } else {
+                    terminal.innerHTML = formatarLog(conteudoReal);
+                    // No primeiro carregamento ou busca, vai para o final
+                    if (ultimoTamanhoArquivo === 0 || buscaAtiva !== '') {
+                        terminal.scrollTop = terminal.scrollHeight;
+                    } else {
+                        // Tentar manter a posição anterior
+                        terminal.scrollTop = scrollPos;
+                    }
+                }
+            }
+            
+            // Atualizar estatísticas - COM VERIFICAÇÃO DE NULL
+            ultimoTamanhoArquivo = tamanhoAtual;
+            
+            const linhasVisiveis = terminal.querySelectorAll('.log-line').length;
+            const linhasCountEl = document.getElementById('linhasCount');
+            const tamanhoLogEl = document.getElementById('tamanhoLog');
+            const dataAtualizacaoEl = document.getElementById('dataAtualizacao');
+            
+            if (linhasCountEl) linhasCountEl.textContent = linhasVisiveis;
+            if (tamanhoLogEl) tamanhoLogEl.textContent = Math.round(tamanhoAtual / 1024) + ' KB';
+            if (dataAtualizacaoEl) dataAtualizacaoEl.textContent = new Date().toLocaleTimeString('pt-BR');
+            
+            // Atualizar stats com informação de busca se necessário - COM VERIFICAÇÃO
+            if (buscaAtiva !== '') {
+                const statsDiv = document.querySelector('.terminal-stats');
+                if (statsDiv) {
+                    statsDiv.innerHTML = `🔍 Busca: "${buscaAtiva}" | Resultados: <span style="color: ${coresTerminal.verdeFluor};">${linhasVisiveis}</span> | Tamanho: <span style="color: ${coresTerminal.verdeFluor};">${Math.round(tamanhoAtual / 1024)} KB</span> | Atualizado: <span>${new Date().toLocaleTimeString('pt-BR')}</span>`;
+                }
+            } else {
+                // Restaurar stats normais apenas se não estiver em modo de busca
+                const statsDiv = document.querySelector('.terminal-stats');
+                if (statsDiv && !buscaAtiva) {
+                    statsDiv.innerHTML = `<span>Linhas: <span id="linhasCount">${linhasVisiveis}</span></span> <span>Tamanho: <span id="tamanhoLog">${Math.round(tamanhoAtual / 1024)} KB</span></span> <span>Atualizado: <span id="dataAtualizacao">${new Date().toLocaleTimeString('pt-BR')}</span></span>`;
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            buscandoAtivo = false;
+            terminal.innerHTML = `<div style="color: ${coresTerminal.vermelho}; text-align: center; padding: 20px;">❌ Erro ao carregar log: ${error.message}</div>`;
+        });
+}
+// ============================================================================
+// FIM - FUNÇÃO CARREGAR LOG (VERSÃO ESTÁVEL)
+// ============================================================================
+
+// ============================================================================
+// INÍCIO - FUNÇÃO ATUALIZAR LOG
+// ============================================================================
+function atualizarLog() {
+    carregarLog(true);
+}
+// ============================================================================
+// FIM - FUNÇÃO ATUALIZAR LOG
+// ============================================================================
+
+// ============================================================================
+// INÍCIO - FUNÇÃO TOGGLE AUTO REFRESH
+// ============================================================================
+function toggleAutoRefresh() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+    }
+    
+    const autoRefresh = document.getElementById('autoRefresh');
+    if (autoRefresh && autoRefresh.checked) {
+        autoRefreshInterval = setInterval(() => {
+            carregarLog(false);
+        }, 2000);
+    }
+}
+// ============================================================================
+// FIM - FUNÇÃO TOGGLE AUTO REFRESH
+// ============================================================================
+
+// ============================================================================
+// INÍCIO - FUNÇÃO CONFIRMAR LIMPAR LOG (COM DUPLA CONFIRMAÇÃO)
+// ============================================================================
+function confirmarLimparLog() {
+    // Primeira confirmação
+    if (!confirm('⚠️ ATENÇÃO: Deseja realmente LIMPAR TODO o arquivo de log?\n\nEsta ação é PERMANENTE e não pode ser desfeita!')) {
+        return;
+    }
+    
+    // Segunda confirmação
+    if (!confirm('🚨 CONFIRMAÇÃO FINAL:\n\nTem CERTEZA ABSOLUTA que deseja APAGAR PERMANENTEMENTE todo o histórico de logs?\n\nArquivo: /var/log/botzap.log\n\nEsta ação IRÁ REMOVER todas as mensagens gravadas!')) {
+        return;
+    }
+    
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+    }
+    
+    fetch('index.php?aba=log', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'acao_log=limpar'
+    }).then(() => {
+        ultimoTamanhoArquivo = 0;
+        carregarLog(true);
+        toggleAutoRefresh();
+        alert('✅ Log limpo com sucesso!');
     });
 }
+// ============================================================================
+// FIM - FUNÇÃO CONFIRMAR LIMPAR LOG
+// ============================================================================
+
+// ============================================================================
+// INÍCIO - INICIALIZAÇÃO
+// ============================================================================
+document.addEventListener('DOMContentLoaded', function() {
+    const params = new URLSearchParams(window.location.search);
+    
+    // ========================================================================
+    // INÍCIO - INICIALIZAR ABA LOG
+    // ========================================================================
+    if (params.get('aba') === 'log') {
+        // Carregar preferências salvas
+        const lsLinhas = localStorage.getItem('log_linhas');
+        const lsBusca = localStorage.getItem('log_busca');
+        const select = document.getElementById('linhasLog');
+        const input = document.getElementById('buscarLog');
+        
+        if (lsLinhas && select) {
+            select.value = lsLinhas;
+            linhasSelecionadas = parseInt(lsLinhas);
+        }
+        
+        if (lsBusca && input) {
+            input.value = lsBusca;
+            buscaAtiva = lsBusca;
+        }
+        
+        // ATIVAR WAKE LOCK PARA CELULAR
+        ativarWakeLock();
+        
+        // Carregar log
+        carregarLog(true);
+        
+        // Event listeners
+        document.getElementById('autoRefresh')?.addEventListener('change', toggleAutoRefresh);
+        toggleAutoRefresh();
+        
+        if (input) {
+            let timeout;
+            input.addEventListener('input', function() {
+                clearTimeout(timeout);
+                timeout = setTimeout(() => {
+                    buscaAtiva = this.value;
+                    localStorage.setItem('log_busca', buscaAtiva);
+                    if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+                    carregarLog(true);
+                    toggleAutoRefresh();
+                }, 500);
+            });
+        }
+        
+        if (select) {
+            select.addEventListener('change', function() {
+                localStorage.setItem('log_linhas', this.value);
+                linhasSelecionadas = parseInt(this.value);
+                if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+                carregarLog(true);
+                toggleAutoRefresh();
+            });
+        }
+    }
+    // ========================================================================
+    // FIM - INICIALIZAR ABA LOG
+    // ========================================================================
+
+    // ========================================================================
+    // INÍCIO - MONITORAR STATUS DO WHATSAPP (ORIGINAL)
+    // ========================================================================
+    const statusDiv = document.querySelector('.status');
+    if (statusDiv && params.get('aba') !== 'log') {
+        console.log('🔍 Monitorando status do WhatsApp...');
+        
+        let statusAtual;
+        if (statusDiv.classList.contains('online')) {
+            statusAtual = 'online';
+        } else if (statusDiv.classList.contains('qr')) {
+            statusAtual = 'qr';
+        } else {
+            statusAtual = 'offline';
+        }
+        
+        const intervalo = setInterval(() => {
+            fetch('?api_status=1&t=' + Date.now())
+                .then(r => r.text())
+                .then(novoStatus => {
+                    if (novoStatus !== statusAtual) {
+                        console.log('✅ Status mudou de', statusAtual, 'para', novoStatus);
+                        clearInterval(intervalo);
+                        location.reload();
+                    }
+                })
+                .catch(() => console.log('Erro na verificação'));
+        }, 3000);
+        
+        if (statusAtual === 'qr') {
+            setInterval(() => {
+                const img = document.getElementById('qrImg');
+                if (img && img.src.includes('qrcode_view.php')) {
+                    img.src = 'qrcode_view.php?t=' + Date.now();
+                }
+            }, 3000);
+        }
+    }
+    // ========================================================================
+    // FIM - MONITORAR STATUS DO WHATSAPP
+    // ========================================================================
+
+    // ========================================================================
+    // INÍCIO - REMOVER PARÂMETRO SALVO DA URL
+    // ========================================================================
+    if (window.location.search.includes('salvo=1')) {
+        window.history.replaceState({}, document.title, window.location.pathname + (params.get('aba') ? '?aba=' + params.get('aba') : ''));
+    }
+    // ========================================================================
+    // FIM - REMOVER PARÂMETRO SALVO DA URL
+    // ========================================================================
+
+    // ========================================================================
+    // INÍCIO - AUTO-REMOVER MENSAGEM DE SUCESSO
+    // ========================================================================
+    const msg = document.getElementById('msg');
+    if (msg) {
+        setTimeout(() => {
+            msg.style.opacity = '0';
+            setTimeout(() => msg.remove(), 500);
+        }, 3000);
+    }
+    // ========================================================================
+    // FIM - AUTO-REMOVER MENSAGEM DE SUCESSO
+    // ========================================================================
+
+    // ========================================================================
+    // INÍCIO - BOTÃO MOSTRAR/OCULTAR SENHA MK-AUTH (ORIGINAL)
+    // ========================================================================
+    const secretField = document.querySelector('input[name="mkauth_client_secret"]');
+    if (secretField) {
+        const showPasswordBtn = document.createElement('button');
+        showPasswordBtn.type = 'button';
+        showPasswordBtn.innerHTML = '👁️';
+        showPasswordBtn.style.cssText = `
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 0;
+            margin: 0;
+            width: auto;
+        `;
+        
+        const parent = secretField.parentElement;
+        parent.style.position = 'relative';
+        parent.appendChild(showPasswordBtn);
+        
+        showPasswordBtn.addEventListener('click', function() {
+            if (secretField.type === 'password') {
+                secretField.type = 'text';
+                this.innerHTML = '🙈';
+            } else {
+                secretField.type = 'password';
+                this.innerHTML = '👁️';
+            }
+        });
+    }
+    // ========================================================================
+    // FIM - BOTÃO MOSTRAR/OCULTAR SENHA MK-AUTH
+    // ========================================================================
+});
+
+// Recupera wake lock automaticamente se usuário voltar para a aba
+document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && window.location.search.includes('aba=log')) {
+        if (wakeLock === null) {
+            await ativarWakeLock();
+        }
+    }
+});
+// ============================================================================
+// FIM - INICIALIZAÇÃO
+// ============================================================================
+
+// ============================================================================
+// INÍCIO - LIMPAR INTERVALO AO SAIR DA PÁGINA
+// ============================================================================
+window.addEventListener('beforeunload', function() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+    }
+    desativarWakeLock();
+});
+// ============================================================================
+// FIM - LIMPAR INTERVALO AO SAIR DA PÁGINA
+// ============================================================================
 </script>
 
 </body>
