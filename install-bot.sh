@@ -1038,7 +1038,7 @@ cat > /etc/logrotate.d/botzap <<'LOGEOF'
     compress
     delaycompress
     notifempty
-    create 0640 botzap adm
+    create 0640 botzap www-data
     sharedscripts
     postrotate
         systemctl restart botzap.service 2>/dev/null || true
