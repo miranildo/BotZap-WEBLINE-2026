@@ -284,7 +284,7 @@ if ($status === 'online') {
 }
 
 // ============================================================================
-// INÍCIO - FORMATAÇÃO DO TELEFONE PARA EXIBIÇÃO DINÂMICA (REGRAS BRASILEIRAS)
+// INÍCIO - FORMATAÇÃO DO TELEFONE PARA EXIBIÇÃO DINÂMICA
 // ============================================================================
 $telefone_formatado = '(xx)xxxx-xxxx'; // valor padrão
 
@@ -294,79 +294,84 @@ if (!empty($config['atendente_numero'])) {
     
     // ===== DETECTAR CÓDIGO DO PAÍS =====
     $codigo_pais = '';
+    $codigo_pais_numerico = '';
     $numero_sem_pais = $numero_limpo;
     
-    // Verificar se tem código do país (55 para Brasil, mas pode ser qualquer)
+    // Verificar se tem código do país (2 primeiros dígitos)
     if (strlen($numero_limpo) >= 12) {
-        $possivel_pais = substr($numero_limpo, 0, 2);
-        $codigo_pais = '+' . $possivel_pais;
+        $codigo_pais_numerico = substr($numero_limpo, 0, 2);
+        $codigo_pais = '+' . $codigo_pais_numerico;
         $numero_sem_pais = substr($numero_limpo, 2);
     }
     
-    // ===== EXTRAIR DDD =====
-    $ddd = '';
-    $numero_local = $numero_sem_pais;
-    
-    if (strlen($numero_sem_pais) >= 10) {
-        $ddd = substr($numero_sem_pais, 0, 2);
-        $numero_local = substr($numero_sem_pais, 2);
-    }
-    
-    // ===== VERIFICAR PRIMEIRO DÍGITO APÓS DDD =====
-    if (!empty($numero_local)) {
-        $primeiro_digito = (int) substr($numero_local, 0, 1);
+    // ===== VERIFICAR SE É BRASIL (55) =====
+    if ($codigo_pais_numerico == '55') {
+        // ===== É BRASIL - APLICAR REGRAS BRASILEIRAS =====
         
-        // REGRA:
-        // Fixo: 2, 3, 4, 5 → NÃO adiciona 9
-        // Celular: 6, 7, 8, 9 → adiciona 9 (se já não tiver)
+        // ===== EXTRAIR DDD =====
+        $ddd = '';
+        $numero_local = $numero_sem_pais;
         
-        if (in_array($primeiro_digito, [6, 7, 8, 9])) {
-            // É CELULAR - garantir que tenha o 9 na frente
-            if ($primeiro_digito != 9) {
-                // Se começa com 6,7,8 → adicionar 9 na frente
-                $numero_local = '9' . $numero_local;
-            }
-            // Se já começa com 9, mantém como está
+        if (strlen($numero_sem_pais) >= 10) {
+            $ddd = substr($numero_sem_pais, 0, 2);
+            $numero_local = substr($numero_sem_pais, 2);
         }
-        // Se for 2,3,4,5 → é FIXO - mantém o número original sem adicionar 9
-    }
-    
-    // ===== FORMATAR =====
-    if (!empty($ddd) && !empty($numero_local)) {
-        // Verificar o primeiro dígito final para decidir o formato
-        $primeiro_digito_final = (int) substr($numero_local, 0, 1);
         
-        if (in_array($primeiro_digito_final, [6, 7, 8, 9])) {
-            // FORMATO CELULAR: 9XXXX-XXXX (ou 6XXX-XXXX, 7XXX-XXXX, 8XXX-XXXX)
-            if (strlen($numero_local) >= 8) {
-                // Se tem 9 dígitos, formata como 9XXXX-XXXX
-                if (strlen($numero_local) == 9) {
-                    $parte1 = substr($numero_local, 0, 5);
-                    $parte2 = substr($numero_local, 5, 4);
-                } else {
-                    // Se tem 8 dígitos (começa com 6,7,8), formata como XXXX-XXXX
+        // ===== VERIFICAR PRIMEIRO DÍGITO APÓS DDD =====
+        if (!empty($numero_local)) {
+            $primeiro_digito = (int) substr($numero_local, 0, 1);
+            
+            // REGRA BRASIL:
+            // Fixo: 2, 3, 4, 5 → NÃO adiciona 9
+            // Celular: 6, 7, 8, 9 → adiciona 9 (se já não tiver)
+            
+            if (in_array($primeiro_digito, [6, 7, 8, 9])) {
+                // É CELULAR - garantir que tenha o 9 na frente
+                if ($primeiro_digito != 9) {
+                    // Se começa com 6,7,8 → adicionar 9 na frente
+                    $numero_local = '9' . $numero_local;
+                }
+                // Se já começa com 9, mantém como está
+            }
+            // Se for 2,3,4,5 → é FIXO - mantém o número original sem adicionar 9
+        }
+        
+        // ===== FORMATAR (BRASIL) =====
+        if (!empty($ddd) && !empty($numero_local)) {
+            // Verificar o primeiro dígito final para decidir o formato
+            $primeiro_digito_final = (int) substr($numero_local, 0, 1);
+            
+            if (in_array($primeiro_digito_final, [6, 7, 8, 9])) {
+                // FORMATO CELULAR BRASIL
+                if (strlen($numero_local) >= 8) {
+                    if (strlen($numero_local) == 9) {
+                        $parte1 = substr($numero_local, 0, 5);
+                        $parte2 = substr($numero_local, 5, 4);
+                    } else {
+                        $parte1 = substr($numero_local, 0, 4);
+                        $parte2 = substr($numero_local, 4, 4);
+                    }
+                    
+                    $telefone_formatado = $codigo_pais . '(' . $ddd . ')' . $parte1 . '-' . $parte2;
+                }
+            } else {
+                // FORMATO FIXO BRASIL
+                if (strlen($numero_local) >= 8) {
                     $parte1 = substr($numero_local, 0, 4);
                     $parte2 = substr($numero_local, 4, 4);
-                }
-                
-                if (!empty($codigo_pais)) {
                     $telefone_formatado = $codigo_pais . '(' . $ddd . ')' . $parte1 . '-' . $parte2;
-                } else {
-                    $telefone_formatado = '(' . $ddd . ')' . $parte1 . '-' . $parte2;
                 }
             }
+        }
+    } else {
+        // ===== OUTRO PAÍS - MANTER FORMATO ORIGINAL =====
+        // Apenas formata de forma simples, sem regras especiais
+        if (!empty($codigo_pais)) {
+            // Tem código de país, mostra com +
+            $telefone_formatado = $codigo_pais . ' ' . $numero_sem_pais;
         } else {
-            // FORMATO FIXO: XXXX-XXXX (2,3,4,5)
-            if (strlen($numero_local) >= 8) {
-                $parte1 = substr($numero_local, 0, 4);
-                $parte2 = substr($numero_local, 4, 4);
-                
-                if (!empty($codigo_pais)) {
-                    $telefone_formatado = $codigo_pais . '(' . $ddd . ')' . $parte1 . '-' . $parte2;
-                } else {
-                    $telefone_formatado = '(' . $ddd . ')' . $parte1 . '-' . $parte2;
-                }
-            }
+            // Não tem código de país, mostra como veio
+            $telefone_formatado = $numero_limpo;
         }
     }
 }
