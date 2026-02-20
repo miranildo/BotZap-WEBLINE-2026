@@ -654,7 +654,7 @@ button {
 .terminal-btn.warning {
     background: #dc2626;
     border-color: #f59e0b;
-    color: #fef3c7;
+    color: #fff;
 }
 
 .terminal-search {
