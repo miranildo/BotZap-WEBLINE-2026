@@ -282,12 +282,106 @@ if ($status === 'online') {
 } elseif ($status === 'offline') {
     $imgSrc = '/qrcode_wait.png';
 }
+
+// ============================================================================
+// INÍCIO - FORMATAÇÃO DO TELEFONE PARA EXIBIÇÃO DINÂMICA (REGRAS BRASILEIRAS)
+// ============================================================================
+$telefone_formatado = '(xx)xxxx-xxxx'; // valor padrão
+
+if (!empty($config['atendente_numero'])) {
+    // Extrair apenas os dígitos do número
+    $numero_limpo = preg_replace('/[^0-9]/', '', $config['atendente_numero']);
+    
+    // ===== DETECTAR CÓDIGO DO PAÍS =====
+    $codigo_pais = '';
+    $numero_sem_pais = $numero_limpo;
+    
+    // Verificar se tem código do país (55 para Brasil, mas pode ser qualquer)
+    if (strlen($numero_limpo) >= 12) {
+        $possivel_pais = substr($numero_limpo, 0, 2);
+        $codigo_pais = '+' . $possivel_pais;
+        $numero_sem_pais = substr($numero_limpo, 2);
+    }
+    
+    // ===== EXTRAIR DDD =====
+    $ddd = '';
+    $numero_local = $numero_sem_pais;
+    
+    if (strlen($numero_sem_pais) >= 10) {
+        $ddd = substr($numero_sem_pais, 0, 2);
+        $numero_local = substr($numero_sem_pais, 2);
+    }
+    
+    // ===== VERIFICAR PRIMEIRO DÍGITO APÓS DDD =====
+    if (!empty($numero_local)) {
+        $primeiro_digito = (int) substr($numero_local, 0, 1);
+        
+        // REGRA:
+        // Fixo: 2, 3, 4, 5 → NÃO adiciona 9
+        // Celular: 6, 7, 8, 9 → adiciona 9 (se já não tiver)
+        
+        if (in_array($primeiro_digito, [6, 7, 8, 9])) {
+            // É CELULAR - garantir que tenha o 9 na frente
+            if ($primeiro_digito != 9) {
+                // Se começa com 6,7,8 → adicionar 9 na frente
+                $numero_local = '9' . $numero_local;
+            }
+            // Se já começa com 9, mantém como está
+        }
+        // Se for 2,3,4,5 → é FIXO - mantém o número original sem adicionar 9
+    }
+    
+    // ===== FORMATAR =====
+    if (!empty($ddd) && !empty($numero_local)) {
+        // Verificar o primeiro dígito final para decidir o formato
+        $primeiro_digito_final = (int) substr($numero_local, 0, 1);
+        
+        if (in_array($primeiro_digito_final, [6, 7, 8, 9])) {
+            // FORMATO CELULAR: 9XXXX-XXXX (ou 6XXX-XXXX, 7XXX-XXXX, 8XXX-XXXX)
+            if (strlen($numero_local) >= 8) {
+                // Se tem 9 dígitos, formata como 9XXXX-XXXX
+                if (strlen($numero_local) == 9) {
+                    $parte1 = substr($numero_local, 0, 5);
+                    $parte2 = substr($numero_local, 5, 4);
+                } else {
+                    // Se tem 8 dígitos (começa com 6,7,8), formata como XXXX-XXXX
+                    $parte1 = substr($numero_local, 0, 4);
+                    $parte2 = substr($numero_local, 4, 4);
+                }
+                
+                if (!empty($codigo_pais)) {
+                    $telefone_formatado = $codigo_pais . '(' . $ddd . ')' . $parte1 . '-' . $parte2;
+                } else {
+                    $telefone_formatado = '(' . $ddd . ')' . $parte1 . '-' . $parte2;
+                }
+            }
+        } else {
+            // FORMATO FIXO: XXXX-XXXX (2,3,4,5)
+            if (strlen($numero_local) >= 8) {
+                $parte1 = substr($numero_local, 0, 4);
+                $parte2 = substr($numero_local, 4, 4);
+                
+                if (!empty($codigo_pais)) {
+                    $telefone_formatado = $codigo_pais . '(' . $ddd . ')' . $parte1 . '-' . $parte2;
+                } else {
+                    $telefone_formatado = '(' . $ddd . ')' . $parte1 . '-' . $parte2;
+                }
+            }
+        }
+    }
+}
+
+// Nome da empresa
+$nome_empresa = !empty($config['empresa']) ? $config['empresa'] : 'PROVEDOR';
+// ============================================================================
+// FIM - FORMATAÇÃO DO TELEFONE PARA EXIBIÇÃO DINÂMICA
+// ============================================================================
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
 <meta charset="utf-8">
-<title>Painel Bot WhatsApp – PROVEDOR (xx)xxxx.xxxx</title>
+<title>Bot WhatsApp – <?= htmlspecialchars($nome_empresa) ?>  <?= htmlspecialchars($telefone_formatado) ?></title>
 
 <style>
 /* ============================================================================
@@ -553,7 +647,7 @@ button {
 }
 
 .terminal-btn.warning {
-    background: #92400e;
+    background: #dc2626;
     border-color: #f59e0b;
     color: #fef3c7;
 }
@@ -781,7 +875,7 @@ button {
 <body>
 
 <header style="display:flex; justify-content:space-between; align-items:center;">
-    <span>🤖 Painel – Bot WhatsApp Atendimento - PROVEDOR - (xx)xxxx.xxxx</span>
+    <span>🤖 Bot WhatsApp - <?= htmlspecialchars($nome_empresa) ?>  <?= htmlspecialchars($telefone_formatado) ?></span>
 
     <a href="logout.php"
        style="
