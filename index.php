@@ -1150,7 +1150,7 @@ button {
                 <input 
                     type="text" 
                     name="telegram_token" 
-                    value="<?= htmlspecialchars($config['telegram_token'] ?? '1234567890:AAHZa04CU4s_PJqYxR07ztrQafvaE1Ov_Dk') ?>"
+                    value="<?= htmlspecialchars($config['telegram_token'] ?? '') ?>"
                     placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
                 >
                 <small style="color: #6b7280; font-size: 12px;">
