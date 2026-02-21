@@ -428,6 +428,12 @@ cat > "$BOT_DIR/config.json" <<'CFGEOF'
     "feriados_ativos": "Sim",
     "feriado_local_ativado": "Não",
     "feriado_local_mensagem": "📅 *Comunicado importante:*\r\n\r\nDeixe aqui a mensagem do feriado!!!\r\n\r\nO acesso a faturas PIX continua disponível 24/7! 🎉"
+    "telegram_ativado": "Não",
+    "telegram_token": "",
+    "telegram_chat_id": "",
+    "telegram_notificar_conexao": "Sim",
+    "telegram_notificar_desconexao": "Sim",
+    "telegram_notificar_qr": "Sim",
 }
 CFGEOF
 chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/config.json"
