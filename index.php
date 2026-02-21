@@ -21,6 +21,13 @@ $config = [
     // NOVOS CAMPOS: Feriado Local
     'feriado_local_ativado' => 'Não',
     'feriado_local_mensagem' => "📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊",
+    // NOVOS CAMPOS: Telegram
+    'telegram_ativado' => 'Não',
+    'telegram_token' => '',
+    'telegram_chat_id' => '',
+    'telegram_notificar_conexao' => 'Sim',
+    'telegram_notificar_desconexao' => 'Sim',
+    'telegram_notificar_qr' => 'Sim',
     // Novos campos para MK-Auth
     'mkauth_url' => 'https://www.SEU_DOMINIO.com.br/api',
     'mkauth_client_id' => '',
@@ -50,6 +57,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
     $config['feriado_local_ativado'] = trim($_POST['feriado_local_ativado'] ?? 'Não');
     $config['feriado_local_mensagem'] = trim($_POST['feriado_local_mensagem'] ?? '');
     
+    // 🔥 NOVOS CAMPOS: Telegram
+    $config['telegram_ativado'] = trim($_POST['telegram_ativado'] ?? 'Não');
+    $config['telegram_token'] = trim($_POST['telegram_token'] ?? '');
+    $config['telegram_chat_id'] = trim($_POST['telegram_chat_id'] ?? '');
+    $config['telegram_notificar_conexao'] = trim($_POST['telegram_notificar_conexao'] ?? 'Sim');
+    $config['telegram_notificar_desconexao'] = trim($_POST['telegram_notificar_desconexao'] ?? 'Sim');
+    $config['telegram_notificar_qr'] = trim($_POST['telegram_notificar_qr'] ?? 'Sim');
+    
     // Novos campos MK-Auth
     $config['mkauth_url'] = trim($_POST['mkauth_url'] ?? '');
     $config['mkauth_client_id'] = trim($_POST['mkauth_client_id'] ?? '');
@@ -74,7 +89,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
         ? $config['feriado_local_ativado'] 
         : 'Não';
     
-    // Se a mensagem estiver vazia, usar padrão
+    // Validar valores do Telegram
+    $config['telegram_ativado'] = in_array($config['telegram_ativado'], ['Sim', 'Não']) 
+        ? $config['telegram_ativado'] 
+        : 'Não';
+    $config['telegram_notificar_conexao'] = in_array($config['telegram_notificar_conexao'], ['Sim', 'Não']) 
+        ? $config['telegram_notificar_conexao'] 
+        : 'Sim';
+    $config['telegram_notificar_desconexao'] = in_array($config['telegram_notificar_desconexao'], ['Sim', 'Não']) 
+        ? $config['telegram_notificar_desconexao'] 
+        : 'Sim';
+    $config['telegram_notificar_qr'] = in_array($config['telegram_notificar_qr'], ['Sim', 'Não']) 
+        ? $config['telegram_notificar_qr'] 
+        : 'Sim';
+    
+    // Se a mensagem do feriado local estiver vazia, usar padrão
     if (empty($config['feriado_local_mensagem'])) {
         $config['feriado_local_mensagem'] = "📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊";
     }
@@ -145,12 +174,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
         }
         // ============ FIM DA SINCRONIZAÇÃO ============
         
-        header('Location: index.php?salvo=1&aba=config');
+        header('Location: index.php?salvo=1&aba=' . $abaAtiva);
         exit;
     } else {
         $erro = 'Erro ao salvar configurações';
     }
 }
+
+// ============================================================================
+// INÍCIO - TESTE DE CONEXÃO TELEGRAM
+// ============================================================================
+if (isset($_GET['testar_telegram'])) {
+    header('Content-Type: application/json');
+    
+    $token = $config['telegram_token'] ?? '';
+    $chatId = $config['telegram_chat_id'] ?? '';
+    
+    if (empty($token) || empty($chatId)) {
+        echo json_encode(['sucesso' => false, 'mensagem' => 'Token ou Chat ID não configurados']);
+        exit;
+    }
+    
+    $mensagem = "🔔 *TESTE DE CONFIGURAÇÃO*\n\n";
+    $mensagem .= "✅ Suas configurações do Telegram estão funcionando!\n";
+    $mensagem .= "📱 Bot WhatsApp: " . ($config['empresa'] ?: 'Não configurado') . "\n";
+    $mensagem .= "⏰ " . date('d/m/Y H:i:s');
+    
+    $url = "https://api.telegram.org/bot{$token}/sendMessage";
+    $data = [
+        'chat_id' => $chatId,
+        'text' => $mensagem,
+        'parse_mode' => 'Markdown'
+    ];
+    
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    
+    $response = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($httpCode === 200) {
+        echo json_encode(['sucesso' => true, 'mensagem' => 'Mensagem de teste enviada com sucesso!']);
+    } else {
+        echo json_encode(['sucesso' => false, 'mensagem' => 'Erro ao enviar mensagem. Verifique o Token e Chat ID.']);
+    }
+    exit;
+}
+// ============================================================================
+// FIM - TESTE DE CONEXÃO TELEGRAM
+// ============================================================================
 
 // ============================================================================
 // INÍCIO - API PARA LOG (GET_LOG)
@@ -912,7 +989,7 @@ button {
 
 <?php if ($abaAtiva === 'config'): ?>
 <!-- ============================================================================
-     INÍCIO - CONFIGURAÇÕES (100% ORIGINAL)
+     INÍCIO - CONFIGURAÇÕES (COM NOVA SEÇÃO TELEGRAM)
      ============================================================================ -->
 <div class="container">
 
@@ -1010,7 +1087,7 @@ button {
                 <p>• PIX continua disponível 24/7 independentemente desta configuração</p>
             </div>
 
-            <!-- 🔥 NOVA SEÇÃO: Feriado Local Personalizável -->
+            <!-- 🔥 SEÇÃO: Feriado Local Personalizável -->
             <div class="feriado-local-box">
                 <h3>
                     <span>🏮</span> Feriado Local (Personalizável)
@@ -1044,6 +1121,83 @@ button {
                     <p style="margin: 2px 0 0 0;">• PIX continua funcionando normalmente 24/7</p>
                     <p style="margin: 2px 0 0 0;">• Ideal para feriados locais (carnaval, ponto facultativo, etc.)</p>
                 </div>
+            </div>
+
+            <!-- 🔥 NOVA SEÇÃO: Configurações do Telegram -->
+            <div class="config-section" style="border-left-color: #0088cc;">
+                <h3>
+                    <span>📱</span> Configurações do Telegram
+                </h3>
+                <p style="margin-top: 0; font-size: 14px; color: #6b7280;">
+                    Receba notificações sobre o status do bot diretamente no Telegram
+                </p>
+                
+                <label>🤖 Ativar notificações por Telegram?</label>
+                <div class="radio-group" style="margin-bottom: 15px;">
+                    <label class="radio-option">
+                        <input type="radio" name="telegram_ativado" value="Sim" 
+                            <?= (isset($config['telegram_ativado']) && $config['telegram_ativado'] === 'Sim') ? 'checked' : '' ?>>
+                        Sim (ativar notificações)
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="telegram_ativado" value="Não"
+                            <?= (!isset($config['telegram_ativado']) || $config['telegram_ativado'] === 'Não') ? 'checked' : '' ?>>
+                        Não (desativado)
+                    </label>
+                </div>
+
+                <label>🤖 Token do Bot:</label>
+                <input 
+                    type="text" 
+                    name="telegram_token" 
+                    value="<?= htmlspecialchars($config['telegram_token'] ?? '8458136953:AAHZa04CU4s_PJqYxR07ztrQafvaE1Ov_Dk') ?>"
+                    placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
+                >
+                <small style="color: #6b7280; font-size: 12px;">
+                    Obtenha com <a href="https://t.me/BotFather" target="_blank">@BotFather</a> no Telegram
+                </small>
+
+                <label>👤 Chat ID (ou Canal):</label>
+                <input 
+                    type="text" 
+                    name="telegram_chat_id" 
+                    value="<?= htmlspecialchars($config['telegram_chat_id'] ?? '-1003032257081') ?>"
+                    placeholder="-1001234567890 ou 123456789"
+                >
+                <small style="color: #6b7280; font-size: 12px;">
+                    Obtenha com <a href="https://t.me/userinfobot" target="_blank">@userinfobot</a> no Telegram
+                </small>
+
+<div style="margin-top: 15px; background: #f0f9ff; padding: 15px; border-radius: 8px;">
+    <label style="margin-top: 0; margin-bottom: 10px; display: block; font-weight: 600;">🔔 Notificações a enviar:</label>
+    
+    <div style="display: flex; flex-direction: column; gap: 8px;">
+        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+            <input type="checkbox" name="telegram_notificar_conexao" value="Sim" 
+                <?= (isset($config['telegram_notificar_conexao']) && $config['telegram_notificar_conexao'] === 'Sim') ? 'checked' : '' ?>
+                style="margin: 0; width: 16px; height: 16px;">
+            <span>✅ Quando conectar</span>
+        </label>
+        
+        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+            <input type="checkbox" name="telegram_notificar_desconexao" value="Sim" 
+                <?= (isset($config['telegram_notificar_desconexao']) && $config['telegram_notificar_desconexao'] === 'Sim') ? 'checked' : '' ?>
+                style="margin: 0; width: 16px; height: 16px;">
+            <span>❌ Quando desconectar</span>
+        </label>
+        
+        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+            <input type="checkbox" name="telegram_notificar_qr" value="Sim" 
+                <?= (isset($config['telegram_notificar_qr']) && $config['telegram_notificar_qr'] === 'Sim') ? 'checked' : '' ?>
+                style="margin: 0; width: 16px; height: 16px;">
+            <span>📱 Quando QR Code for gerado</span>
+        </label>
+    </div>
+</div>
+                <button type="button" onclick="testarTelegram()" style="margin-top: 15px; background: #28a745;">
+                    📤 Testar Conexão Telegram
+                </button>
+                <div id="telegramTestResult" style="margin-top: 10px; font-size: 13px;"></div>
             </div>
 
             <div class="config-section">
@@ -1099,7 +1253,7 @@ button {
 
 </div>
 <!-- ============================================================================
-     FIM - CONFIGURAÇÕES (100% ORIGINAL)
+     FIM - CONFIGURAÇÕES
      ============================================================================ -->
 
 <?php else: ?>
@@ -1180,6 +1334,47 @@ const coresTerminal = {
 };
 // ============================================================================
 // FIM - VARIÁVEIS GLOBAIS DO LOG
+// ============================================================================
+
+// ============================================================================
+// INÍCIO - FUNÇÃO PARA TESTAR TELEGRAM
+// ============================================================================
+function testarTelegram() {
+    const resultDiv = document.getElementById('telegramTestResult');
+    resultDiv.innerHTML = '⏳ Enviando mensagem de teste...';
+    resultDiv.style.color = '#666';
+    
+    fetch('?testar_telegram=1&t=' + Date.now())
+        .then(response => response.json())
+        .then(data => {
+            if (data.sucesso) {
+                resultDiv.innerHTML = '✅ ' + data.mensagem;
+                resultDiv.style.color = '#28a745';
+            } else {
+                resultDiv.innerHTML = '❌ ' + data.mensagem;
+                resultDiv.style.color = '#dc3545';
+            }
+        })
+        .catch(error => {
+            resultDiv.innerHTML = '❌ Erro ao testar: ' + error.message;
+            resultDiv.style.color = '#dc3545';
+        });
+}
+
+// Garantir que os checkboxes do Telegram funcionem corretamente
+document.addEventListener('DOMContentLoaded', function() {
+    const checkboxes = document.querySelectorAll('input[type="checkbox"][name^="telegram_notificar_"]');
+    checkboxes.forEach(checkbox => {
+        if (!checkbox.checked) {
+            checkbox.value = 'Não';
+        }
+        checkbox.addEventListener('change', function() {
+            this.value = this.checked ? 'Sim' : 'Não';
+        });
+    });
+});
+// ============================================================================
+// FIM - FUNÇÃO PARA TESTAR TELEGRAM
 // ============================================================================
 
 // ============================================================================
