@@ -58,6 +58,12 @@
  * ✅ Se ativado, bloqueia atendimento humano com mensagem customizada
  * ✅ Fluxo do PIX permanece 100% intacto
  * 
+ * 🆕 NOTIFICAÇÕES TELEGRAM - v5.0
+ * ✅ Monitoramento da conexão do WhatsApp
+ * ✅ Notificações via Telegram quando conectar, desconectar ou gerar QR Code
+ * ✅ Configurável via painel web
+ * ✅ Número do atendente identificado em todas as notificações
+ * 
  * 🏆 NÍVEL: 10/10 - PREPARADO PARA 2025+
  *************************************************/
 
@@ -112,6 +118,76 @@ let ultimoLogVerificacao = {
 // Controle de reconexão
 let reconexaoEmAndamento = false;
 let tentativasReconexao = 0;
+
+// ================= FUNÇÃO PARA ENVIAR NOTIFICAÇÃO TELEGRAM =================
+async function enviarNotificacaoTelegram(mensagem, tipo = 'info') {
+    try {
+        const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+        
+        // Verifica se Telegram está ativado
+        if (config.telegram_ativado !== 'Sim') {
+            return false;
+        }
+        
+        const token = config.telegram_token;
+        const chatId = config.telegram_chat_id;
+        
+        if (!token || !chatId) {
+            console.log(`${formatarDataHora()} ⚠️ Telegram: Token ou Chat ID não configurados`);
+            return false;
+        }
+        
+        // Verifica qual tipo de notificação deve enviar
+        if (tipo === 'conexao' && config.telegram_notificar_conexao !== 'Sim') return false;
+        if (tipo === 'desconexao' && config.telegram_notificar_desconexao !== 'Sim') return false;
+        if (tipo === 'qr' && config.telegram_notificar_qr !== 'Sim') return false;
+        
+        const postData = JSON.stringify({
+            chat_id: chatId,
+            text: mensagem,
+            parse_mode: 'Markdown'
+        });
+        
+        const options = {
+            hostname: 'api.telegram.org',
+            port: 443,
+            path: `/bot${token}/sendMessage`,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(postData)
+            }
+        };
+        
+        return new Promise((resolve) => {
+            const req = https.request(options, (res) => {
+                let data = '';
+                res.on('data', (chunk) => { data += chunk; });
+                res.on('end', () => {
+                    if (res.statusCode === 200) {
+                        console.log(`${formatarDataHora()} 📱 Notificação Telegram enviada (${tipo})`);
+                        resolve(true);
+                    } else {
+                        console.log(`${formatarDataHora()} ⚠️ Erro ao enviar Telegram: HTTP ${res.statusCode}`);
+                        resolve(false);
+                    }
+                });
+            });
+            
+            req.on('error', (error) => {
+                console.log(`${formatarDataHora()} ⚠️ Erro ao enviar Telegram:`, error.message);
+                resolve(false);
+            });
+            
+            req.write(postData);
+            req.end();
+        });
+        
+    } catch (error) {
+        console.log(`${formatarDataHora()} ⚠️ Erro ao enviar Telegram:`, error.message);
+        return false;
+    }
+}
 
 // ================= GERENCIAMENTO DE INTERVALOS =================
 let intervalos = {
@@ -608,7 +684,7 @@ function getMensagemFeriadoLocal() {
     try {
         const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
         // Retorna a mensagem configurada ou uma padrão
-        return config.feriado_local_mensagem || "📅 *Comunicado importante:*\r\n\r\nDeixe  aqui a mensagem do feriado!!!\r\n\r\nO acesso a faturas PIX continua disponível 24\/7! 🎉";
+        return config.feriado_local_mensagem || "📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊";
     } catch (error) {
         return "📅 Hoje é feriado local. Retornaremos amanhã!";
     }
@@ -1620,6 +1696,28 @@ async function startBot() {
             fs.writeFileSync(QR_PATH, qr);
             setStatus('qr');
             console.log(`${formatarDataHora()} 📱 QR Code gerado. Escaneie com o WhatsApp.`);
+            
+            // 🔥 NOTIFICAÇÃO TELEGRAM: QR CODE - COM NÚMERO DO ATENDENTE
+            try {
+                const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+                const empresa = config.empresa || 'Bot WhatsApp';
+                const numeroAtendente = config.atendente_numero || 'NÃO CONFIGURADO';
+                
+                console.log(`${formatarDataHora()} 🔧 Chamando notificação de QR CODE...`);
+                enviarNotificacaoTelegram(
+                    `📱 *QR CODE GERADO*\n\n` +
+                    `📱 *Bot:* ${empresa}\n` +
+                    `📞 *Número:* ${numeroAtendente}\n` +
+                    `🆕 Um novo QR Code foi gerado.\n` +
+                    `⏰ ${formatarDataHora()}\n\n` +
+                    `🔗 Acesse o painel para escanear.`,
+                    'qr'
+                ).then(resultado => {
+                    console.log(`${formatarDataHora()} 🔧 Resultado notificação QR CODE:`, resultado ? 'ENVIADA' : 'FALHOU');
+                });
+            } catch (error) {
+                console.error(`${formatarDataHora()} ❌ Erro ao enviar notificação de QR Code:`, error.message);
+            }
         }
 
         if (connection === 'open') {
@@ -1627,18 +1725,24 @@ async function startBot() {
             setStatus('online');
             tentativasReconexao = 0;
             
+            // 🔥 DECLARAR AS VARIÁVEIS FORA DO TRY
+            let pushName = 'Atendente';
+            let phoneNumber = 'Número não disponível';
+            let userJid = null;
+            
             try {
                 const user = sock.user;
                 if (user && user.id) {
+                    userJid = user.id;
                     const identity = new WhatsAppIdentity(user.id);
-                    const phoneNumber = identity.extractPhoneNumber();
-                    const pushName = user.name || 'Atendente WhatsApp';
+                    phoneNumber = identity.extractPhoneNumber() || 'Número não disponível';
+                    pushName = user.name || 'Atendente WhatsApp';
                     
                     if (identity.primaryKey) {
                         console.log(`${formatarDataHora()} 🔐 WhatsApp conectado como: ${pushName}`);
                         console.log(`${formatarDataHora()}    ├─ Tipo: ${identity.type}`);
                         console.log(`${formatarDataHora()}    ├─ Primary Key: ${identity.primaryKey}`);
-                        console.log(`${formatarDataHora()}    └─ Número: ${phoneNumber || 'NÃO DISPONÍVEL'}`);
+                        console.log(`${formatarDataHora()}    └─ Número: ${phoneNumber}`);
                         
                         const novoAtendente = {
                             id: identity.primaryKey,
@@ -1668,7 +1772,7 @@ async function startBot() {
                         
                         if (adicionarUsuario(novoAtendente)) {
                             salvarUsuarios();
-                            if (phoneNumber) {
+                            if (phoneNumber !== 'Número não disponível') {
                                 atualizarAtendenteNoConfig(phoneNumber);
                             }
                             
@@ -1687,6 +1791,27 @@ async function startBot() {
             console.log(`${formatarDataHora()} ✅ WhatsApp conectado com sucesso!`);
             console.log(`${formatarDataHora()} 👥 ${Object.keys(usuarios.byPrimaryKey || {}).length} usuário(s)`);
             
+            // 🔥 NOTIFICAÇÃO TELEGRAM: CONEXÃO - COM NÚMERO DO ATENDENTE
+            try {
+                const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+                const empresa = config.empresa || 'Bot WhatsApp';
+                const numeroAtendente = config.atendente_numero || 'NÃO CONFIGURADO';
+                
+                console.log(`${formatarDataHora()} 🔧 Enviando notificação de CONEXÃO...`);
+                enviarNotificacaoTelegram(
+                    `✅ *WHATSAPP CONECTADO*\n\n` +
+                    `📱 *Bot:* ${empresa}\n` +
+                    `📞 *Número:* ${numeroAtendente}\n` +
+                    `👤 *Atendente:* ${pushName}\n` +
+                    `⏰ ${formatarDataHora()}`,
+                    'conexao'
+                ).then(resultado => {
+                    console.log(`${formatarDataHora()} 🔧 Resultado conexão: ${resultado ? '✅ enviada' : '❌ falhou'}`);
+                });
+            } catch (error) {
+                console.error(`${formatarDataHora()} ❌ Erro ao enviar notificação de conexão:`, error.message);
+            }
+            
             // 🔥 INICIAR INTERVALOS GERENCIADOS
             iniciarIntervalos();
         }
@@ -1700,6 +1825,33 @@ async function startBot() {
             const errorOutput = lastDisconnect?.error?.output || {};
             
             console.log(`${formatarDataHora()} 🔌 Desconectado. Último erro:`, errorMessage);
+            
+            // 🔥 NOTIFICAÇÃO TELEGRAM: DESCONEXÃO - COM NÚMERO DO ATENDENTE
+            const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+            const empresa = config.empresa || 'Bot WhatsApp';
+            const numeroAtendente = config.atendente_numero || 'NÃO CONFIGURADO';
+            
+            let motivo = 'Desconexão detectada';
+            if (errorMessage.includes('Bad MAC') || errorMessage.includes('session')) {
+                motivo = 'Erro de sessão/criptografia';
+            } else if (lastDisconnect?.error?.output?.statusCode === DisconnectReason.loggedOut) {
+                motivo = 'Usuário deslogou do WhatsApp';
+            } else if (errorMessage.includes('Stream Errored')) {
+                motivo = 'Instabilidade na conexão - reconectando automaticamente (Erro de stream)' + errorMessage;
+            }
+            
+            console.log(`${formatarDataHora()} 🔧 Chamando notificação de DESCONEXÃO... Motivo: ${motivo}`);
+            enviarNotificacaoTelegram(
+                `⚠️ *WHATSAPP DESCONECTADO*\n\n` +
+                `📱 *Bot:* ${empresa}\n` +
+                `📞 *Número:* ${numeroAtendente}\n` +
+                `🔍 *Motivo:* ${motivo}\n` +
+                `⏰ ${formatarDataHora()}\n\n` +
+                `🔄 Tentando reconectar em alguns segundos...`,
+                'desconexao'
+            ).then(resultado => {
+                console.log(`${formatarDataHora()} 🔧 Resultado notificação DESCONEXÃO:`, resultado ? 'ENVIADA' : 'FALHOU');
+            });
             
             if (errorMessage.includes('Bad MAC') || 
                 errorMessage.includes('Failed to decrypt') ||
@@ -1985,7 +2137,7 @@ ${relatorio.estatisticas.formatosDetectados} registro(s)`;
             return;
             
         } else if (texto === '0' || texto === '9') {
-            console.log(`${formatarDataHora()} ℹ️ Comando ${texto} já deveria ter sido tratado`);
+            console.log(`${formatarDataHora()} ℹ️ Comando ${texto} já deveria ser tratado`);
             return;
             
         } else {
@@ -2232,7 +2384,7 @@ ${relatorio.estatisticas.formatosDetectados} registro(s)`;
 // ================= INICIALIZAÇÃO =================
 
 console.log('\n' + '='.repeat(70));
-console.log('🤖 BOT WHATSAPP - VERSÃO LID-PROOF ULTRA v4.0');
+console.log('🤖 BOT WHATSAPP - VERSÃO LID-PROOF ULTRA v5.0');
 console.log('✅ 100% AGNÓSTICO A NÚMERO');
 console.log('✅ LID como tipo próprio');
 console.log('✅ Primary Key universal com Stable ID');
@@ -2255,6 +2407,11 @@ console.log('🆕 FERIADO LOCAL PERSONALIZÁVEL v4.0');
 console.log('   • Ative/desative com checkbox no painel');
 console.log('   • Mensagem personalizada para cada situação');
 console.log('   • PIX continua 24/7 normalmente');
+console.log('🆕 NOTIFICAÇÕES TELEGRAM v5.0');
+console.log('   • Monitoramento da conexão do WhatsApp');
+console.log('   • Notificações via Telegram');
+console.log('   • Configurável via painel web');
+console.log('   • Número do atendente identificado');
 console.log('='.repeat(70));
 console.log('🚀 INICIANDO BOT...');
 console.log('='.repeat(70));
