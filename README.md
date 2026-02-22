@@ -116,6 +116,7 @@ chmod +x install-bot-nginx.sh
 
 # Executar como root
 sudo ./install-bot-nginx.sh
+
 O script irá solicitar:
 
 🌐 Domínio para o bot (ex: bot.seusite.com.br)
@@ -126,9 +127,10 @@ O script irá solicitar:
 
 🔧 Instalação Manual
 1. Clonar o repositório
-bash
+
 git clone https://github.com/seu-usuario/BotZap-WEBLINE-2026.git
 cd BotZap-WEBLINE-2026
+
 2. Executar instalação passo a passo
 
 # Tornar executável
@@ -136,6 +138,7 @@ chmod +x install.sh
 
 # Executar
 sudo ./install.sh
+
 ⚙️ Configuração Pós-Instalação
 1. Configurar o bot
 Acesse o painel web: https://seu-dominio.com.br
@@ -178,9 +181,12 @@ $URL_PROV = "https://www.seuprovedor.com.br";
 $API_BASE = "https://www.seuprovedor.com.br/api/";
 $CLIENT_ID = "seu_client_id";
 $CLIENT_SECRET = "seu_client_secret";
+
 📱 Uso do Sistema
 Acessos do Sistema
+
 URL	Descrição
+
 https://seu-dominio.com.br/	Painel principal (requer login)
 https://seu-dominio.com.br/?aba=config	Configurações do bot
 https://seu-dominio.com.br/?aba=log	Logs do bot (terminal)
@@ -196,7 +202,9 @@ Opção 1: Geração de fatura PIX (solicita CPF/CNPJ)
 Opção 2: Encaminhamento para atendente humano
 
 👥 Gerenciamento de Usuários
+
 Níveis de Acesso
+
 👤 Usuário: Acesso apenas ao dashboard de consultas
 
 👑 Admin: Acesso total + gerenciamento de usuários
