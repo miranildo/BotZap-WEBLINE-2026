@@ -144,7 +144,7 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 
 ATENÇÃO!!!!!!
 
-Antes de executar o script de instalação configure o dominio que irá usar no bot em seu servidor DNS Autoritativo, EX: bot.seu_dominio.com.br, se tiver dominio configurado e usa o proxy do Cloudflare desative pois o certificado só será emitido se o dominio estiver configurado para o ip correto da maquina, use ip público se possível.
+Antes de executar o script de instalação configure o dominio que irá usar no bot em seu servidor DNS Autoritativo, EX: bot.seusite.com.br, se tiver dominio configurado e usa o proxy do Cloudflare desative pois o certificado só será emitido se o dominio estiver configurado para o ip correto da maquina, use ip público se possível.
 
 
 Execute o script de instalação automatizada como root:
