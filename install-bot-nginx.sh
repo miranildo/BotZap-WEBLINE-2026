@@ -284,7 +284,7 @@ echo "🔑 Gerando hash da senha..."
 PASSWORD_HASH=$(php -r "echo password_hash('$WEB_PASSWORD', PASSWORD_DEFAULT);" 2>/dev/null)
 if [ -z "$PASSWORD_HASH" ]; then
     echo "⚠️  Não foi possível gerar hash da senha, usando hash padrão"
-    PASSWORD_HASH='$2y$10$ABCDEFGHIJKLMNOPQRSTUVWXYZ123456'
+    PASSWORD_HASH='$2y$10$WN/a1/7yFMPbsPyfM6.ysuRtFBqG8RpoAF/DwpyxFTu2tnlo1ekde'
 fi
 echo "✅ Hash da senha gerado"
 
@@ -315,25 +315,36 @@ echo "   - $WEB_DIR"
 echo "   - $WEB_DIR/.well-known/acme-challenge"
 
 # =====================================================
-# CRIAR DIRETÓRIO PARA DASHBOARD PIX
+# CRIAR DIRETÓRIO PARA LOGS DO DASHBOARD PIX
 # =====================================================
-echo "📊 Criando diretório para Dashboard Pix..."
+echo "📊 Criando diretório para logs do Dashboard Pix..."
 mkdir -p /var/log/pix_acessos
 chown www-data:www-data /var/log/pix_acessos
 chmod 0750 /var/log/pix_acessos
 echo "✅ Diretório /var/log/pix_acessos criado"
 
-touch /var/log/pix_acessos/usuarios.json
-touch /var/log/pix_acessos/acessos_usuarios.log
-chown www-data:www-data /var/log/pix_acessos/*
-chmod 0660 /var/log/pix_acessos/*
+# =====================================================
+# CRIAR ARQUIVO DE USUÁRIOS COM HASH GERADO
+# =====================================================
+echo "🔐 Criando arquivo de usuários com credenciais fornecidas..."
 
-cat > /var/log/pix_acessos/usuarios.json << 'PIX_EOF'
+cat > /var/log/pix_acessos/usuarios.json << EOF
 {
     "admin": {
         "senha_hash": "$2y$10$WN/a1/7yFMPbsPyfM6.ysuRtFBqG8RpoAF/DwpyxFTu2tnlo1ekde",
-        "nome": "Administrador",
+        "nome": "Administrador Padrão",
         "email": "admin@sistema.com",
+        "nivel": "admin",
+        "status": "ativo",
+        "data_criacao": "$(date -Iseconds)",
+        "ip_cadastro": "127.0.0.1",
+        "ultimo_acesso": null,
+        "ip_ultimo_acesso": null
+    },
+    "$WEB_USERNAME": {
+        "senha_hash": "$PASSWORD_HASH",
+        "nome": "Usuário Instalador",
+        "email": "$SSL_EMAIL",
         "nivel": "admin",
         "status": "ativo",
         "data_criacao": "$(date -Iseconds)",
@@ -342,10 +353,16 @@ cat > /var/log/pix_acessos/usuarios.json << 'PIX_EOF'
         "ip_ultimo_acesso": null
     }
 }
-PIX_EOF
+EOF
+
+touch /var/log/pix_acessos/acessos_usuarios.log
+chown www-data:www-data /var/log/pix_acessos/*
+chmod 0660 /var/log/pix_acessos/*
 
 echo "✅ Arquivos do Dashboard Pix criados"
-echo "   • Credenciais: admin / Admin@123"
+echo "   • Usuários configurados:"
+echo "     - admin (senha padrão: Admin@123)"
+echo "     - $WEB_USERNAME (senha configurada)"
 echo ""
 
 # =====================================================
@@ -427,13 +444,16 @@ cat > "$BOT_DIR/config.json" <<'CFGEOF'
     "tempo_inatividade_global": 30,
     "feriados_ativos": "Sim",
     "feriado_local_ativado": "Não",
-    "feriado_local_mensagem": "📅 *Comunicado importante:*\r\n\r\nDeixe aqui a mensagem do feriado!!!\r\n\r\nO acesso a faturas PIX continua disponível 24/7! 🎉"
+    "feriado_local_mensagem": "📅 *Comunicado importante:*\r\n\r\nDeixe aqui a mensagem do feriado!!!\r\n\r\nO acesso a faturas PIX continua disponível 24/7! 🎉",
     "telegram_ativado": "Não",
     "telegram_token": "",
     "telegram_chat_id": "",
     "telegram_notificar_conexao": "Sim",
     "telegram_notificar_desconexao": "Sim",
     "telegram_notificar_qr": "Sim",
+    "mkauth_url": "https://www.SEU_DOMINIO.com.br/api",
+    "mkauth_client_id": "",
+    "mkauth_client_secret": ""
 }
 CFGEOF
 chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/config.json"
@@ -475,7 +495,6 @@ WEB_FILES=(
     "logo.jpg"
     "logout.php"
     "pix.php"
-    "pix_dashboard.php"
     "qrcode_online.png"
     "qrcode_view.php"
     "qrcode_wait.png"
@@ -532,30 +551,6 @@ cd /
 rm -rf "$TEMP_DIR"
 
 # =====================================================
-# ATUALIZAR USERS.PHP COM AS CREDENCIAIS
-# =====================================================
-echo ""
-echo "🔧 Configurando arquivo users.php..."
-
-if [ -f "$WEB_DIR/users.php" ]; then
-    cp "$WEB_DIR/users.php" "$WEB_DIR/users.php.backup"
-fi
-
-cat > "$WEB_DIR/users.php" <<USERS_PHP_EOF
-<?php
-return [
-    '$WEB_USERNAME' => [
-        // senha: $WEB_PASSWORD (configurada durante a instalação)
-        'password' => '$PASSWORD_HASH'
-    ]
-];
-USERS_PHP_EOF
-
-chown "$WEB_GROUP:$WEB_GROUP" "$WEB_DIR/users.php"
-chmod 640 "$WEB_DIR/users.php"
-echo "✅ users.php configurado com usuário: $WEB_USERNAME"
-
-# =====================================================
 # CRIAR ARQUIVOS BÁSICOS FALTANTES
 # =====================================================
 echo "📝 Criando arquivos básicos faltantes..."
@@ -564,8 +559,8 @@ if [ ! -f "$WEB_DIR/status.php" ]; then
     cat > "$WEB_DIR/status.php" <<'EOF'
 <?php
 session_start();
-if (!isset($_SESSION['loggedin'])) {
-    header('Location: login.php');
+if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
+    header('Location: index.php');
     exit;
 }
 ?>
@@ -618,8 +613,8 @@ if [ ! -f "$WEB_DIR/save.php" ]; then
     cat > "$WEB_DIR/save.php" <<'EOF'
 <?php
 session_start();
-if (!isset($_SESSION['loggedin'])) {
-    header('Location: login.php');
+if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
+    header('Location: index.php');
     exit;
 }
 
@@ -794,6 +789,19 @@ cat > /etc/logrotate.d/botzap <<'LOGEOF'
 }
 LOGEOF
 
+cat > /etc/logrotate.d/pix_acessos <<'LOGEOF'
+/var/log/pix_acessos/*.log {
+    daily
+    missingok
+    rotate 90
+    compress
+    delaycompress
+    notifempty
+    create 0660 www-data www-data
+    sharedscripts
+}
+LOGEOF
+
 echo "✅ Logrotate configurado"
 
 # =====================================================
@@ -858,15 +866,18 @@ cat << EOF
 ------------------------
 • Domínio configurado:     $BOT_DOMAIN
 • Alias configurado:       www.$DOMAIN_BASE
-• Usuário do painel:       $WEB_USERNAME
 • Email para SSL:          $SSL_EMAIL
 
 • Diretório do bot:        $BOT_DIR
 • Diretório web:           $WEB_DIR
 • Configuração Nginx:      /etc/nginx/sites-available/botzap
 
-• Dashboard Pix:           /var/log/pix_acessos/
-• Credenciais Dashboard:   admin / Admin@123
+• Logs Dashboard Pix:      /var/log/pix_acessos/
+
+🔐 CREDENCIAIS DE ACESSO:
+------------------------
+• Usuário admin padrão:    admin / Admin@123
+• Usuário configurado:     $WEB_USERNAME / [senha configurada]
 
 🔐 STATUS DO SSL:
 ----------------
@@ -881,8 +892,6 @@ $SSL_STATUS
 • Reiniciar bot:            systemctl restart botzap
 • Reiniciar Nginx:          systemctl reload nginx
 • Logs Nginx:               tail -f /var/log/nginx/botzap_error.log
-• Reiniciar Apache:         systemctl reload apache2
-• Ver configuração:         cat /etc/apache2/sites-available/botzap.conf
 • Dashboard Pix logs:       ls -la /var/log/pix_acessos/
 • node bot.js               Inicia o bot normalmente
 • node bot.js --clear-auth  Limpa sessões corrompidas
