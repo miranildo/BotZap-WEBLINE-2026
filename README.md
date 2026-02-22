@@ -69,7 +69,8 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 
 ## 🏗 Arquitetura do Sistema
 
-/opt/whatsapp-bot/ # Diretório do bot Node.js
+/opt/whatsapp-bot/
+# Diretório do bot Node.js
 
 
 
@@ -86,7 +87,8 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 └── node_modules/ # Dependências Node.js
 
 
-/var/www/botzap/ # Diretório web (painel)
+/var/www/botzap/
+# Diretório web (painel)
 
 
 
@@ -113,7 +115,8 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 └── teste_ipv6.php # Teste de conectividade
 
 
-/var/log/ # Logs do sistema
+/var/log/
+# Logs do sistema
 
 
 
