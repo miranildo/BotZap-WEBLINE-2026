@@ -267,7 +267,6 @@ Níveis de Acesso
 
 👑 Admin: Acesso total + gerenciamento de usuários
 
-Comandos Rápidos (Atalhos)
 
 ### Comandos Rápidos (Atalhos)
 
