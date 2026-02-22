@@ -65,6 +65,7 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 - ✅ Alteração de senha própria e por admin
 
 ## 🏗 Arquitetura do Sistema
+
 /opt/whatsapp-bot/ # Diretório do bot Node.js
 ├── bot.js # Script principal do bot
 ├── config.json # Configurações do bot
@@ -126,6 +127,7 @@ O script irá solicitar:
 📧 Email para certificado SSL
 
 🔧 Instalação Manual
+
 1. Clonar o repositório
 
 git clone https://github.com/seu-usuario/BotZap-WEBLINE-2026.git
@@ -140,6 +142,7 @@ chmod +x install.sh
 sudo ./install.sh
 
 ⚙️ Configuração Pós-Instalação
+
 1. Configurar o bot
 Acesse o painel web: https://seu-dominio.com.br
 
@@ -178,9 +181,12 @@ Pronto! O bot estará online
 Configure o arquivo /var/www/botzap/pix.php com suas credenciais MK-Auth:
 
 $URL_PROV = "https://www.seuprovedor.com.br";
+
 $API_BASE = "https://www.seuprovedor.com.br/api/";
+
 $CLIENT_ID = "seu_client_id";
-$CLIENT_SECRET = "seu_client_secret";
+
+$CLIENT_SECRET = "seu_client_secret";0
 
 📱 Uso do Sistema
 Acessos do Sistema
@@ -188,10 +194,15 @@ Acessos do Sistema
 URL	Descrição
 
 https://seu-dominio.com.br/	Painel principal (requer login)
+
 https://seu-dominio.com.br/?aba=config	Configurações do bot
+
 https://seu-dominio.com.br/?aba=log	Logs do bot (terminal)
+
 https://seu-dominio.com.br/?aba=dashboard	Dashboard de consultas PIX
+
 https://seu-dominio.com.br/?aba=usuarios	Gerenciamento de usuários (admin)
+
 Atendimento do Bot
 Cliente envia mensagem no WhatsApp
 
@@ -211,11 +222,17 @@ Níveis de Acesso
 
 Comandos Rápidos (Atalhos)
 Atalho	Função
+
 ESC	Sair do sistema
+
 Alt + L	Alternar auto-logout
+
 Alt + S	Sair rapidamente
+
 Alt + P	Alterar minha senha
+
 Alt + U	Gerenciar usuários (admin)
+
 📊 Dashboard PIX
 Estatísticas Disponíveis
 ✅ Total de consultas do dia
@@ -256,19 +273,27 @@ systemctl status botzap
 
 # Iniciar/Parar/Reiniciar
 systemctl start botzap
+
 systemctl stop botzap
+
 systemctl restart botzap
 
 # Logs em tempo real
 journalctl -u botzap -f
+
 tail -f /var/log/botzap.log
+
 Limpeza de Sessão
 Quando o bot apresentar problemas de conexão:
 
 systemctl stop botzap
+
 cd /opt/whatsapp-bot
+
 node bot.js --clear-auth
+
 systemctl start botzap
+
 Gerenciamento do Nginx
 
 # Testar configuração
@@ -279,6 +304,7 @@ systemctl reload nginx
 
 # Logs de erro
 tail -f /var/log/nginx/botzap_error.log
+
 Logs do Dashboard PIX
 
 # Listar logs disponíveis
@@ -289,6 +315,7 @@ cat /var/log/pix_acessos/pix_log_$(date +%Y-%m-%d).log
 
 # Ver logs de acesso dos usuários
 tail -f /var/log/pix_acessos/acessos_usuarios.log
+
 🔍 Solução de Problemas
 O bot não conecta
 Verifique o QR Code
@@ -298,20 +325,27 @@ Limpe a sessão
 
 systemctl stop botzap
 cd /opt/whatsapp-bot
+
 node bot.js --clear-auth
+
 systemctl start botzap
+
 Verifique os logs
 
 tail -f /var/log/botzap.log
 Dashboard não carrega
+
 Verifique permissões
 
 chown -R www-data:www-data /var/log/pix_acessos/
+
 chmod 755 /var/www/botzap/
+
 Verifique logs do PHP
 
 tail -f /var/log/nginx/botzap_error.log
 Esqueci a senha do admin
+
 Acesse o servidor via SSH
 
 Edite o arquivo de usuários
@@ -338,12 +372,15 @@ cp /var/log/pix_acessos/usuarios.json /tmp/
 
 # Reinstalar
 cd /tmp
-wget -O install.sh https://raw.githubusercontent.com/seu-usuario/BotZap-WEBLINE-2026/main/install.sh
-chmod +x install.sh
-sudo ./install.sh
+wget -O install.sh https://raw.githubusercontent.com/seu-usuario/BotZap-WEBLINE-2026/main/install-bot-nginx.sh
+
+chmod +x install-bot-nginx.sh
+
+sudo ./install-bot-nginx.sh
 
 # Restaurar configurações
 cp /tmp/config.json /opt/whatsapp-bot/
+
 cp /tmp/usuarios.json /var/log/pix_acessos/
 
 # Reiniciar
@@ -372,6 +409,7 @@ GitHub: @miranildo
 Projeto: BotZap WEBLINE 2026
 
 ⚠️ Avisos Importantes
+
 Use com responsabilidade: Respeite os termos de serviço do WhatsApp
 
 Backup regular: Faça backup das configurações e logs periodicamente
