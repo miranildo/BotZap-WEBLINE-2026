@@ -269,17 +269,15 @@ Níveis de Acesso
 
 Comandos Rápidos (Atalhos)
 
-Atalho	Função
+### Comandos Rápidos (Atalhos)
 
-ESC	Sair do sistema
-
-Alt + L	Alternar auto-logout
-
-Alt + S	Sair rapidamente
-
-Alt + P	Alterar minha senha
-
-Alt + U	Gerenciar usuários (admin)
+| Atalho | Função |
+|--------|--------|
+| `ESC` | Sair do sistema |
+| `Alt + L` | Alternar auto-logout |
+| `Alt + S` | Sair rapidamente |
+| `Alt + P` | Alterar minha senha |
+| `Alt + U` | Gerenciar usuários (admin) |
 
 📊 Dashboard PIX
 
