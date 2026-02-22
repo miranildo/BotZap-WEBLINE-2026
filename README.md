@@ -220,6 +220,8 @@ Menu > WhatsApp Web > Escanear QR Code
 Pronto! O bot estará online
 
 3. Configurar API de Faturas
+   
+
 
 Essas configurações é automática, quando você configura pelo bot.seu_dominio.com.br ele será preenchida automaticamente, caso não ocorra siga esse passos abaixo:
 
