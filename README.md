@@ -144,7 +144,7 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 
 ATENÇÃO!!!!!!
 
-Antes de executar o script de instalação configure o dominio que irá usar no bot em seu servidor DNS Autoritativo, EX: bot.seusite.com.br, se tiver dominio configurado e usa o proxy do Cloudflare desative pois o certificado só será emitido se o dominio estiver configurado para o ip correto da maquina, use ip público se possível.
+Antes de executar o script de instalação configure o dominio que irá usar no bot em seu servidor DNS Autoritativo, EX: bot.seu_dominio.com.br, se tiver dominio configurado e usa o proxy do Cloudflare desative pois o certificado só será emitido se o dominio estiver configurado para o ip correto da maquina, use ip público se possível.
 
 
 Execute o script de instalação automatizada como root:
@@ -152,7 +152,7 @@ Execute o script de instalação automatizada como root:
 # Baixar o script de instalação
 apt install curl git
 
-wget -O install_bot.sh https://raw.githubusercontent.com/seu-usuario/BotZap-WEBLINE-2026/main/install-bot-nginx.sh
+wget -O install_bot.sh https://raw.githubusercontent.com/miranildo/BotZap-WEBLINE-2026/main/install-bot-nginx.sh
 
 # Tornar executável
 chmod +x install-bot-nginx.sh
@@ -162,7 +162,7 @@ sudo ./install-bot-nginx.sh
 
 O script irá solicitar:
 
-🌐 Domínio para o bot (ex: bot.seusite.com.br)
+🌐 Domínio para o bot (ex: bot.seu_dominio.com.br)
 
 🔐 Usuário e senha para acesso ao painel
 
@@ -172,7 +172,7 @@ O script irá solicitar:
 
 1. Clonar o repositório
 
-git clone https://github.com/seu-usuario/BotZap-WEBLINE-2026.git
+git clone https://github.com/miranildo/BotZap-WEBLINE-2026.git
 cd BotZap-WEBLINE-2026
 
 2. Executar instalação passo a passo
@@ -186,7 +186,7 @@ sudo ./install-bot-nginx.sh
 ⚙️ Configuração Pós-Instalação
 
 1. Configurar o bot
-Acesse o painel web: https://seu-dominio.com.br
+Acesse o painel web: https://bot.seu_dominio.com.br
 
 Login com as credenciais configuradas durante a instalação.
 
@@ -220,11 +220,13 @@ Menu > WhatsApp Web > Escanear QR Code
 Pronto! O bot estará online
 
 3. Configurar API de Faturas
-Configure o arquivo /var/www/botzap/pix.php com suas credenciais MK-Auth:
+Essas configurações é automática, quando você configura pelo bot.seu_dominio.com.br ele será preenchida automaticamente, caso não ocorra siga esse passos abaixo:
 
-$URL_PROV = "https://www.seuprovedor.com.br";
+Configure o arquivo /var/www/botzap/pix.php com suas credenciais do seu MK-Auth para acesso a API:
 
-$API_BASE = "https://www.seuprovedor.com.br/api/";
+$URL_PROV = "https://www.seu_mkauth.com.br";
+
+$API_BASE = "https://www.seu_mkauth.com.br/api/";
 
 $CLIENT_ID = "seu_client_id";
 
@@ -237,15 +239,15 @@ Acessos do Sistema
 
 URL	Descrição
 
-https://seu-dominio.com.br/	Painel principal (requer login)
+https://bot.seu_dominio.com.br/	Painel principal (requer login)
 
-https://seu-dominio.com.br/?aba=config	Configurações do bot
+https://bot.seu_dominio.com.br/?aba=config	Configurações do bot
 
-https://seu-dominio.com.br/?aba=log	Logs do bot (terminal)
+https://bot.seu_dominio.com.br/?aba=log	Logs do bot (terminal)
 
-https://seu-dominio.com.br/?aba=dashboard	Dashboard de consultas PIX
+https://bot.seu_dominio.com.br/?aba=dashboard	Dashboard de consultas PIX
 
-https://seu-dominio.com.br/?aba=usuarios	Gerenciamento de usuários (admin)
+https://bot.seu_dominio.com.br/?aba=usuarios	Gerenciamento de usuários (admin)
 
 Atendimento do Bot
 
@@ -429,7 +431,7 @@ cp /var/log/pix_acessos/usuarios.json /tmp/
 
 # Reinstalar
 cd /tmp
-wget -O install-bot-nginx.sh https://raw.githubusercontent.com/seu-usuario/BotZap-WEBLINE-2026/main/install-bot-nginx.sh
+wget -O install-bot-nginx.sh https://raw.githubusercontent.com/miranildo/BotZap-WEBLINE-2026/main/install-bot-nginx.sh
 
 chmod +x install-bot-nginx.sh
 
