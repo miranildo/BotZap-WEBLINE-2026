@@ -108,6 +108,7 @@ Execute o script de instalação automatizada como root:
 
 # Baixar o script de instalação
 apt install curl
+
 wget -O install_bot.sh https://raw.githubusercontent.com/seu-usuario/BotZap-WEBLINE-2026/main/install-bot-nginx.sh
 
 # Tornar executável
