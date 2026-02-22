@@ -137,7 +137,7 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 - **Sistema Operacional:** Debian 12 (Bookworm) instalação limpa só com o pacote SSH instalado
 - **WinScp + putty** para usar no Windows caso queira.
 - **RAM:** Mínimo 1GB (recomendado 2GB)
-- **Armazenamento:** 10GB livres
+- **Armazenamento:** 30GB livres min, ideal 60GB.
 - **Domínio:** Um domínio apontado para o servidor (para SSL)
 - **WhatsApp:** Número válido para conexão
 
