@@ -142,6 +142,10 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 
 ## 🚀 Instalação Rápida
 
+ATENÇÃO!!!!!!
+
+Antes de executar o script de instalação configure o dominio que irá usar no bot em seu servidor DNS Autoritativo, EX: bot.seu_dominio.com.br, se tiver dominio configurado e usa o proxy do Cloudflare desative pois o certificado só será emitido se o dominio estiver configurado para o ip correto da maquina, use ip público se possível.
+
 Execute o script de instalação automatizada como root:
 
 # Baixar o script de instalação
@@ -226,6 +230,7 @@ $CLIENT_ID = "seu_client_id";
 $CLIENT_SECRET = "seu_client_secret";0
 
 📱 Uso do Sistema
+
 Acessos do Sistema
 
 URL	Descrição
@@ -241,6 +246,7 @@ https://seu-dominio.com.br/?aba=dashboard	Dashboard de consultas PIX
 https://seu-dominio.com.br/?aba=usuarios	Gerenciamento de usuários (admin)
 
 Atendimento do Bot
+
 Cliente envia mensagem no WhatsApp
 
 Bot responde com menu interativo
@@ -258,6 +264,7 @@ Níveis de Acesso
 👑 Admin: Acesso total + gerenciamento de usuários
 
 Comandos Rápidos (Atalhos)
+
 Atalho	Função
 
 ESC	Sair do sistema
@@ -271,6 +278,7 @@ Alt + P	Alterar minha senha
 Alt + U	Gerenciar usuários (admin)
 
 📊 Dashboard PIX
+
 Estatísticas Disponíveis
 
 ✅ Total de consultas do dia
@@ -398,7 +406,9 @@ nano /var/log/pix_acessos/usuarios.json
 Substitua o hash da senha pelo hash de uma nova senha:
 
 php -r "echo password_hash('NovaSenha123', PASSWORD_DEFAULT);"
+
 🔄 Manutenção
+
 Backup
 # Backup completo
 tar -czf backup_bot_$(date +%Y%m%d).tar.gz \
