@@ -240,17 +240,13 @@ $CLIENT_SECRET = "seu_client_secret";0
 
 Acessos do Sistema
 
-URL	                                           Descrição
-
-https://bot.seu_dominio.com.br/	                 Painel principal (requer login)
-
-https://bot.seu_dominio.com.br/?aba=config	     Configurações do bot
-
-https://bot.seu_dominio.com.br/?aba=log	        Logs do bot (terminal)
-
-https://bot.seu_dominio.com.br/?aba=dashboard	  Dashboard de consultas PIX
-
-https://bot.seu_dominio.com.br/?aba=usuarios	     Gerenciamento de usuários (admin)
+| URL | Descrição |
+|-----|-----------|
+| `https://bot.seu_dominio.com.br/` | Painel principal (requer login) |
+| `https://bot.seu_dominio.com.br/?aba=config` | Configurações do bot |
+| `https://bot.seu_dominio.com.br/?aba=log` | Logs do bot (terminal) |
+| `https://bot.seu_dominio.com.br/?aba=dashboard` | Dashboard de consultas PIX |
+| `https://bot.seu_dominio.com.br/?aba=usuarios` | Gerenciamento de usuários (admin) |
 
 Atendimento do Bot
 
