@@ -40,6 +40,7 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 ## ✨ Funcionalidades
 
 ### 🤖 Bot WhatsApp
+
 - ✅ Atendimento automático com menu interativo
 - ✅ Integração com API para consulta de faturas
 - ✅ Validação de CPF/CNPJ na base de clientes
@@ -49,6 +50,7 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 - ✅ Notificações via Telegram (conexão, desconexão, QR Code)
 
 ### 📊 Dashboard PIX
+
 - ✅ Consultas de faturas em tempo real
 - ✅ Estatísticas diárias, semanais e mensais
 - ✅ Filtros por data e exportação CSV
@@ -57,6 +59,7 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 - ✅ Estatísticas de bloqueios para admin
 
 ### 👥 Sistema de Usuários
+
 - ✅ Login seguro com hash de senha
 - ✅ Níveis de acesso (admin/usuário)
 - ✅ Logs completos de acesso
@@ -130,6 +133,7 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 
 ## 📦 Pré-requisitos
 
+
 - **Sistema Operacional:** Debian 12 (Bookworm)
 - **RAM:** Mínimo 1GB (recomendado 2GB)
 - **Armazenamento:** 10GB livres
@@ -141,7 +145,7 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 Execute o script de instalação automatizada como root:
 
 # Baixar o script de instalação
-apt install curl
+apt install curl git
 
 wget -O install_bot.sh https://raw.githubusercontent.com/seu-usuario/BotZap-WEBLINE-2026/main/install-bot-nginx.sh
 
@@ -169,10 +173,10 @@ cd BotZap-WEBLINE-2026
 2. Executar instalação passo a passo
 
 # Tornar executável
-chmod +x install.sh
+chmod +x install-bot-nginx.sh
 
 # Executar
-sudo ./install.sh
+sudo ./install-bot-nginx.sh
 
 ⚙️ Configuração Pós-Instalação
 
@@ -268,6 +272,7 @@ Alt + U	Gerenciar usuários (admin)
 
 📊 Dashboard PIX
 Estatísticas Disponíveis
+
 ✅ Total de consultas do dia
 
 ✅ Comparativo com ontem
@@ -290,6 +295,7 @@ Vencimento da fatura
 Título do boleto
 
 Sistema de Segurança
+
 ✅ Bloqueio automático de IPs suspeitos
 
 ✅ Detecção de acessos simultâneos
@@ -350,13 +356,16 @@ cat /var/log/pix_acessos/pix_log_$(date +%Y-%m-%d).log
 tail -f /var/log/pix_acessos/acessos_usuarios.log
 
 🔍 Solução de Problemas
+
 O bot não conecta
+
 Verifique o QR Code
 
 cat /opt/whatsapp-bot/qrcode.txt
 Limpe a sessão
 
 systemctl stop botzap
+
 cd /opt/whatsapp-bot
 
 node bot.js --clear-auth
@@ -366,6 +375,7 @@ systemctl start botzap
 Verifique os logs
 
 tail -f /var/log/botzap.log
+
 Dashboard não carrega
 
 Verifique permissões
@@ -377,6 +387,7 @@ chmod 755 /var/www/botzap/
 Verifique logs do PHP
 
 tail -f /var/log/nginx/botzap_error.log
+
 Esqueci a senha do admin
 
 Acesse o servidor via SSH
@@ -405,7 +416,7 @@ cp /var/log/pix_acessos/usuarios.json /tmp/
 
 # Reinstalar
 cd /tmp
-wget -O install.sh https://raw.githubusercontent.com/seu-usuario/BotZap-WEBLINE-2026/main/install-bot-nginx.sh
+wget -O install-bot-nginx.sh https://raw.githubusercontent.com/seu-usuario/BotZap-WEBLINE-2026/main/install-bot-nginx.sh
 
 chmod +x install-bot-nginx.sh
 
@@ -420,6 +431,7 @@ cp /tmp/usuarios.json /var/log/pix_acessos/
 systemctl restart botzap
 
 🤝 Contribuição
+
 Contribuições são bem-vindas! Siga estes passos:
 
 Fork o projeto
@@ -433,9 +445,11 @@ Push para a branch (git push origin feature/AmazingFeature)
 Abra um Pull Request
 
 📄 Licença
+
 Distribuído sob a licença MIT. Veja LICENSE para mais informações.
 
 📞 Contato
+
 Desenvolvedor: Miranildo de Lima Santos
 
 GitHub: @miranildo
