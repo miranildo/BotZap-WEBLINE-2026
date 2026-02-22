@@ -230,6 +230,7 @@ $CLIENT_ID = "seu_client_id";
 
 $CLIENT_SECRET = "seu_client_secret";0
 
+
 📱 Uso do Sistema
 
 Acessos do Sistema
@@ -255,6 +256,7 @@ Bot responde com menu interativo
 Opção 1: Geração de fatura PIX (solicita CPF/CNPJ)
 
 Opção 2: Encaminhamento para atendente humano
+
 
 👥 Gerenciamento de Usuários
 
