@@ -488,6 +488,7 @@ cd "$TEMP_DIR"
 
 WEB_FILES=(
     "auth.php"
+    "bot.js"
     "hora.php"
     "index.php"
     "info.php"
@@ -499,10 +500,9 @@ WEB_FILES=(
     "qrcode_view.php"
     "qrcode_wait.png"
     "save.php"
+    "service-worker.js"
     "status.php"
     "teste_ipv6.php"
-    "users.php"
-    "bot.js"
 )
 
 DOWNLOAD_COUNT=0
