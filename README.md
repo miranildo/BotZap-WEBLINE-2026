@@ -73,7 +73,6 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 # Diretório do bot Node.js
 
 
-
 ├── bot.js # Script principal do bot
 
 ├── config.json # Configurações do bot
@@ -89,7 +88,6 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 
 /var/www/botzap/
 # Diretório web (painel)
-
 
 
 ├── index.php # Painel principal unificado
@@ -117,7 +115,6 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 
 /var/log/
 # Logs do sistema
-
 
 
 ├── botzap.log # Log principal do bot
@@ -148,6 +145,7 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 ATENÇÃO!!!!!!
 
 Antes de executar o script de instalação configure o dominio que irá usar no bot em seu servidor DNS Autoritativo, EX: bot.seu_dominio.com.br, se tiver dominio configurado e usa o proxy do Cloudflare desative pois o certificado só será emitido se o dominio estiver configurado para o ip correto da maquina, use ip público se possível.
+
 
 Execute o script de instalação automatizada como root:
 
