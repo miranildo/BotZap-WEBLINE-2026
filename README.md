@@ -68,32 +68,55 @@ O **BotZap WEBLINE 2026** é um sistema completo de atendimento automatizado via
 
 /opt/whatsapp-bot/ # Diretório do bot Node.js
 ├── bot.js # Script principal do bot
+
 ├── config.json # Configurações do bot
+
 ├── status.json # Status atual do bot
+
 ├── qrcode.txt # QR Code para conexão
+
 ├── auth_info/ # Sessão do WhatsApp
+
 └── node_modules/ # Dependências Node.js
+
 
 /var/www/botzap/ # Diretório web (painel)
 ├── index.php # Painel principal unificado
+
 ├── auth.php # Sistema de autenticação
+
 ├── pix.php # Gerador de faturas PIX
+
 ├── qrcode_view.php # Visualizador de QR Code
+
 ├── hora.php # Utilitário de hora
+
 ├── info.php # Informações do PHP
+
 ├── login.php # Tela de login (fallback)
+
 ├── logout.php # Logout do sistema
+
 ├── save.php # Salvamento de config
+
 ├── status.php # Status do sistema
+
 └── teste_ipv6.php # Teste de conectividade
+
 
 /var/log/ # Logs do sistema
 ├── botzap.log # Log principal do bot
+
 ├── pix_acessos/ # Logs do dashboard PIX
+
 │ ├── usuarios.json # Banco de usuários
+
 │ ├── acessos_usuarios.log # Logs de acesso
+
 │ ├── pix_log_*.log # Logs diários de consultas
+
 │ └── pix_filtros.log # Logs de bloqueios
+
 
 ## 📦 Pré-requisitos
 
@@ -385,6 +408,7 @@ cp /tmp/usuarios.json /var/log/pix_acessos/
 
 # Reiniciar
 systemctl restart botzap
+
 🤝 Contribuição
 Contribuições são bem-vindas! Siga estes passos:
 
