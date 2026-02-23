@@ -247,6 +247,27 @@ function alterarSenhaAdmin($usuario_admin, $usuario_alvo, $nova_senha) {
     return ['success' => false, 'message' => 'Erro ao salvar nova senha!'];
 }
 
+// ==================== FUNÇÃO PARA VER PREFERÊNCIAS DOS USUÁRIOS ====================
+function listarPreferenciasUsuarios() {
+    $logDir = '/var/log/pix_acessos/';
+    $preferencias = [];
+    
+    if (!is_dir($logDir)) return $preferencias;
+    
+    $arquivos = glob($logDir . "preferencias_*.json");
+    
+    foreach ($arquivos as $arquivo) {
+        if (preg_match('/preferencias_(.+)\.json$/', $arquivo, $matches)) {
+            $usuario = $matches[1];
+            $conteudo = file_get_contents($arquivo);
+            $dados = json_decode($conteudo, true);
+            $preferencias[$usuario] = $dados;
+        }
+    }
+    
+    return $preferencias;
+}
+
 // ==================== ENDPOINTS DE AUTO-LOGOUT ====================
 
 // Endpoint para alterar tempo de auto-logout
@@ -566,17 +587,25 @@ if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
         $usuarioDB = verificarLogin($_POST['usuario'], $_POST['senha']);
         
         if ($usuarioDB) {
-            $_SESSION['logado'] = true;
-            $_SESSION['usuario'] = $_POST['usuario'];
-            $_SESSION['nome'] = $usuarioDB['nome'];
-            $_SESSION['nivel'] = $usuarioDB['nivel'];
-            $_SESSION['login_time'] = time();
-            $_SESSION['ultimo_acesso'] = time();
-            $_SESSION['ip'] = getRealIp();
-            $_SESSION['auto_logout'] = true;
-            
-            atualizarUltimoAcesso($_POST['usuario']);
-            registrarLogAcesso($_POST['usuario'], $usuarioDB['nome'], $usuarioDB['nivel'], 'LOGIN');
+    $_SESSION['logado'] = true;
+    $_SESSION['usuario'] = $_POST['usuario'];
+    $_SESSION['nome'] = $usuarioDB['nome'];
+    $_SESSION['nivel'] = $usuarioDB['nivel'];
+    $_SESSION['login_time'] = time();
+    $_SESSION['ultimo_acesso'] = time();
+    $_SESSION['ip'] = getRealIp();
+    
+    // Carregar preferência de auto-logout do usuário
+    $preferencias_file = "/var/log/pix_acessos/preferencias_{$_POST['usuario']}.json";
+    if (file_exists($preferencias_file)) {
+        $pref = json_decode(file_get_contents($preferencias_file), true);
+        $_SESSION['auto_logout'] = $pref['auto_logout'] ?? true;
+    } else {
+        $_SESSION['auto_logout'] = true; // Padrão para novo usuário
+    }
+    
+    atualizarUltimoAcesso($_POST['usuario']);
+    registrarLogAcesso($_POST['usuario'], $usuarioDB['nome'], $usuarioDB['nivel'], 'LOGIN');
             
             header('Location: index.php' . (isset($_GET['aba']) ? '?aba=' . $_GET['aba'] : ''));
             exit;
@@ -804,7 +833,6 @@ if (!$isLogRequest) {
 if (isset($_GET['toggle_autologout'])) {
     $novo_status = $_GET['toggle_autologout'] == 'on' ? true : false;
     
-    // Registrar a mudança
     registrarLogAcesso(
         $_SESSION['usuario'],
         $_SESSION['nome'],
@@ -812,16 +840,21 @@ if (isset($_GET['toggle_autologout'])) {
         'ALTERAR_AUTO_LOGOUT: ' . ($novo_status ? 'ATIVADO' : 'DESATIVADO')
     );
     
-    // Atualizar a sessão
     $_SESSION['auto_logout'] = $novo_status;
     
-    // Resetar o timer quando ativar
-    if ($novo_status) {
-        $_SESSION['ultimo_acesso'] = time();
-    }
+    // SALVAR PREFERÊNCIA DO USUÁRIO
+    $preferencias_file = "/var/log/pix_acessos/preferencias_{$_SESSION['usuario']}.json";
+    $preferencias = [
+        'auto_logout' => $novo_status,
+        'ultima_alteracao' => date('Y-m-d H:i:s'),
+        'ip_alteracao' => getRealIp()
+    ];
+    file_put_contents($preferencias_file, json_encode($preferencias, JSON_PRETTY_PRINT));
     
-    // Redirecionar de volta
-    header('Location: index.php?aba=' . ($_GET['aba'] ?? 'dashboard'));
+    // Log adicional para debug
+    error_log("Preferência salva para {$_SESSION['usuario']}: " . ($novo_status ? 'ON' : 'OFF'));
+    
+    header('Location: index.php?aba=' . ($abaAtiva ?? 'dashboard'));
     exit;
 }
 
@@ -3688,12 +3721,24 @@ if (file_exists(ARQUIVO_LOG_ACESSOS)) {
                         <th style="padding:12px 10px; text-align:left;">E-mail</th>
                         <th style="padding:12px 10px; text-align:left;">Nível</th>
                         <th style="padding:12px 10px; text-align:left;">Status</th>
+                        <th style="padding:12px 10px; text-align:left;">Auto-logout</th>
                         <th style="padding:12px 10px; text-align:left;">Último Acesso</th>
                         <th style="padding:12px 10px; text-align:left;">Ações</th>
                     </tr>
                 </thead>
                 <tbody>
-                    <?php foreach ($usuarios as $usuario_nome => $dados): ?>
+                    <?php foreach ($usuarios as $usuario_nome => $dados): 
+                        // Carregar preferência de auto-logout do usuário
+                        $pref_file = "/var/log/pix_acessos/preferencias_{$usuario_nome}.json";
+                        $auto_logout_pref = true; // Padrão
+                        $pref_alteracao = '';
+                        
+                        if (file_exists($pref_file)) {
+                            $pref = json_decode(file_get_contents($pref_file), true);
+                            $auto_logout_pref = $pref['auto_logout'] ?? true;
+                            $pref_alteracao = isset($pref['ultima_alteracao']) ? ' (' . date('d/m/Y', strtotime($pref['ultima_alteracao'])) . ')' : '';
+                        }
+                    ?>
                     <tr style="border-bottom:1px solid #eee;">
                         <td style="padding:12px 10px;"><strong><?= htmlspecialchars($usuario_nome) ?></strong></td>
                         <td style="padding:12px 10px;"><?= htmlspecialchars($dados['nome']) ?></td>
@@ -3707,6 +3752,20 @@ if (file_exists(ARQUIVO_LOG_ACESSOS)) {
                             <span style="display:inline-block; padding:5px 10px; border-radius:12px; font-size:11px; font-weight:bold; background:<?= $dados['status'] === 'ativo' ? '#d4edda' : '#f8d7da' ?>; color:<?= $dados['status'] === 'ativo' ? '#155724' : '#721c24' ?>;">
                                 <?= ucfirst($dados['status']) ?>
                             </span>
+                        </td>
+                        <td style="padding:12px 10px;">
+                            <?php if ($auto_logout_pref): ?>
+                                <span style="display:inline-block; padding:5px 10px; border-radius:12px; font-size:11px; font-weight:bold; background:#d5f4e6; color:#27ae60; border:1px solid #27ae60;">
+                                    ✅ ON
+                                </span>
+                            <?php else: ?>
+                                <span style="display:inline-block; padding:5px 10px; border-radius:12px; font-size:11px; font-weight:bold; background:#f0f0f0; color:#7f8c8d; border:1px solid #95a5a6;">
+                                    ❌ OFF
+                                </span>
+                            <?php endif; ?>
+                            <small style="display:block; color:#666; font-size:10px; margin-top:2px;">
+                                <?= $pref_alteracao ?: 'Padrão' ?>
+                            </small>
                         </td>
                         <td style="padding:12px 10px;">
                             <?= $dados['ultimo_acesso'] ? date('d/m/Y H:i', strtotime($dados['ultimo_acesso'])) : 'Nunca' ?><br>
