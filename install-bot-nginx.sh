@@ -99,7 +99,7 @@ echo -n "Domínio: "
 read BOT_DOMAIN
 
 if [ -z "$BOT_DOMAIN" ]; then
-    BOT_DOMAIN="bot.weblinetelecom.com.br"
+    BOT_DOMAIN="bot.provedor.com.br"
     echo "✅ Usando domínio padrão: $BOT_DOMAIN"
 else
     BOT_DOMAIN=$(echo "$BOT_DOMAIN" | sed 's|^https://||; s|^http://||')
