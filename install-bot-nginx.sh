@@ -90,7 +90,11 @@ echo ""
 # SOLICITAR URL DO BOT
 # =====================================================
 echo "ATENÇÃO!!!!!!"
-echo "Antes de executar o script de instalação configure o dominio que irá usar no bot em seu servidor DNS Autoritativo, EX: bot.seu_dominio.com.br, se tiver dominio configurado e usa o proxy do Cloudflare desative pois o certificado só será emitido se o dominio estiver configurado para o ip correto da maquina, use ip público se possível."
+echo ""
+echo "Antes de executar o script de instalação configure o dominio que irá usar no bot em seu servidor DNS Autoritativo,"
+echo "EX: bot.seu_dominio.com.br, se tiver dominio configurado e usa o proxy do Cloudflare desative pois o certificado só"
+echo "será emitido se o dominio estiver configurado para o ip correto da maquina, use ip público se possível."
+echo ""
 echo "🌐 CONFIGURAÇÃO DE DOMÍNIO"
 echo "=========================="
 echo "Digite o domínio completo para o bot (ex: bot.SEU_DOMINIO.com.br)"
