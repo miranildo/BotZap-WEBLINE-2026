@@ -869,7 +869,7 @@ echo "127.0.0.1 $BOT_DOMAIN www.$DOMAIN_BASE" >> /etc/hosts
 echo "✅ Hosts local configurado"
 
 # =====================================================
-# CONFIGURAR CRON PARA MONITOR DE VERSÃO
+# CONFIGURAR CRON PARA MONITOR DE VERSÃO (CORRIGIDO)
 # =====================================================
 echo "⏰ Configurando cron para monitor de versão..."
 
@@ -878,11 +878,44 @@ touch /var/log/botzap-monitor.log
 chown "$BOT_USER:$WEB_GROUP" /var/log/botzap-monitor.log
 chmod 664 /var/log/botzap-monitor.log
 
-# Adicionar ao crontab (executa a cada 6 horas)
+# Configurar editor padrão para não interagir
+export EDITOR=nano
+export VISUAL=nano
+
+# Primeiro método: tentar adicionar via pipe
+echo "📝 Adicionando entrada ao crontab..."
 (crontab -l 2>/dev/null | grep -v "monitor-versao.js"; echo "0 */6 * * * cd $BOT_DIR && /usr/bin/node monitor-versao.js >> /var/log/botzap-monitor.log 2>&1") | crontab -
 
-echo "✅ Cron configurado:"
-crontab -l | grep "monitor-versao.js" || echo "   ⚠️ Não foi possível verificar"
+# Verificar se funcionou
+if crontab -l 2>/dev/null | grep -q "monitor-versao.js"; then
+    echo "✅ Cron configurado com sucesso via método 1"
+else
+    echo "⚠️ Método 1 falhou, tentando método alternativo..."
+    
+    # Método alternativo: escrever direto no arquivo do crontab
+    TMP_CRON=$(mktemp)
+    crontab -l > "$TMP_CRON" 2>/dev/null || true
+    echo "# Monitor de versão do WhatsApp" >> "$TMP_CRON"
+    echo "0 */6 * * * cd $BOT_DIR && /usr/bin/node monitor-versao.js >> /var/log/botzap-monitor.log 2>&1" >> "$TMP_CRON"
+    
+    if crontab "$TMP_CRON" 2>/dev/null; then
+        echo "✅ Cron configurado com sucesso via método alternativo"
+    else
+        echo "⚠️ Não foi possível configurar o cron automaticamente"
+        echo "   Para configurar manualmente, execute:"
+        echo "   crontab -e"
+        echo "   E adicione a linha:"
+        echo "   0 */6 * * * cd $BOT_DIR && /usr/bin/node monitor-versao.js >> /var/log/botzap-monitor.log 2>&1"
+    fi
+    
+    rm -f "$TMP_CRON"
+fi
+
+# Mostrar configuração atual
+echo ""
+echo "📋 Configuração atual do crontab:"
+crontab -l 2>/dev/null || echo "   (vazio)"
+echo ""
 
 # =====================================================
 # CRIAR SCRIPT DE DIAGNÓSTICO
