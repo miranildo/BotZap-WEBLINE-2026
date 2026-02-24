@@ -413,7 +413,8 @@ cat > "$BOT_DIR/package.json" <<'PKGEOF'
   "description": "Bot WhatsApp para atendimento automático",
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
-    "pino": "^10.3.0"
+    "pino": "^10.3.1",
+    "qrcode-terminal": "^0.12.0"
   }
 }
 PKGEOF
