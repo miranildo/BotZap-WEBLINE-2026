@@ -1,44 +1,37 @@
 <?php
-/*************************************************
+/***********************************************************
  * SISTEMA UNIFICADO - BOT WHATSAPP + DASHBOARD PIX
- * Mantém 100% das funcionalidades originais
- * VERSÃO COM AUTO-LOGOUT GLOBAL E CONFIGURÁVEL
- * CORREÇÃO: Aba de logs respeita estado global
- *************************************************/
+ * Versão: 2.0 - Auto-Logout
+ * Data: 23/02/2026
+ ***********************************************************/
 
 session_start();
 
-// ==================== CONFIGURAÇÕES DO DASHBOARD (COPIADO INTEGRALMENTE) ====================
+// =====================================================================
+// BLOCO 01 - CONFIGURAÇÕES E CONSTANTES GLOBAIS
+// =====================================================================
+
+// Arquivos do sistema
 define('ARQUIVO_USUARIOS', '/var/log/pix_acessos/usuarios.json');
 define('ARQUIVO_LOG_ACESSOS', '/var/log/pix_acessos/acessos_usuarios.log');
 
-// ==================== CONFIGURAÇÕES DE AUTO-LOGOUT ====================
-define('TEMPO_SESSAO_PADRAO', 1800); // 30 minutos padrão
+// Configurações de auto-logout
+define('TEMPO_SESSAO_PADRAO', 1800); // 30 minutos
 define('ARQUIVO_CONFIG_AUTOLOGOUT', '/var/log/pix_acessos/autologout_config.json');
-
-// Carregar configuração de tempo
-function carregarTempoAutologout() {
-    if (file_exists(ARQUIVO_CONFIG_AUTOLOGOUT)) {
-        $config = json_decode(file_get_contents(ARQUIVO_CONFIG_AUTOLOGOUT), true);
-        if (isset($config['tempo']) && is_numeric($config['tempo']) && $config['tempo'] >= 60) {
-            return $config['tempo'];
-        }
-    }
-    return TEMPO_SESSAO_PADRAO;
-}
-
-function salvarTempoAutologout($tempo) {
-    $config = ['tempo' => intval($tempo)];
-    return file_put_contents(ARQUIVO_CONFIG_AUTOLOGOUT, json_encode($config));
-}
-
-// Definir o tempo da sessão
 define('TEMPO_SESSAO', carregarTempoAutologout());
 
-// ==================== FUNÇÕES DE AUTENTICAÇÃO (COPIADAS INTEGRALMENTE DO DASHBOARD) ====================
+// =====================================================================
+// BLOCO 02 - FUNÇÕES UTILITÁRIAS BÁSICAS
+// =====================================================================
+
+/**
+ * Obtém o IP real do usuário considerando proxies
+ * @return string IP do usuário
+ */
 function getRealIp() {
     $ip = $_SERVER['REMOTE_ADDR'] ?? 'desconhecido';
     $headers = ['HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'HTTP_X_FORWARDED', 'HTTP_FORWARDED_FOR', 'HTTP_FORWARDED'];
+    
     foreach ($headers as $header) {
         if (!empty($_SERVER[$header])) {
             $ips = explode(',', $_SERVER[$header]);
@@ -51,8 +44,39 @@ function getRealIp() {
     return $ip;
 }
 
+/**
+ * Carrega o tempo de auto-logout configurado
+ * @return int Tempo em segundos
+ */
+function carregarTempoAutologout() {
+    if (file_exists(ARQUIVO_CONFIG_AUTOLOGOUT)) {
+        $config = json_decode(file_get_contents(ARQUIVO_CONFIG_AUTOLOGOUT), true);
+        if (isset($config['tempo']) && is_numeric($config['tempo']) && $config['tempo'] >= 60) {
+            return $config['tempo'];
+        }
+    }
+    return TEMPO_SESSAO_PADRAO;
+}
+
+/**
+ * Salva o tempo de auto-logout
+ * @param int $tempo Tempo em segundos
+ * @return bool Sucesso da operação
+ */
+function salvarTempoAutologout($tempo) {
+    $config = ['tempo' => intval($tempo)];
+    return file_put_contents(ARQUIVO_CONFIG_AUTOLOGOUT, json_encode($config)) !== false;
+}
+
+// =====================================================================
+// BLOCO 03 - FUNÇÕES DE GERENCIAMENTO DE USUÁRIOS
+// =====================================================================
+
+/**
+ * Carrega a lista de usuários do arquivo JSON
+ * @return array Lista de usuários
+ */
 function carregarUsuarios() {
-    // Tenta carregar do arquivo
     if (file_exists(ARQUIVO_USUARIOS)) {
         $conteudo = @file_get_contents(ARQUIVO_USUARIOS);
         if ($conteudo !== false) {
@@ -63,7 +87,7 @@ function carregarUsuarios() {
         }
     }
     
-    // Se não existir ou erro, cria admin padrão
+    // Criar admin padrão se arquivo não existir (já com auto_logout)
     $usuarios = [
         'admin' => [
             'senha_hash' => '$2y$10$WN/a1/7yFMPbsPyfM6.ysuRtFBqG8RpoAF/DwpyxFTu2tnlo1ekde',
@@ -71,6 +95,7 @@ function carregarUsuarios() {
             'email' => 'admin@sistema.com',
             'nivel' => 'admin',
             'status' => 'ativo',
+            'auto_logout' => true, // CAMPO ADICIONADO: controle individual de auto-logout
             'data_criacao' => date('Y-m-d H:i:s'),
             'ip_cadastro' => '127.0.0.1',
             'ultimo_acesso' => null,
@@ -78,31 +103,173 @@ function carregarUsuarios() {
         ]
     ];
     
-    // Tenta salvar
     @file_put_contents(ARQUIVO_USUARIOS, json_encode($usuarios, JSON_PRETTY_PRINT));
-    
     return $usuarios;
 }
 
+/**
+ * Salva a lista de usuários no arquivo JSON
+ * @param array $usuarios Lista de usuários
+ * @return bool Sucesso da operação
+ */
 function salvarUsuarios($usuarios) {
     $json = json_encode($usuarios, JSON_PRETTY_PRINT);
-    $resultado = @file_put_contents(ARQUIVO_USUARIOS, $json);
-    return $resultado !== false;
+    return @file_put_contents(ARQUIVO_USUARIOS, $json) !== false;
 }
 
+/**
+ * Atualiza o último acesso do usuário
+ * @param string $usuario Nome do usuário
+ * @return bool Sucesso da operação
+ */
 function atualizarUltimoAcesso($usuario) {
     $usuarios = carregarUsuarios();
     
     if (isset($usuarios[$usuario])) {
         $usuarios[$usuario]['ultimo_acesso'] = date('Y-m-d H:i:s');
         $usuarios[$usuario]['ip_ultimo_acesso'] = getRealIp();
-        
         return salvarUsuarios($usuarios);
     }
     
     return false;
 }
 
+/**
+ * Verifica credenciais de login
+ * @param string $usuario Nome do usuário
+ * @param string $senha Senha fornecida
+ * @return array|false Dados do usuário ou false
+ */
+function verificarLogin($usuario, $senha) {
+    $usuarios = carregarUsuarios();
+    
+    if (isset($usuarios[$usuario]) && $usuarios[$usuario]['status'] === 'ativo') {
+        if (password_verify($senha, $usuarios[$usuario]['senha_hash'])) {
+            return $usuarios[$usuario];
+        }
+    }
+    return false;
+}
+
+/**
+ * Adiciona um novo usuário ao sistema
+ * @param array $dados Dados do novo usuário
+ * @return array Resultado da operação
+ */
+function adicionarUsuario($dados) {
+    $usuarios = carregarUsuarios();
+    
+    // Validações
+    if (empty($dados['usuario']) || empty($dados['nome']) || empty($dados['senha'])) {
+        return ['success' => false, 'message' => 'Preencha todos os campos obrigatórios!'];
+    }
+    
+    if (strlen($dados['senha']) < 6) {
+        return ['success' => false, 'message' => 'A senha deve ter no mínimo 6 caracteres!'];
+    }
+    
+    if (isset($usuarios[$dados['usuario']])) {
+        return ['success' => false, 'message' => 'Usuário já existe!'];
+    }
+    
+    // Criar novo usuário com auto_logout = true (padrão)
+    $usuarios[$dados['usuario']] = [
+        'senha_hash' => password_hash($dados['senha'], PASSWORD_DEFAULT),
+        'nome' => $dados['nome'],
+        'email' => $dados['email'] ?? '',
+        'nivel' => $dados['nivel'] ?? 'usuario',
+        'status' => 'ativo',
+        'auto_logout' => true, // CAMPO ADICIONADO: todo novo usuário começa com auto-logout ativado
+        'data_criacao' => date('Y-m-d H:i:s'),
+        'ip_cadastro' => getRealIp(),
+        'ultimo_acesso' => null,
+        'ip_ultimo_acesso' => null
+    ];
+    
+    if (salvarUsuarios($usuarios)) {
+        return ['success' => true, 'message' => 'Usuário cadastrado com sucesso!'];
+    }
+    
+    return ['success' => false, 'message' => 'Erro ao salvar usuário!'];
+}
+
+/**
+ * Altera a senha do próprio usuário
+ * @param string $usuario Nome do usuário
+ * @param string $senha_atual Senha atual
+ * @param string $nova_senha Nova senha
+ * @return array Resultado da operação
+ */
+function alterarSenha($usuario, $senha_atual, $nova_senha) {
+    $usuarios = carregarUsuarios();
+    
+    if (!isset($usuarios[$usuario])) {
+        return ['success' => false, 'message' => 'Usuário não encontrado!'];
+    }
+    
+    if (!password_verify($senha_atual, $usuarios[$usuario]['senha_hash'])) {
+        return ['success' => false, 'message' => 'Senha atual incorreta!'];
+    }
+    
+    if (strlen($nova_senha) < 6) {
+        return ['success' => false, 'message' => 'A nova senha deve ter no mínimo 6 caracteres!'];
+    }
+    
+    $usuarios[$usuario]['senha_hash'] = password_hash($nova_senha, PASSWORD_DEFAULT);
+    
+    if (salvarUsuarios($usuarios)) {
+        return ['success' => true, 'message' => 'Senha alterada com sucesso!'];
+    }
+    
+    return ['success' => false, 'message' => 'Erro ao salvar nova senha!'];
+}
+
+/**
+ * Altera a senha de outro usuário (apenas admin)
+ * @param string $usuario_admin Nome do admin
+ * @param string $usuario_alvo Nome do usuário alvo
+ * @param string $nova_senha Nova senha
+ * @return array Resultado da operação
+ */
+function alterarSenhaAdmin($usuario_admin, $usuario_alvo, $nova_senha) {
+    $usuarios = carregarUsuarios();
+    
+    if (!isset($usuarios[$usuario_admin]) || $usuarios[$usuario_admin]['nivel'] !== 'admin') {
+        return ['success' => false, 'message' => 'Acesso negado! Apenas administradores podem alterar senhas de outros usuários.'];
+    }
+    
+    if (!isset($usuarios[$usuario_alvo])) {
+        return ['success' => false, 'message' => 'Usuário alvo não encontrado!'];
+    }
+    
+    if (strlen($nova_senha) < 6) {
+        return ['success' => false, 'message' => 'A nova senha deve ter no mínimo 6 caracteres!'];
+    }
+    
+    $usuarios[$usuario_alvo]['senha_hash'] = password_hash($nova_senha, PASSWORD_DEFAULT);
+    
+    if (salvarUsuarios($usuarios)) {
+        return ['success' => true, 'message' => 'Senha do usuário ' . $usuario_alvo . ' alterada com sucesso!'];
+    }
+    
+    return ['success' => false, 'message' => 'Erro ao salvar nova senha!'];
+}
+
+// =====================================================================
+// BLOCO 04 - FUNÇÕES DE LOG DE ACESSO
+// =====================================================================
+
+/**
+ * Registra um evento de log de acesso
+ * @param string $usuario Nome do usuário
+ * @param string $nome Nome completo
+ * @param string $nivel Nível de acesso
+ * @param string $acao Ação realizada
+ * @param string|null $tempo_ativo Tempo ativo (opcional)
+ * @param int|null $timestamp Timestamp do evento
+ * @param int|null $login_time Timestamp do login
+ * @return bool Sucesso da operação
+ */
 function registrarLogAcesso($usuario, $nome, $nivel, $acao, $tempo_ativo = null, $timestamp = null, $login_time = null) {
     $timestamp = $timestamp ?: time();
     $data_brasileira = date('d/m/Y', $timestamp);
@@ -154,180 +321,104 @@ function registrarLogAcesso($usuario, $nome, $nivel, $acao, $tempo_ativo = null,
     return $resultado !== false;
 }
 
-function verificarLogin($usuario, $senha) {
-    $usuarios = carregarUsuarios();
+// =====================================================================
+// BLOCO 05 - FUNÇÕES DO DASHBOARD PIX
+// =====================================================================
+
+/**
+ * Conta o número de acessos em um determinado dia
+ * @param string $data Data no formato Y-m-d
+ * @return int Número de acessos
+ */
+function contarDia($data) {
+    $arquivo = "/var/log/pix_acessos/pix_log_$data.log";
     
-    if (isset($usuarios[$usuario]) && $usuarios[$usuario]['status'] === 'ativo') {
-        if (password_verify($senha, $usuarios[$usuario]['senha_hash'])) {
-            return $usuarios[$usuario];
-        }
+    if (!file_exists($arquivo)) {
+        return 0;
     }
-    return false;
+    
+    $linhas = file($arquivo, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    return $linhas ? count($linhas) : 0;
 }
 
-function adicionarUsuario($dados) {
-    $usuarios = carregarUsuarios();
-    
-    if (empty($dados['usuario']) || empty($dados['nome']) || empty($dados['senha'])) {
-        return ['success' => false, 'message' => 'Preencha todos os campos obrigatórios!'];
-    }
-    
-    if (strlen($dados['senha']) < 6) {
-        return ['success' => false, 'message' => 'A senha deve ter no mínimo 6 caracteres!'];
-    }
-    
-    if (isset($usuarios[$dados['usuario']])) {
-        return ['success' => false, 'message' => 'Usuário já existe!'];
-    }
-    
-    $usuarios[$dados['usuario']] = [
-        'senha_hash' => password_hash($dados['senha'], PASSWORD_DEFAULT),
-        'nome' => $dados['nome'],
-        'email' => $dados['email'] ?? '',
-        'nivel' => $dados['nivel'] ?? 'usuario',
-        'status' => 'ativo',
-        'data_criacao' => date('Y-m-d H:i:s'),
-        'ip_cadastro' => getRealIp(),
-        'ultimo_acesso' => null,
-        'ip_ultimo_acesso' => null
-    ];
-    
-    if (salvarUsuarios($usuarios)) {
-        return ['success' => true, 'message' => 'Usuário cadastrado com sucesso!'];
-    }
-    
-    return ['success' => false, 'message' => 'Erro ao salvar usuário!'];
-}
-
-function alterarSenha($usuario, $senha_atual, $nova_senha) {
-    $usuarios = carregarUsuarios();
-    
-    if (!isset($usuarios[$usuario])) {
-        return ['success' => false, 'message' => 'Usuário não encontrado!'];
-    }
-    
-    if (!password_verify($senha_atual, $usuarios[$usuario]['senha_hash'])) {
-        return ['success' => false, 'message' => 'Senha atual incorreta!'];
-    }
-    
-    if (strlen($nova_senha) < 6) {
-        return ['success' => false, 'message' => 'A nova senha deve ter no mínimo 6 caracteres!'];
-    }
-    
-    $usuarios[$usuario]['senha_hash'] = password_hash($nova_senha, PASSWORD_DEFAULT);
-    
-    if (salvarUsuarios($usuarios)) {
-        return ['success' => true, 'message' => 'Senha alterada com sucesso!'];
-    }
-    
-    return ['success' => false, 'message' => 'Erro ao salvar nova senha!'];
-}
-
-function alterarSenhaAdmin($usuario_admin, $usuario_alvo, $nova_senha) {
-    $usuarios = carregarUsuarios();
-    
-    if (!isset($usuarios[$usuario_admin]) || $usuarios[$usuario_admin]['nivel'] !== 'admin') {
-        return ['success' => false, 'message' => 'Acesso negado! Apenas administradores podem alterar senhas de outros usuários.'];
-    }
-    
-    if (!isset($usuarios[$usuario_alvo])) {
-        return ['success' => false, 'message' => 'Usuário alvo não encontrado!'];
-    }
-    
-    if (strlen($nova_senha) < 6) {
-        return ['success' => false, 'message' => 'A nova senha deve ter no mínimo 6 caracteres!'];
-    }
-    
-    $usuarios[$usuario_alvo]['senha_hash'] = password_hash($nova_senha, PASSWORD_DEFAULT);
-    
-    if (salvarUsuarios($usuarios)) {
-        return ['success' => true, 'message' => 'Senha do usuário ' . $usuario_alvo . ' alterada com sucesso!'];
-    }
-    
-    return ['success' => false, 'message' => 'Erro ao salvar nova senha!'];
-}
-
-// ==================== FUNÇÃO PARA VER PREFERÊNCIAS DOS USUÁRIOS ====================
-function listarPreferenciasUsuarios() {
+/**
+ * Lista os dias disponíveis nos logs do PIX
+ * @return array Lista de datas
+ */
+function listarDiasDisponiveis() {
+    $dias = [];
     $logDir = '/var/log/pix_acessos/';
-    $preferencias = [];
     
-    if (!is_dir($logDir)) return $preferencias;
+    if (!is_dir($logDir)) {
+        return [date('Y-m-d')];
+    }
     
-    $arquivos = glob($logDir . "preferencias_*.json");
+    $arquivos = glob($logDir . "pix_log_*.log");
     
     foreach ($arquivos as $arquivo) {
-        if (preg_match('/preferencias_(.+)\.json$/', $arquivo, $matches)) {
-            $usuario = $matches[1];
-            $conteudo = file_get_contents($arquivo);
-            $dados = json_decode($conteudo, true);
-            $preferencias[$usuario] = $dados;
+        if (preg_match('/pix_log_(\d{4}-\d{2}-\d{2})\.log$/', $arquivo, $matches)) {
+            $dias[] = $matches[1];
         }
     }
     
-    return $preferencias;
-}
-
-// ==================== ENDPOINTS DE AUTO-LOGOUT ====================
-
-// Endpoint para alterar tempo de auto-logout
-if (isset($_POST['alterar_tempo_autologout'])) {
-    $novoTempo = intval($_POST['tempo_autologout'] ?? 1800);
-    
-    // Validar (mínimo 1 minuto, máximo 24 horas)
-    if ($novoTempo < 60) $novoTempo = 60;
-    if ($novoTempo > 86400) $novoTempo = 86400;
-    
-    if (salvarTempoAutologout($novoTempo)) {
-        $_SESSION['mensagem_tempo'] = "Tempo de auto-logout alterado para " . gmdate("H:i:s", $novoTempo);
-        $_SESSION['tipo_mensagem_tempo'] = 'sucesso';
-        
-        registrarLogAcesso(
-            $_SESSION['usuario'],
-            $_SESSION['nome'],
-            $_SESSION['nivel'],
-            'ALTERAR_TEMPO_AUTOLOGOUT: ' . gmdate("H:i:s", $novoTempo)
-        );
-    } else {
-        $_SESSION['mensagem_tempo'] = "Erro ao alterar tempo de auto-logout";
-        $_SESSION['tipo_mensagem_tempo'] = 'erro';
+    $hoje = date('Y-m-d');
+    if (!in_array($hoje, $dias)) {
+        $dias[] = $hoje;
     }
     
-    header('Location: index.php?aba=' . ($abaAtiva ?? 'config'));
-    exit;
+    rsort($dias);
+    return $dias;
 }
 
-// Endpoint para heartbeat - Respeita a configuração do usuário
+// =====================================================================
+// BLOCO 06 - ENDPOINTS AJAX (Heartbeat, Session, etc)
+// =====================================================================
+
+/**
+ * Endpoint: Heartbeat para manter sessão ativa
+ * Uso: ?heartbeat=1
+ */
 if (isset($_GET['heartbeat'])) {
     header('Content-Type: application/json');
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-    header('Pragma: no-cache');
     
-    $response = ['success' => false, 'expired' => false, 'time_left' => 0];
+    $response = ['success' => false, 'expired' => false, 'time_left' => 0, 'server_time' => time()];
     
     if (isset($_SESSION['logado']) && $_SESSION['logado'] === true) {
         $auto_logout = $_SESSION['auto_logout'] ?? true;
         
         if ($auto_logout === true) {
-            // Auto-logout ativado - calcular tempo real
+            // Calcular tempo restante baseado no último acesso REAL do servidor
             $ultimo_acesso = $_SESSION['ultimo_acesso'] ?? time();
             $tempo_passado = time() - $ultimo_acesso;
             $timeLeft = max(0, TEMPO_SESSAO - $tempo_passado);
             
-            $response = [
-                'success' => true,
-                'expired' => ($timeLeft <= 0),
-                'time_left' => $timeLeft,
-                'timestamp' => time(),
-                'auto_logout' => true
-            ];
+            // Se tempo expirou, forçar logout
+            if ($timeLeft <= 0) {
+                // Não fazer logout aqui, apenas informar que expirou
+                $response = [
+                    'success' => true,
+                    'expired' => true,
+                    'time_left' => 0,
+                    'server_time' => time(),
+                    'auto_logout' => true
+                ];
+            } else {
+                $response = [
+                    'success' => true,
+                    'expired' => false,
+                    'time_left' => $timeLeft,
+                    'server_time' => time(),
+                    'auto_logout' => true
+                ];
+            }
         } else {
             // Auto-logout desativado - retorna tempo máximo sem expirar
             $response = [
                 'success' => true,
                 'expired' => false,
                 'time_left' => TEMPO_SESSAO,
-                'timestamp' => time(),
+                'server_time' => time(),
                 'auto_logout' => false
             ];
         }
@@ -340,82 +431,75 @@ if (isset($_GET['heartbeat'])) {
     exit;
 }
 
-// Endpoint para verificar se a sessão expirou
-if (isset($_GET['check_session_status'])) {
-    header('Content-Type: application/json');
-    header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+/**
+ * Endpoint: Verificar status da sessão
+ * Uso: ?check_session=1
+ */
+if (isset($_GET['check_session'])) {
+    header('Content-Type: text/plain');
     
     if (isset($_SESSION['logado']) && $_SESSION['logado'] === true) {
         $auto_logout = $_SESSION['auto_logout'] ?? true;
         
         if ($auto_logout === true) {
-            // Só verifica tempo se auto-logout estiver ativado
             if (isset($_SESSION['ultimo_acesso']) && (time() - $_SESSION['ultimo_acesso'] > TEMPO_SESSAO)) {
-                echo json_encode(['status' => 'expired']);
+                echo 'expired';
             } else {
-                echo json_encode(['status' => 'active']);
+                echo 'active';
             }
         } else {
-            // Se desativado, sempre retorna active
-            echo json_encode(['status' => 'active']);
+            echo 'active';
         }
     } else {
-        echo json_encode(['status' => 'expired']);
+        echo 'expired';
     }
     exit;
 }
 
-// Endpoint para logout automático
-if (isset($_GET['auto_logout']) && $_GET['auto_logout'] == '1') {
-    if (isset($_SESSION['usuario'])) {
-        $tempo_ativo = isset($_SESSION['login_time']) ? (time() - $_SESSION['login_time']) : null;
-        registrarLogAcesso(
-            $_SESSION['usuario'],
-            $_SESSION['nome'] ?? 'N/A',
-            $_SESSION['nivel'] ?? 'N/A',
-            'LOGOUT_AUTO',
-            $tempo_ativo ? gmdate('H:i:s', $tempo_ativo) : 'N/A',
-            time(),
-            $_SESSION['login_time'] ?? null
-        );
-    }
-    session_destroy();
+/**
+ * Endpoint: Atualizar timestamp da sessão (chamado em cada interação do usuário)
+ * Uso: ?update_session=1
+ */
+if (isset($_GET['update_session'])) {
+    header('Content-Type: application/json');
     
-    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => true, 'redirect' => 'index.php?expired=true']);
-        exit;
+    if (isset($_SESSION['logado']) && $_SESSION['logado'] === true) {
+        // SÓ atualiza se auto-logout estiver ativado
+        if ($_SESSION['auto_logout'] ?? true) {
+            $_SESSION['ultimo_acesso'] = time();
+        }
+        echo json_encode(['success' => true, 'timestamp' => time()]);
+    } else {
+        echo json_encode(['success' => false, 'error' => 'not_logged_in']);
     }
-    
-    header('Location: index.php?expired=true');
     exit;
 }
 
-// ==================== ENDPOINT ESPECÍFICO PARA ABA DE LOGS ====================
-// Este endpoint permite que a aba de logs controle seu próprio timeout
+// =====================================================================
+// BLOCO 07 - ENDPOINTS DA ABA DE LOGS
+// =====================================================================
+
+/**
+ * Endpoint: Verificação especial para aba de logs
+ * Uso: ?log_session_check=1
+ */
 if (isset($_GET['log_session_check'])) {
     header('Content-Type: application/json');
     
     $response = ['active' => false, 'time_left' => 0];
     
     if (isset($_SESSION['logado']) && $_SESSION['logado'] === true) {
-        // Verificar se o usuário quer ignorar o auto-logout na aba de logs
         $ignoreLogTimeout = isset($_SESSION['ignore_log_timeout']) ? $_SESSION['ignore_log_timeout'] : false;
         
         if ($ignoreLogTimeout) {
-            // Usuário optou por ignorar timeout na aba de logs
             $response = [
                 'active' => true,
                 'ignore_timeout' => true,
-                'time_left' => TEMPO_SESSAO,
-                'message' => 'Timeout ignorado na aba de logs'
+                'time_left' => TEMPO_SESSAO
             ];
         } else {
-            // Comportamento normal
             if ($_SESSION['auto_logout'] === true && isset($_SESSION['ultimo_acesso'])) {
-                $timePassed = time() - $_SESSION['ultimo_acesso'];
-                $timeLeft = max(0, TEMPO_SESSAO - $timePassed);
-                
+                $timeLeft = max(0, TEMPO_SESSAO - (time() - $_SESSION['ultimo_acesso']));
                 $response = [
                     'active' => true,
                     'ignore_timeout' => false,
@@ -437,14 +521,16 @@ if (isset($_GET['log_session_check'])) {
     exit;
 }
 
-// Endpoint para alternar o ignore na aba de logs
+/**
+ * Endpoint: Alternar ignore timeout na aba de logs
+ * Uso: ?toggle_log_timeout=1&state=true|false
+ */
 if (isset($_GET['toggle_log_timeout'])) {
     header('Content-Type: application/json');
     
     $newState = isset($_GET['state']) ? ($_GET['state'] === 'true') : false;
     $_SESSION['ignore_log_timeout'] = $newState;
     
-    // Registrar no log
     if (isset($_SESSION['usuario'])) {
         registrarLogAcesso(
             $_SESSION['usuario'],
@@ -454,46 +540,18 @@ if (isset($_GET['toggle_log_timeout'])) {
         );
     }
     
-    echo json_encode([
-        'success' => true,
-        'ignore_timeout' => $newState
-    ]);
+    echo json_encode(['success' => true, 'ignore_timeout' => $newState]);
     exit;
 }
 
-// ==================== VERIFICAÇÕES DE SESSÃO VIA AJAX ====================
-if (isset($_GET['check_session'])) {
-    header('Content-Type: text/plain');
-    if (isset($_SESSION['logado']) && $_SESSION['logado'] === true) {
-        $auto_logout = $_SESSION['auto_logout'] ?? true;
-        
-        if ($auto_logout === true) {
-            if (isset($_SESSION['ultimo_acesso']) && (time() - $_SESSION['ultimo_acesso'] > TEMPO_SESSAO)) {
-                echo 'expired';
-            } else {
-                echo 'active';
-            }
-        } else {
-            echo 'active';
-        }
-    } else {
-        echo 'expired';
-    }
-    exit;
-}
+// =====================================================================
+// BLOCO 08 - PROCESSAMENTO DE LOGIN/LOGOUT
+// =====================================================================
 
-if (isset($_GET['update_session'])) {
-    header('Content-Type: application/json');
-    if (isset($_SESSION['logado']) && $_SESSION['logado'] === true) {
-        $_SESSION['ultimo_acesso'] = time();
-        echo json_encode(['success' => true, 'timestamp' => time()]);
-    } else {
-        echo json_encode(['success' => false, 'error' => 'not_logged_in']);
-    }
-    exit;
-}
-
-// ==================== PROCESSAR LOGIN/LOGOUT ====================
+/**
+ * Endpoint: Logout manual
+ * Uso: ?action=logout
+ */
 if (isset($_GET['action']) && $_GET['action'] == 'logout') {
     if (isset($_SESSION['usuario'])) {
         $tempo_ativo = isset($_SESSION['login_time']) ? (time() - $_SESSION['login_time']) : null;
@@ -512,6 +570,10 @@ if (isset($_GET['action']) && $_GET['action'] == 'logout') {
     exit;
 }
 
+/**
+ * Endpoint: Logout automático
+ * Uso: ?action=auto_logout
+ */
 if (isset($_GET['action']) && $_GET['action'] == 'auto_logout') {
     if (isset($_SESSION['usuario'])) {
         $tempo_ativo = isset($_SESSION['login_time']) ? (time() - $_SESSION['login_time']) : null;
@@ -530,27 +592,26 @@ if (isset($_GET['action']) && $_GET['action'] == 'auto_logout') {
     exit;
 }
 
-// ==================== VERIFICAR SE ESTÁ LOGADO (COM EXCEÇÃO PARA ABA DE LOGS) ====================
-// Verificar se é uma requisição AJAX da aba de logs
+// =====================================================================
+// BLOCO 09 - VERIFICAÇÃO DE SESSÃO E TELA DE LOGIN
+// =====================================================================
+
 $isLogAbaRequest = (isset($_GET['aba']) && $_GET['aba'] === 'log') || 
                    (isset($_POST['acao_log'])) ||
                    (isset($_GET['get_log'])) ||
                    (isset($_GET['check_status'])) ||
                    (isset($_GET['api_status']));
 
-// Se não estiver logado, verificar se pode ignorar (aba de logs)
 if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
     
-    // VERIFICAÇÃO ESPECIAL: Se for requisição da aba de logs, NÃO redirecionar
+    // Tratamento especial para aba de logs
     if ($isLogAbaRequest) {
-        // Para requisições AJAX, retornar erro 401
         if (isset($_GET['get_log']) || isset($_GET['check_status']) || isset($_GET['api_status'])) {
             header('HTTP/1.0 401 Unauthorized');
             echo json_encode(['error' => 'Sessão expirada']);
             exit;
         }
         
-        // Se for acesso direto à página, mostrar aviso mas não redirecionar
         if (!isset($_GET['get_log']) && !isset($_GET['check_status'])) {
             ?>
             <!DOCTYPE html>
@@ -581,31 +642,24 @@ if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
         }
     }
     
-    // Se NÃO for requisição da aba de logs, mostrar tela de login normal
+    // Processar login
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['usuario']) && isset($_POST['senha'])) {
-        // ... (manter todo o código de login existente) ...
         $usuarioDB = verificarLogin($_POST['usuario'], $_POST['senha']);
         
         if ($usuarioDB) {
-    $_SESSION['logado'] = true;
-    $_SESSION['usuario'] = $_POST['usuario'];
-    $_SESSION['nome'] = $usuarioDB['nome'];
-    $_SESSION['nivel'] = $usuarioDB['nivel'];
-    $_SESSION['login_time'] = time();
-    $_SESSION['ultimo_acesso'] = time();
-    $_SESSION['ip'] = getRealIp();
-    
-    // Carregar preferência de auto-logout do usuário
-    $preferencias_file = "/var/log/pix_acessos/preferencias_{$_POST['usuario']}.json";
-    if (file_exists($preferencias_file)) {
-        $pref = json_decode(file_get_contents($preferencias_file), true);
-        $_SESSION['auto_logout'] = $pref['auto_logout'] ?? true;
-    } else {
-        $_SESSION['auto_logout'] = true; // Padrão para novo usuário
-    }
-    
-    atualizarUltimoAcesso($_POST['usuario']);
-    registrarLogAcesso($_POST['usuario'], $usuarioDB['nome'], $usuarioDB['nivel'], 'LOGIN');
+            $_SESSION['logado'] = true;
+            $_SESSION['usuario'] = $_POST['usuario'];
+            $_SESSION['nome'] = $usuarioDB['nome'];
+            $_SESSION['nivel'] = $usuarioDB['nivel'];
+            $_SESSION['login_time'] = time();
+            $_SESSION['ultimo_acesso'] = time();
+            $_SESSION['ip'] = getRealIp();
+            
+            // CARREGAR PREFERÊNCIA DE AUTO-LOGOUT DO ARQUIVO usuarios.json
+            $_SESSION['auto_logout'] = $usuarioDB['auto_logout'] ?? true;
+            
+            atualizarUltimoAcesso($_POST['usuario']);
+            registrarLogAcesso($_POST['usuario'], $usuarioDB['nome'], $usuarioDB['nivel'], 'LOGIN');
             
             header('Location: index.php' . (isset($_GET['aba']) ? '?aba=' . $_GET['aba'] : ''));
             exit;
@@ -615,7 +669,7 @@ if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
         }
     }
     
-    // Mostrar tela de login (manter o mesmo código HTML)
+    // Mostrar tela de login
     ?>
     <!DOCTYPE html>
     <html lang="pt-br">
@@ -624,7 +678,6 @@ if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
         <title>Login - Bot WhatsApp</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-            /* (manter todo o CSS existente da tela de login) */
             *{margin:0;padding:0;box-sizing:border-box;font-family:'Arial',sans-serif}
             body{
                 background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
@@ -780,11 +833,7 @@ if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
                 </form>
                 
                 <div style="background:#f8f9fa;padding:15px;border-radius:10px;margin-top:20px;font-size:12px;color:#666;text-align:center">
-                    
                     <p>🛡️ Acesso restrito à equipe autorizada</p>
-                    <p style="margin-top:10px;font-size:11px;color:#999">
-                        
-                    </p>
                 </div>
             </div>
             
@@ -798,20 +847,30 @@ if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
     exit;
 }
 
-// ==================== VERIFICAR EXPIRAÇÃO DA SESSÃO ====================
+// =====================================================================
+// BLOCO 10 - VERIFICAÇÃO DE EXPIRAÇÃO DA SESSÃO
+// =====================================================================
+
 if (!isset($_SESSION['auto_logout'])) {
     $_SESSION['auto_logout'] = true;
 }
 
-// Verificar se é requisição da aba de logs
+// Garantir que ultimo_acesso existe
+if (!isset($_SESSION['ultimo_acesso'])) {
+    $_SESSION['ultimo_acesso'] = time();
+}
+
 $isLogRequest = (isset($_GET['aba']) && $_GET['aba'] === 'log') ||
                 (isset($_GET['get_log'])) ||
                 (isset($_GET['check_status'])) ||
                 (isset($_GET['api_status']));
 
-// SÓ verificar expiração se NÃO for requisição da aba de logs
-if (!$isLogRequest) {
-    if ($_SESSION['auto_logout'] && isset($_SESSION['ultimo_acesso']) && (time() - $_SESSION['ultimo_acesso'] > TEMPO_SESSAO)) {
+// SÓ verificar expiração se NÃO for requisição da aba de logs e se auto-logout estiver ativado
+if (!$isLogRequest && $_SESSION['auto_logout']) {
+    $tempo_sessao_atual = time() - $_SESSION['ultimo_acesso'];
+    
+    if ($tempo_sessao_atual > TEMPO_SESSAO) {
+        // Sessão expirou
         registrarLogAcesso(
             $_SESSION['usuario'] ?? 'desconhecido',
             $_SESSION['nome'] ?? 'N/A',
@@ -826,10 +885,16 @@ if (!$isLogRequest) {
         exit;
     }
 }
-// NOTA: Removemos o else que atualizava o tempo para a aba de logs
-// Agora a aba de logs também vai expirar!
 
-// ==================== PROCESSAR AÇÕES DO DASHBOARD ====================
+// =====================================================================
+// BLOCO 11 - PROCESSAMENTO DE AÇÕES DO DASHBOARD
+// =====================================================================
+
+/**
+ * Ação: Toggle auto-logout
+ * SALVA A PREFERÊNCIA NO ARQUIVO usuarios.json
+ * Uso: ?toggle_autologout=on|off
+ */
 if (isset($_GET['toggle_autologout'])) {
     $novo_status = $_GET['toggle_autologout'] == 'on' ? true : false;
     
@@ -842,22 +907,56 @@ if (isset($_GET['toggle_autologout'])) {
     
     $_SESSION['auto_logout'] = $novo_status;
     
-    // SALVAR PREFERÊNCIA DO USUÁRIO
-    $preferencias_file = "/var/log/pix_acessos/preferencias_{$_SESSION['usuario']}.json";
-    $preferencias = [
-        'auto_logout' => $novo_status,
-        'ultima_alteracao' => date('Y-m-d H:i:s'),
-        'ip_alteracao' => getRealIp()
-    ];
-    file_put_contents($preferencias_file, json_encode($preferencias, JSON_PRETTY_PRINT));
-    
-    // Log adicional para debug
-    error_log("Preferência salva para {$_SESSION['usuario']}: " . ($novo_status ? 'ON' : 'OFF'));
+    // ===== SALVAR NO ARQUIVO usuarios.json =====
+    $usuarios = carregarUsuarios();
+    if (isset($usuarios[$_SESSION['usuario']])) {
+        $usuarios[$_SESSION['usuario']]['auto_logout'] = $novo_status;
+        
+        // Metadados da alteração (opcional)
+        $usuarios[$_SESSION['usuario']]['ultima_alteracao_autologout'] = date('Y-m-d H:i:s');
+        $usuarios[$_SESSION['usuario']]['ip_alteracao_autologout'] = getRealIp();
+        
+        salvarUsuarios($usuarios);
+        error_log("Auto-logout salvo para {$_SESSION['usuario']}: " . ($novo_status ? 'ON' : 'OFF'));
+    }
     
     header('Location: index.php?aba=' . ($abaAtiva ?? 'dashboard'));
     exit;
 }
 
+/**
+ * Ação: Alterar tempo de auto-logout (global)
+ * Uso: POST com alterar_tempo_autologout
+ */
+if (isset($_POST['alterar_tempo_autologout'])) {
+    $novoTempo = intval($_POST['tempo_autologout'] ?? 1800);
+    
+    if ($novoTempo < 60) $novoTempo = 60;
+    if ($novoTempo > 86400) $novoTempo = 86400;
+    
+    if (salvarTempoAutologout($novoTempo)) {
+        $_SESSION['mensagem_tempo'] = "Tempo alterado para " . gmdate("H:i:s", $novoTempo);
+        $_SESSION['tipo_mensagem_tempo'] = 'sucesso';
+        
+        registrarLogAcesso(
+            $_SESSION['usuario'],
+            $_SESSION['nome'],
+            $_SESSION['nivel'],
+            'ALTERAR_TEMPO_AUTOLOGOUT: ' . gmdate("H:i:s", $novoTempo)
+        );
+    } else {
+        $_SESSION['mensagem_tempo'] = "Erro ao alterar tempo";
+        $_SESSION['tipo_mensagem_tempo'] = 'erro';
+    }
+    
+    header('Location: index.php?aba=' . ($abaAtiva ?? 'config'));
+    exit;
+}
+
+/**
+ * Ação: Alterar senha (própria)
+ * Uso: POST com alterar_senha_dashboard
+ */
 if (isset($_POST['alterar_senha_dashboard'])) {
     $resultado = alterarSenha(
         $_SESSION['usuario'],
@@ -881,7 +980,10 @@ if (isset($_POST['alterar_senha_dashboard'])) {
     exit;
 }
 
-// ==================== VARIÁVEIS DO WHATSAPP ====================
+// =====================================================================
+// BLOCO 12 - VARIÁVEIS DO WHATSAPP E CONFIGURAÇÕES
+// =====================================================================
+
 $configPath = '/opt/whatsapp-bot/config.json';
 $statusPath = '/opt/whatsapp-bot/status.json';
 $pixPath = '/var/www/botzap/pix.php';
@@ -891,6 +993,7 @@ $mensagem = '';
 $erro = '';
 $abaAtiva = isset($_GET['aba']) ? $_GET['aba'] : 'config';
 
+// Configurações padrão
 $config = [
     'empresa' => '',
     'menu' => '',
@@ -912,7 +1015,7 @@ $config = [
     'mkauth_client_secret' => ''
 ];
 
-// ==================== CARREGA CONFIG ====================
+// Carregar configurações existentes
 if (file_exists($configPath)) {
     $json = file_get_contents($configPath);
     $data = json_decode($json, true);
@@ -921,7 +1024,10 @@ if (file_exists($configPath)) {
     }
 }
 
-// ==================== POST / REDIRECT ====================
+// =====================================================================
+// BLOCO 13 - PROCESSAMENTO DO FORMULÁRIO DE CONFIGURAÇÃO
+// =====================================================================
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
     $config['empresa'] = trim($_POST['empresa'] ?? '');
     $config['menu'] = trim($_POST['menu'] ?? '');
@@ -942,15 +1048,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
     $config['mkauth_client_id'] = trim($_POST['mkauth_client_id'] ?? '');
     $config['mkauth_client_secret'] = trim($_POST['mkauth_client_secret'] ?? '');
 
+    // Validações
     if ($config['tempo_atendimento_humano'] <= 0) $config['tempo_atendimento_humano'] = 30;
     if ($config['tempo_inatividade_global'] <= 0) $config['tempo_inatividade_global'] = 30;
     
-    $config['feriados_ativos'] = in_array($config['feriados_ativos'], ['Sim', 'Não']) ? $config['feriados_ativos'] : 'Sim';
-    $config['feriado_local_ativado'] = in_array($config['feriado_local_ativado'], ['Sim', 'Não']) ? $config['feriado_local_ativado'] : 'Não';
-    $config['telegram_ativado'] = in_array($config['telegram_ativado'], ['Sim', 'Não']) ? $config['telegram_ativado'] : 'Não';
-    $config['telegram_notificar_conexao'] = in_array($config['telegram_notificar_conexao'], ['Sim', 'Não']) ? $config['telegram_notificar_conexao'] : 'Sim';
-    $config['telegram_notificar_desconexao'] = in_array($config['telegram_notificar_desconexao'], ['Sim', 'Não']) ? $config['telegram_notificar_desconexao'] : 'Sim';
-    $config['telegram_notificar_qr'] = in_array($config['telegram_notificar_qr'], ['Sim', 'Não']) ? $config['telegram_notificar_qr'] : 'Sim';
+    foreach (['feriados_ativos', 'feriado_local_ativado', 'telegram_ativado', 'telegram_notificar_conexao', 'telegram_notificar_desconexao', 'telegram_notificar_qr'] as $campo) {
+        $config[$campo] = in_array($config[$campo], ['Sim', 'Não']) ? $config[$campo] : 'Sim';
+    }
     
     if (empty($config['feriado_local_mensagem'])) {
         $config['feriado_local_mensagem'] = "📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊";
@@ -959,6 +1063,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
     $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 
     if (file_put_contents($configPath, $json) !== false) {
+        // Atualizar pix.php se existir
         if (file_exists($pixPath)) {
             $pixContent = file_get_contents($pixPath);
             
@@ -983,11 +1088,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
             $pixContent = preg_replace('/\$CLIENT_ID\s*=\s*"[^"]*"/', '$CLIENT_ID = "' . $clientId . '"', $pixContent);
             $pixContent = preg_replace('/\$CLIENT_SECRET\s*=\s*"[^"]*"/', '$CLIENT_SECRET = "' . $clientSecret . '"', $pixContent);
             
-            if (file_put_contents($pixPath, $pixContent) !== false) {
-                $mensagem = 'Configurações salvas com sucesso e pix.php atualizado!';
-            } else {
-                $mensagem = 'Configurações salvas, mas erro ao atualizar pix.php!';
-            }
+            file_put_contents($pixPath, $pixContent);
+            $mensagem = 'Configurações salvas com sucesso e pix.php atualizado!';
         } else {
             $mensagem = 'Configurações salvas, mas pix.php não encontrado!';
         }
@@ -999,7 +1101,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
     }
 }
 
-// ==================== TESTE DE CONEXÃO TELEGRAM ====================
+// =====================================================================
+// BLOCO 14 - ENDPOINTS DE TESTE E LOG
+// =====================================================================
+
+/**
+ * Endpoint: Testar Telegram
+ * Uso: ?testar_telegram=1
+ */
 if (isset($_GET['testar_telegram'])) {
     header('Content-Type: application/json');
     
@@ -1042,7 +1151,10 @@ if (isset($_GET['testar_telegram'])) {
     exit;
 }
 
-// ==================== API PARA LOG ====================
+/**
+ * Endpoint: Obter log
+ * Uso: ?get_log=1&linhas=500&buscar=termo
+ */
 if (isset($_GET['get_log'])) {
     header('Content-Type: text/plain');
     
@@ -1060,6 +1172,7 @@ if (isset($_GET['get_log'])) {
     $linhas = isset($_GET['linhas']) ? intval($_GET['linhas']) : 500;
     $buscar = isset($_GET['buscar']) ? $_GET['buscar'] : '';
     
+    // Tail mode
     if (isset($_GET['tail']) && $ultimoTamanho > 0) {
         $tamanhoAtual = filesize($logPath);
         
@@ -1085,6 +1198,7 @@ if (isset($_GET['get_log'])) {
         exit;
     }
     
+    // Modo normal
     $conteudo = file_get_contents($logPath);
     if ($conteudo === false) {
         echo "Erro ao ler arquivo de log";
@@ -1112,44 +1226,43 @@ if (isset($_GET['get_log'])) {
     exit;
 }
 
-// ==================== MANIPULAÇÃO DO LOG ====================
-if (isset($_POST['acao_log'])) {
-    if ($_POST['acao_log'] === 'limpar' && file_exists($logPath)) {
-        if (is_writable($logPath)) {
-            if (file_put_contents($logPath, "=== Log reiniciado em " . date('d/m/Y H:i:s') . " ===\n") !== false) {
-                $mensagem = 'Log limpo com sucesso!';
-            } else {
-                $erro = 'Erro ao limpar o arquivo de log!';
-            }
+/**
+ * Ação: Limpar log
+ * Uso: POST com acao_log=limpar
+ */
+if (isset($_POST['acao_log']) && $_POST['acao_log'] === 'limpar' && file_exists($logPath)) {
+    if (is_writable($logPath)) {
+        if (file_put_contents($logPath, "=== Log reiniciado em " . date('d/m/Y H:i:s') . " ===\n") !== false) {
+            $mensagem = 'Log limpo com sucesso!';
         } else {
-            $erro = 'Arquivo de log sem permissão de escrita!';
+            $erro = 'Erro ao limpar o arquivo de log!';
         }
-    } elseif ($_POST['acao_log'] === 'atualizar') {
-        header('Location: index.php?aba=log');
-        exit;
+    } else {
+        $erro = 'Arquivo de log sem permissão de escrita!';
     }
 }
 
-// ==================== MENSAGEM ====================
-if (isset($_GET['salvo']) && $_GET['salvo'] == 1) {
-    if (empty($mensagem)) $mensagem = 'Configurações salvas com sucesso!';
-}
+// =====================================================================
+// BLOCO 15 - STATUS DO WHATSAPP
+// =====================================================================
 
-// ==================== STATUS ====================
 $status = 'offline';
 if (file_exists($statusPath)) {
     $st = json_decode(file_get_contents($statusPath), true);
     if (!empty($st['status'])) $status = $st['status'];
 }
 
-// ==================== API SIMPLES PARA VERIFICAÇÃO ====================
+/**
+ * Endpoint: API de status
+ * Uso: ?check_status=1 ou ?api_status=1
+ */
 if (isset($_GET['check_status']) || isset($_GET['api_status'])) {
     header('Content-Type: text/plain');
     echo $status;
     exit;
 }
 
-// ==================== IMAGEM CONFORME STATUS ====================
+// Imagem conforme status
 $imgSrc = 'qrcode_view.php';
 if ($status === 'online') {
     $imgSrc = '/qrcode_online.png';
@@ -1157,9 +1270,11 @@ if ($status === 'online') {
     $imgSrc = '/qrcode_wait.png';
 }
 
-// ==================== FORMATAÇÃO DO TELEFONE ====================
-$telefone_formatado = '(xx)xxxx-xxxx';
+// =====================================================================
+// BLOCO 16 - FORMATAÇÃO DO TELEFONE
+// =====================================================================
 
+$telefone_formatado = '(xx)xxxx-xxxx';
 if (!empty($config['atendente_numero'])) {
     $numero_limpo = preg_replace('/[^0-9]/', '', $config['atendente_numero']);
     $codigo_pais = '';
@@ -1220,42 +1335,17 @@ if (!empty($config['atendente_numero'])) {
 
 $nome_empresa = !empty($config['empresa']) ? $config['empresa'] : 'PROVEDOR';
 
-// ==================== FUNÇÕES DO DASHBOARD PIX ====================
-function contarDia($data) {
-    $arquivo = "/var/log/pix_acessos/pix_log_$data.log";
-    
-    if (!file_exists($arquivo)) {
-        return 0;
-    }
-    
-    $linhas = file($arquivo, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    return $linhas ? count($linhas) : 0;
+// =====================================================================
+// BLOCO 17 - MENSAGEM DE SUCESSO
+// =====================================================================
+
+if (isset($_GET['salvo']) && $_GET['salvo'] == 1) {
+    if (empty($mensagem)) $mensagem = 'Configurações salvas com sucesso!';
 }
 
-function listarDiasDisponiveis() {
-    $dias = [];
-    $logDir = '/var/log/pix_acessos/';
-    
-    if (!is_dir($logDir)) {
-        return [date('Y-m-d')];
-    }
-    
-    $arquivos = glob($logDir . "pix_log_*.log");
-    
-    foreach ($arquivos as $arquivo) {
-        if (preg_match('/pix_log_(\d{4}-\d{2}-\d{2})\.log$/', $arquivo, $matches)) {
-            $dias[] = $matches[1];
-        }
-    }
-    
-    $hoje = date('Y-m-d');
-    if (!in_array($hoje, $dias)) {
-        $dias[] = $hoje;
-    }
-    
-    rsort($dias);
-    return $dias;
-}
+// =====================================================================
+// BLOCO 18 - INÍCIO DO HTML
+// =====================================================================
 ?>
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -1264,7 +1354,7 @@ function listarDiasDisponiveis() {
 <title>Bot WhatsApp – <?= htmlspecialchars($nome_empresa) ?> <?= htmlspecialchars($telefone_formatado) ?></title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<!-- Service Worker para auto-logout em segundo plano -->
+<!-- Service Worker -->
 <script>
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function() {
@@ -1411,10 +1501,6 @@ textarea { height:110px; resize:vertical; }
     display: flex;
     align-items: center;
     gap: 8px;
-}
-
-.config-section h3 i {
-    font-size: 18px;
 }
 
 button {
@@ -2198,13 +2284,19 @@ tr:hover{ background:#f9f9f9; }
         <a href="?aba=config" class="tab <?= $abaAtiva === 'config' ? 'active' : '' ?>">⚙️ Configurações</a>
         <a href="?aba=log" class="tab <?= $abaAtiva === 'log' ? 'active' : '' ?>">📋 Exibir Log</a>
         <a href="?aba=dashboard" class="tab <?= $abaAtiva === 'dashboard' ? 'active' : '' ?>">📊 Dashboard PIX</a>
+        <?php if ($_SESSION['nivel'] === 'admin'): ?>
+        <a href="?aba=usuarios" class="tab <?= $abaAtiva === 'usuarios' ? 'active' : '' ?>">👥 Usuários</a>
+        <?php endif; ?>
     </div>
 </div>
 
-<?php if ($abaAtiva === 'config'): ?>
-<!-- ==================== ABA CONFIGURAÇÕES ==================== -->
-<div class="container">
+<!-- ===================================================================== -->
+<!-- BLOCO 19 - CONTEÚDO DA ABA CONFIGURAÇÕES (CORRIGIDO COM TODAS AS DICAS)
+<!-- ===================================================================== -->
 
+<?php if ($abaAtiva === 'config'): ?>
+
+<div class="container">
     <div class="card qr-box">
         <h2>Status do WhatsApp</h2>
         <img id="qrImg" src="<?= $imgSrc ?>" alt="Status WhatsApp">
@@ -2336,17 +2428,17 @@ tr:hover{ background:#f9f9f9; }
                 </div>
             </div>
 
-            <!-- SEÇÃO: Configurações do Telegram -->
+            <!-- SEÇÃO: Configurações do Telegram - COMPLETA COM TODAS AS DICAS -->
             <div class="config-section" style="border-left-color: #0088cc;">
                 <h3>
                     <span>📱</span> Configurações do Telegram
                 </h3>
-                <p style="margin-top: 0; font-size: 14px; color: #6b7280;">
+                <p style="margin-top: 0; font-size: 14px; color: #6b7280; margin-bottom: 20px;">
                     Receba notificações sobre o status do bot diretamente no Telegram
                 </p>
                 
                 <label>🤖 Ativar notificações por Telegram?</label>
-                <div class="radio-group" style="margin-bottom: 15px;">
+                <div class="radio-group" style="margin-bottom: 20px;">
                     <label class="radio-option">
                         <input type="radio" name="telegram_ativado" value="Sim" 
                             <?= (isset($config['telegram_ativado']) && $config['telegram_ativado'] === 'Sim') ? 'checked' : '' ?>>
@@ -2365,9 +2457,10 @@ tr:hover{ background:#f9f9f9; }
                     name="telegram_token" 
                     value="<?= htmlspecialchars($config['telegram_token'] ?? '') ?>"
                     placeholder="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
+                    style="margin-bottom: 5px;"
                 >
-                <small style="color: #6b7280; font-size: 12px;">
-                    Obtenha com <a href="https://t.me/BotFather" target="_blank">@BotFather</a> no Telegram
+                <small style="display: block; margin-bottom: 15px; color: #6b7280; font-size: 12px;">
+                    Obtenha com <a href="https://t.me/BotFather" target="_blank" style="color: #0088cc;">@BotFather</a> no Telegram
                 </small>
 
                 <label>👤 Chat ID (ou Canal):</label>
@@ -2376,111 +2469,134 @@ tr:hover{ background:#f9f9f9; }
                     name="telegram_chat_id" 
                     value="<?= htmlspecialchars($config['telegram_chat_id'] ?? '-1003032257081') ?>"
                     placeholder="-1001234567890 ou 123456789"
+                    style="margin-bottom: 5px;"
                 >
-                <small style="color: #6b7280; font-size: 12px;">
-                    Obtenha com <a href="https://t.me/userinfobot" target="_blank">@userinfobot</a> no Telegram
+                <small style="display: block; margin-bottom: 20px; color: #6b7280; font-size: 12px;">
+                    Obtenha com <a href="https://t.me/userinfobot" target="_blank" style="color: #0088cc;">@userinfobot</a> no Telegram
                 </small>
 
-                <div style="margin-top: 15px; background: #f0f9ff; padding: 15px; border-radius: 8px;">
-                    <label style="margin-top: 0; margin-bottom: 10px; display: block; font-weight: 600;">🔔 Notificações a enviar:</label>
+                <!-- Área de notificações -->
+                <div style="background: #f0f9ff; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 15px; font-weight: 600; color: #1f2937;">
+                        🔔 Notificações a enviar:
+                    </label>
                     
-                    <div style="display: flex; flex-direction: column; gap: 8px;">
-                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                    <div style="display: flex; flex-direction: column; gap: 12px;">
+                        <!-- Checkbox 1 -->
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; width: 100%;">
                             <input type="checkbox" name="telegram_notificar_conexao" value="Sim" 
                                 <?= (isset($config['telegram_notificar_conexao']) && $config['telegram_notificar_conexao'] === 'Sim') ? 'checked' : '' ?>
-                                style="margin: 0; width: 16px; height: 16px;">
-                            <span>✅ Quando conectar</span>
+                                style="width: 18px; height: 18px; margin: 0; flex-shrink: 0;">
+                            <span style="font-size: 14px; line-height: 1.4;">✅ Quando conectar</span>
                         </label>
                         
-                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                        <!-- Checkbox 2 -->
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; width: 100%;">
                             <input type="checkbox" name="telegram_notificar_desconexao" value="Sim" 
                                 <?= (isset($config['telegram_notificar_desconexao']) && $config['telegram_notificar_desconexao'] === 'Sim') ? 'checked' : '' ?>
-                                style="margin: 0; width: 16px; height: 16px;">
-                            <span>❌ Quando desconectar</span>
+                                style="width: 18px; height: 18px; margin: 0; flex-shrink: 0;">
+                            <span style="font-size: 14px; line-height: 1.4;">❌ Quando desconectar</span>
                         </label>
                         
-                        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                        <!-- Checkbox 3 -->
+                        <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; width: 100%;">
                             <input type="checkbox" name="telegram_notificar_qr" value="Sim" 
                                 <?= (isset($config['telegram_notificar_qr']) && $config['telegram_notificar_qr'] === 'Sim') ? 'checked' : '' ?>
-                                style="margin: 0; width: 16px; height: 16px;">
-                            <span>📱 Quando QR Code for gerado</span>
+                                style="width: 18px; height: 18px; margin: 0; flex-shrink: 0;">
+                            <span style="font-size: 14px; line-height: 1.4;">📱 Quando QR Code for gerado</span>
                         </label>
                     </div>
                 </div>
-                <button type="button" onclick="testarTelegram()" style="margin-top: 15px; background: #28a745;">
-                    📤 Testar Conexão Telegram
-                </button>
-                <div id="telegramTestResult" style="margin-top: 10px; font-size: 13px;"></div>
+
+                <!-- Botão de teste -->
+                <div style="text-align: center; margin-top: 10px; margin-bottom: 5px;">
+                    <button type="button" onclick="testarTelegram()" style="background: #28a745; padding: 12px 25px; font-size: 15px; display: inline-flex; align-items: center; gap: 8px; margin: 0;">
+                        📤 Testar Conexão Telegram
+                    </button>
+                </div>
+                
+                <!-- Área de resultado do teste -->
+                <div id="telegramTestResult" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 13px; text-align: center;"></div>
             </div>
 
-            <!-- SEÇÃO: Configurações MK-Auth -->
-            <div class="config-section" style="border-left-color: #3b82f6; margin-top: 20px;">
-                <h3>
-                    <span>🔐</span> Configurações MK-Auth (Verificação de Clientes)
-                </h3>
-                <p style="margin-top: 0; font-size: 14px; color: #6b7280; margin-bottom: 20px;">
-                    Configurações para verificação de CPF/CNPJ na base de clientes antes de gerar link PIX
-                </p>
+<!-- SEÇÃO: Configurações MK-Auth - COMPLETA COM TODAS AS DICAS E OLHINHO -->
+<div class="config-section" style="border-left-color: #3b82f6; margin-top: 20px;">
+    <h3>
+        <span>🔐</span> Configurações MK-Auth (Verificação de Clientes)
+    </h3>
+    <p style="margin-top: 0; font-size: 14px; color: #6b7280; margin-bottom: 20px;">
+        Configurações para verificação de CPF/CNPJ na base de clientes antes de gerar link PIX
+    </p>
 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">URL do MK-Auth</label>
-                    <input 
-                        type="url" 
-                        name="mkauth_url" 
-                        value="<?= htmlspecialchars($config['mkauth_url']) ?>"
-                        placeholder="https://www.SEU_DOMINIO.com.br/api"
-                        style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px;"
-                    >
-                    <small style="display: block; margin-top: 5px; color: #6b7280; font-size: 12px;">
-                        URL base do sistema MK-Auth (deve terminar com / se for API completa)
-                    </small>
-                </div>
+    <div style="margin-bottom: 20px;">
+        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">URL do MK-Auth</label>
+        <input 
+            type="url" 
+            name="mkauth_url" 
+            value="<?= htmlspecialchars($config['mkauth_url']) ?>"
+            placeholder="https://www.SEU_DOMINIO.com.br/api"
+            style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; margin-bottom: 5px;"
+        >
+        <small style="display: block; margin-top: 5px; color: #6b7280; font-size: 12px;">
+            URL base do sistema MK-Auth (deve terminar com / se for API completa)
+        </small>
+    </div>
 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">Client ID</label>
-                    <input 
-                        type="text" 
-                        name="mkauth_client_id" 
-                        value="<?= htmlspecialchars($config['mkauth_client_id']) ?>"
-                        placeholder="c582c8ede2c9169c64f29cxxxxxxxxxx"
-                        style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px;"
-                    >
-                    <small style="display: block; margin-top: 5px; color: #6b7280; font-size: 12px;">
-                        Identificador do cliente para autenticação na API
-                    </small>
-                </div>
+    <div style="margin-bottom: 20px;">
+        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">Client ID</label>
+        <input 
+            type="text" 
+            name="mkauth_client_id" 
+            value="<?= htmlspecialchars($config['mkauth_client_id']) ?>"
+            placeholder="c582c8ede2c9169c64f29cxxxxxxxxxx"
+            style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; margin-bottom: 5px;"
+        >
+        <small style="display: block; margin-top: 5px; color: #6b7280; font-size: 12px;">
+            Identificador do cliente para autenticação na API
+        </small>
+    </div>
 
-                <div style="margin-bottom: 20px;">
-                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">Client Secret</label>
-                    <input 
-                        type="password" 
-                        name="mkauth_client_secret" 
-                        value="<?= htmlspecialchars($config['mkauth_client_secret']) ?>"
-                        placeholder="9d2367fbf45d2e89d8ee8cb92ca3c0xxxxxxxxxx"
-                        style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px;"
-                    >
-                    <small style="display: block; margin-top: 5px; color: #6b7280; font-size: 12px;">
-                        Senha de acesso à API (chave secreta)
-                    </small>
-                </div>
+    <div style="margin-bottom: 20px;">
+        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">Client Secret</label>
+        <div style="display: flex; align-items: center; gap: 10px; width: 100%;">
+            <input 
+                type="password" 
+                name="mkauth_client_secret" 
+                id="mkauth_client_secret"
+                value="<?= htmlspecialchars($config['mkauth_client_secret']) ?>"
+                placeholder="9d2367fbf45d2e89d8ee8cb92ca3c0xxxxxxxxxx"
+                style="flex: 1; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; margin: 0;"
+            >
+            <button 
+                type="button" 
+                onclick="toggleClientSecretVisibility()"
+                style="background: #f0f0f0; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer; font-size: 18px; padding: 10px 15px; height: 42px; display: flex; align-items: center; justify-content: center; margin: 0;"
+                title="Mostrar/Esconder Client Secret"
+            >
+                👁️
+            </button>
+        </div>
+        <small style="display: block; margin-top: 5px; color: #6b7280; font-size: 12px;">
+            Senha de acesso à API (chave secreta)
+        </small>
+    </div>
 
-                <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 8px; font-size: 13px; margin-top: 15px;">
-                    <p style="margin: 0 0 8px 0; color: #92400e; font-weight: 600;">⚠️ Importante:</p>
-                    <ul style="margin: 0; padding-left: 20px; color: #92400e;">
-                        <li>As credenciais MK-Auth serão sincronizadas automaticamente com o arquivo pix.php</li>
-                        <li>Se as credenciais não forem configuradas, o bot NÃO permitirá acesso direto ao PIX</li>
-                        <li>Configure corretamente para filtrar apenas clientes da base</li>
-                    </ul>
-                </div>
-            </div>
+    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 8px; font-size: 13px; margin-top: 15px;">
+        <p style="margin: 0 0 8px 0; color: #92400e; font-weight: 600;">⚠️ Importante:</p>
+        <ul style="margin: 0; padding-left: 20px; color: #92400e;">
+            <li>As credenciais MK-Auth serão sincronizadas automaticamente com o arquivo pix.php</li>
+            <li>Se as credenciais não forem configuradas, o bot NÃO permitirá acesso direto ao PIX</li>
+            <li>Configure corretamente para filtrar apenas clientes da base</li>
+        </ul>
+    </div>
+</div>
 
             <button type="submit" style="margin-top:20px; padding:12px 18px; background:#2563eb; color:white; border:none; border-radius:10px; font-weight:bold; cursor:pointer; width:100%; font-size:16px;">
                 💾 Salvar Configurações Globais
             </button>
         </form>
-        <!-- FIM DO FORMULÁRIO PRINCIPAL -->
 
-        <!-- FORMULÁRIO DE AUTO-LOGOUT (SEPARADO) -->
+        <!-- FORMULÁRIO DE AUTO-LOGOUT -->
         <div class="config-section" style="border-left-color: #f39c12; margin-top: 20px;">
             <h3><span>⏰</span> Configurações de Auto-Logout</h3>
             
@@ -2531,20 +2647,23 @@ tr:hover{ background:#f9f9f9; }
                 </div>
             </form>
         </div>
-
-    </div> <!-- FIM DA CARD -->
-</div> <!-- FIM DA CONTAINER -->
+    </div>
+</div>
 
 <!-- Timer para aba de Configurações -->
-<?php if ($abaAtiva === 'config' && $_SESSION['auto_logout']): ?>
+<?php if ($_SESSION['auto_logout']): ?>
 <div class="session-timer" id="sessionTimer" style="bottom: 10px; left: 10px;">
     <div style="font-size: 10px; opacity: 0.8;">Auto-logout em:</div>
     <div style="font-size: 14px; font-weight: bold;" id="sessionTime"><?= gmdate("H:i:s", TEMPO_SESSAO) ?></div>
 </div>
 <?php endif; ?>
 
+<!-- ===================================================================== -->
+<!-- BLOCO 20 - CONTEÚDO DA ABA LOG
+<!-- ===================================================================== -->
+
 <?php elseif ($abaAtiva === 'log'): ?>
-<!-- ==================== ABA LOG (SEM AUTO-LOGOUT) ==================== -->
+
 <div class="tabs-container">
     <div class="terminal-container">
         <div class="terminal-header">
@@ -2587,7 +2706,7 @@ tr:hover{ background:#f9f9f9; }
             </div>
         </div>
         
-        <!-- ==================== CONTROLE DE AUTO-LOGOUT NA ABA DE LOGS ==================== -->
+        <!-- Controle de auto-logout na aba de logs -->
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 15px; border-top: 1px solid #2d3748;">
             <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
                 <div style="display: flex; align-items: center; gap: 10px;">
@@ -2595,7 +2714,6 @@ tr:hover{ background:#f9f9f9; }
                     <button 
                         onclick="toggleLogAutoLogout()" 
                         id="logAutoLogoutBtn"
-                        class="log-auto-logout-btn"
                         style="background: <?= $_SESSION['auto_logout'] ? '#27ae60' : '#95a5a6' ?>; color: white; border: none; border-radius: 20px; padding: 5px 15px; font-size: 12px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px; margin: 0;"
                     >
                         <span class="status-dot" style="background: white; width: 8px; height: 8px; border-radius: 50%;"></span>
@@ -2611,24 +2729,21 @@ tr:hover{ background:#f9f9f9; }
                 <span>💡 Clique para ativar/desativar o auto-logout nesta aba</span>
             </div>
         </div>
+    </div>
+</div>
 
 <script>
-// ==================== ABA DE LOGS - ESCOPO ISOLADO ====================
+// Script da aba de logs
 (function() {
-    // ==================== VARIÁVEIS DO LOG ====================
     let autoRefreshInterval;
     let ultimoTamanhoArquivo = 0;
     let buscandoAtivo = false;
     let linhasSelecionadas = 500;
     let buscaAtiva = '';
-
-    // ==================== VARIÁVEIS DO AUTO-LOGOUT ====================
     let logTimerEnabled = true;
     let logTimerInterval;
     let logSessionTimeLeft = <?= TEMPO_SESSAO ?>;
     const globalAutoLogout = <?= $_SESSION['auto_logout'] ? 'true' : 'false' ?>;
-
-    // ==================== WAKE LOCK ====================
     let wakeLock = null;
 
     async function ativarWakeLock() {
@@ -2636,45 +2751,24 @@ tr:hover{ background:#f9f9f9; }
             try {
                 wakeLock = await navigator.wakeLock.request('screen');
                 console.log('✅ Tela será mantida ativa');
-                
                 wakeLock.addEventListener('release', () => {
-                    console.log('📴 Wake lock liberado - tela pode desligar');
+                    console.log('📴 Wake lock liberado');
                 });
             } catch (err) {
                 console.error(`❌ Erro ao ativar wake lock: ${err.message}`);
             }
-        } else {
-            console.log('⚠️ Navegador não suporta manter tela ativa');
         }
     }
 
     function desativarWakeLock() {
         if (wakeLock !== null) {
-            wakeLock.release()
-                .then(() => {
-                    wakeLock = null;
-                    console.log('✅ Wake lock desativado');
-                });
+            wakeLock.release().then(() => {
+                wakeLock = null;
+                console.log('✅ Wake lock desativado');
+            });
         }
     }
 
-    // ==================== CORES DO TERMINAL ====================
-    const coresTerminal = {
-        fundo: '#0C0C0C',
-        texto: '#CCCCCC',
-        timestamp: '#7CFC00',
-        verdeFluor: '#7CFC00',
-        verdeClaro: '#90EE90',
-        azul: '#5C5CFF',
-        amarelo: '#FFFF00',
-        laranja: '#FFA500',
-        vermelho: '#FF5F5F',
-        ciano: '#00FFFF',
-        magenta: '#FF77FF',
-        cinza: '#888888'
-    };
-
-    // ==================== FUNÇÕES DE FORMATAÇÃO DE TEMPO ====================
     function formatTime(seconds) {
         if (seconds === '∞') return '∞';
         const hours = Math.floor(seconds / 3600);
@@ -2687,7 +2781,6 @@ tr:hover{ background:#f9f9f9; }
         ].join(':');
     }
 
-    // ==================== FUNÇÕES DO AUTO-LOGOUT ====================
     function updateLogAutoLogoutUI() {
         const btn = document.getElementById('logAutoLogoutBtn');
         const status = document.getElementById('logAutoLogoutStatus');
@@ -2713,39 +2806,25 @@ tr:hover{ background:#f9f9f9; }
         
         if (logTimerEnabled) {
             timerDiv.style.display = 'flex';
+            timeElement.textContent = formatTime(logSessionTimeLeft);
             
-            if (typeof logSessionTimeLeft === 'number') {
-                timeElement.textContent = formatTime(logSessionTimeLeft);
-                
-                if (logSessionTimeLeft < 300) {
-                    timerDiv.style.background = 'rgba(231, 76, 60, 0.9)';
-                    timerDiv.style.borderColor = '#c0392b';
-                    timeElement.style.color = '#fff';
-                    timerDiv.style.boxShadow = '0 0 15px rgba(231, 76, 60, 0.5)';
-                } else if (logSessionTimeLeft < 600) {
-                    timerDiv.style.background = 'rgba(241, 196, 15, 0.9)';
-                    timerDiv.style.borderColor = '#f39c12';
-                    timeElement.style.color = '#000';
-                    timerDiv.style.boxShadow = '0 0 15px rgba(241, 196, 15, 0.5)';
-                } else {
-                    timerDiv.style.background = 'rgba(46, 204, 113, 0.9)';
-                    timerDiv.style.borderColor = '#27ae60';
-                    timeElement.style.color = '#fff';
-                    timerDiv.style.boxShadow = '0 0 15px rgba(46, 204, 113, 0.5)';
-                }
-            } else {
-                timeElement.textContent = '∞';
-                timerDiv.style.background = 'rgba(155, 89, 182, 0.9)';
-                timerDiv.style.borderColor = '#8e44ad';
-                timeElement.style.color = '#fff';
-                timerDiv.style.boxShadow = '0 0 15px rgba(155, 89, 182, 0.5)';
-            }
+            if (logSessionTimeLeft < 60) {  // 1 minuto - VERMELHO
+                timerDiv.style.background = 'rgba(231, 76, 60, 0.9)';
+                timerDiv.style.borderColor = '#c0392b';
+            } else if (logSessionTimeLeft < 300) {  // 5 minutos - AMARELO
+                timerDiv.style.background = 'rgba(241, 196, 15, 0.9)';
+                timerDiv.style.borderColor = '#f39c12';
+                timeElement.style.color = '#000';
+            } else {  // VERDE
+                timerDiv.style.background = 'rgba(46, 204, 113, 0.9)';
+                timerDiv.style.borderColor = '#27ae60';
+            }       
         } else {
             timerDiv.style.display = 'none';
         }
     }
 
-    function toggleLogAutoLogout() {
+    window.toggleLogAutoLogout = function() {
         if (!globalAutoLogout) {
             alert('⚠️ Ative o auto-logout global primeiro!');
             return;
@@ -2758,7 +2837,6 @@ tr:hover{ background:#f9f9f9; }
             logSessionTimeLeft = <?= TEMPO_SESSAO ?>;
             localStorage.setItem('logTimeLeft', logSessionTimeLeft);
             if (!logTimerInterval) startLogTimer();
-            showNotification('✅ Auto-logout ATIVADO nesta aba');
         } else {
             logSessionTimeLeft = '∞';
             localStorage.removeItem('logTimeLeft');
@@ -2766,11 +2844,10 @@ tr:hover{ background:#f9f9f9; }
                 clearInterval(logTimerInterval);
                 logTimerInterval = null;
             }
-            showNotification('⏸️ Auto-logout DESATIVADO nesta aba');
         }
         
         updateLogAutoLogoutUI();
-    }
+    };
 
     function startLogTimer() {
         if (logTimerInterval) clearInterval(logTimerInterval);
@@ -2786,7 +2863,6 @@ tr:hover{ background:#f9f9f9; }
                 logTimerInterval = null;
                 localStorage.removeItem('logAutoLogout');
                 localStorage.removeItem('logTimeLeft');
-                
                 alert('⏰ Sessão expirada por inatividade!');
                 window.location.href = 'index.php?expired=true';
                 return;
@@ -2802,106 +2878,6 @@ tr:hover{ background:#f9f9f9; }
             localStorage.setItem('logTimeLeft', logSessionTimeLeft);
             updateLogAutoLogoutUI();
         }
-    }
-
-    // ==================== FUNÇÕES DE NOTIFICAÇÃO ====================
-    function showNotification(message) {
-        const notification = document.createElement('div');
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: #2d3748;
-            color: #7CFC00;
-            padding: 15px 20px;
-            border-radius: 8px;
-            border: 1px solid #7CFC00;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-            z-index: 9999;
-            font-family: 'Courier New', monospace;
-            font-size: 14px;
-            animation: slideIn 0.3s ease-out;
-        `;
-        notification.textContent = message;
-        
-        document.body.appendChild(notification);
-        
-        setTimeout(() => {
-            notification.style.animation = 'slideOut 0.3s ease-out';
-            setTimeout(() => notification.remove(), 300);
-        }, 3000);
-    }
-
-    // Adicionar CSS para as animações
-    const style = document.createElement('style');
-    style.textContent = `
-        @keyframes slideIn {
-            from { transform: translateX(100%); opacity: 0; }
-            to { transform: translateX(0); opacity: 1; }
-        }
-        @keyframes slideOut {
-            from { transform: translateX(100%); opacity: 1; }
-            to { transform: translateX(0); opacity: 0; }
-        }
-    `;
-    document.head.appendChild(style);
-
-    // ==================== FUNÇÕES DO LOG ====================
-    function formatarLog(conteudo) {
-        if (!conteudo || conteudo.includes('Nenhuma entrada')) {
-            return '<div style="color: ' + coresTerminal.cinza + '; text-align: center; padding: 20px;">📭 Nenhuma entrada no log</div>';
-        }
-        
-        let linhas = conteudo.split('\n');
-        if (linhas[0] && linhas[0].startsWith('=== METADATA:')) {
-            linhas = linhas.slice(1);
-        }
-        
-        linhas = linhas.filter(linha => linha.trim() !== '');
-        
-        return linhas.map(linha => {
-            let linhaEscapada = linha
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;')
-                .replace(/'/g, '&#039;');
-            
-            linhaEscapada = linhaEscapada.replace(
-                /\[(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2})\]/g,
-                '<span class="timestamp">[$1]</span>'
-            );
-            
-            linhaEscapada = linhaEscapada.replace(
-                /\[(\d{2}\/\d{2}\/\d{4} \d{2}:\d{2})\]/g,
-                '<span class="timestamp">[$1]</span>'
-            );
-            
-            linhaEscapada = linhaEscapada.replace(
-                /(\d{11,13}@s\.whatsapp\.net|\d{10,13})/g,
-                '<span class="phone">$1</span>'
-            );
-            
-            linhaEscapada = linhaEscapada
-                .replace(/(✅|✔️|sucesso|enviado|válido|encontrado|sucesso\!)/gi, 
-                    '<span class="success">$1</span>')
-                .replace(/(❌|erro|falha|inválido|não encontrado|falhou)/gi, 
-                    '<span class="error">$1</span>')
-                .replace(/(📨|📥|📤|📋|📊|📄|📅)/g, 
-                    '<span class="emoji">$1</span>')
-                .replace(/(🔍|🔢|ℹ️|⚠️|⚡|💠|🔐)/g, 
-                    '<span class="info">$1</span>')
-                .replace(/(✅|✔️)/g, 
-                    '<span class="success">$1</span>');
-            
-            linhaEscapada = linhaEscapada
-                .replace(/(menu|aguardando_cpf|pos_pix|atendimento_humano)/gi,
-                    '<span style="color: ' + coresTerminal.magenta + ';">$1</span>')
-                .replace(/(PIX|BOLETO|FATURA)/g,
-                    '<span style="color: ' + coresTerminal.laranja + '; font-weight: bold;">$1</span>');
-            
-            return `<div class="log-line" style="color: ${coresTerminal.texto};">${linhaEscapada}</div>`;
-        }).join('');
     }
 
     function extrairMetadata(conteudo) {
@@ -2969,8 +2945,11 @@ tr:hover{ background:#f9f9f9; }
                 const conteudoReal = metadata.conteudo;
                 
                 if (!forcarCompleto && ultimoTamanhoArquivo > 0 && buscaAtiva === '' && conteudoReal.trim()) {
-                    const linhasNovas = formatarLog(conteudoReal);
-                    if (linhasNovas && !linhasNovas.includes('Nenhuma entrada')) {
+                    const linhasNovas = conteudoReal.split('\n').filter(l => l.trim() !== '').map(linha => 
+                        `<div class="log-line">${linha}</div>`
+                    ).join('');
+                    
+                    if (linhasNovas) {
                         if (terminal.innerHTML.includes('Nenhuma entrada') || terminal.innerHTML.trim() === '') {
                             terminal.innerHTML = linhasNovas;
                         } else {
@@ -2981,39 +2960,39 @@ tr:hover{ background:#f9f9f9; }
                         }
                     }
                 } else {
-                    if (!conteudoReal.trim() || conteudoReal.includes('Nenhuma entrada')) {
-                        terminal.innerHTML = '<div style="color: ' + coresTerminal.cinza + '; text-align: center; padding: 20px;">📭 Nenhuma entrada no log</div>';
+                    const linhasFormatadas = conteudoReal.split('\n').filter(l => l.trim() !== '').map(linha => 
+                        `<div class="log-line">${linha}</div>`
+                    ).join('');
+                    
+                    terminal.innerHTML = linhasFormatadas || '<div style="color: #888; text-align: center; padding: 20px;">📭 Nenhuma entrada no log</div>';
+                    
+                    if (ultimoTamanhoArquivo === 0 || buscaAtiva !== '') {
+                        terminal.scrollTop = terminal.scrollHeight;
                     } else {
-                        terminal.innerHTML = formatarLog(conteudoReal);
-                        if (ultimoTamanhoArquivo === 0 || buscaAtiva !== '') {
-                            terminal.scrollTop = terminal.scrollHeight;
-                        } else {
-                            terminal.scrollTop = scrollPos;
-                        }
+                        terminal.scrollTop = scrollPos;
                     }
                 }
                 
                 ultimoTamanhoArquivo = tamanhoAtual;
                 
-                const linhasVisiveis = terminal.querySelectorAll('.log-line').length;
                 const linhasCountEl = document.getElementById('linhasCount');
                 const tamanhoLogEl = document.getElementById('tamanhoLog');
                 const dataAtualizacaoEl = document.getElementById('dataAtualizacao');
                 
-                if (linhasCountEl) linhasCountEl.textContent = linhasVisiveis;
+                if (linhasCountEl) linhasCountEl.textContent = terminal.querySelectorAll('.log-line').length;
                 if (tamanhoLogEl) tamanhoLogEl.textContent = Math.round(tamanhoAtual / 1024) + ' KB';
                 if (dataAtualizacaoEl) dataAtualizacaoEl.textContent = new Date().toLocaleTimeString('pt-BR');
             })
             .catch(error => {
                 console.error('Erro:', error);
                 buscandoAtivo = false;
-                terminal.innerHTML = `<div style="color: ${coresTerminal.vermelho}; text-align: center; padding: 20px;">❌ Erro ao carregar log: ${error.message}</div>`;
+                terminal.innerHTML = `<div style="color: #FF5F5F; text-align: center; padding: 20px;">❌ Erro ao carregar log: ${error.message}</div>`;
             });
     }
 
-    function atualizarLog() {
+    window.atualizarLog = function() {
         carregarLog(true);
-    }
+    };
 
     function toggleAutoRefresh() {
         if (autoRefreshInterval) {
@@ -3023,20 +3002,13 @@ tr:hover{ background:#f9f9f9; }
         
         const autoRefresh = document.getElementById('autoRefresh');
         if (autoRefresh && autoRefresh.checked) {
-            autoRefreshInterval = setInterval(() => {
-                carregarLog(false);
-            }, 2000);
+            autoRefreshInterval = setInterval(() => carregarLog(false), 2000);
         }
     }
 
-    function confirmarLimparLog() {
-        if (!confirm('⚠️ ATENÇÃO: Deseja realmente LIMPAR TODO o arquivo de log?\n\nEsta ação é PERMANENTE e não pode ser desfeita!')) {
-            return;
-        }
-        
-        if (!confirm('🚨 CONFIRMAÇÃO FINAL:\n\nTem CERTEZA ABSOLUTA que deseja APAGAR PERMANENTEMENTE todo o histórico de logs?\n\nArquivo: /var/log/botzap.log\n\nEsta ação IRÁ REMOVER todas as mensagens gravadas!')) {
-            return;
-        }
+    window.confirmarLimparLog = function() {
+        if (!confirm('⚠️ Deseja realmente LIMPAR TODO o arquivo de log?\n\nEsta ação é PERMANENTE!')) return;
+        if (!confirm('🚨 CONFIRMAÇÃO FINAL: Tem CERTEZA?')) return;
         
         if (autoRefreshInterval) {
             clearInterval(autoRefreshInterval);
@@ -3045,9 +3017,7 @@ tr:hover{ background:#f9f9f9; }
         
         fetch('index.php?aba=log', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
             body: 'acao_log=limpar'
         }).then(() => {
             ultimoTamanhoArquivo = 0;
@@ -3055,15 +3025,10 @@ tr:hover{ background:#f9f9f9; }
             toggleAutoRefresh();
             alert('✅ Log limpo com sucesso!');
         });
-    }
+    };
 
-    // ==================== EXPOR FUNÇÕES PARA O HTML ====================
-    window.atualizarLog = atualizarLog;
-    window.confirmarLimparLog = confirmarLimparLog;
-    window.toggleLogAutoLogout = toggleLogAutoLogout;
     window.toggleAutoRefresh = toggleAutoRefresh;
 
-    // ==================== INICIALIZAÇÃO PRINCIPAL ====================
     document.addEventListener('DOMContentLoaded', function() {
         if (!window.location.search.includes('aba=log')) return;
         
@@ -3142,14 +3107,9 @@ tr:hover{ background:#f9f9f9; }
         });
     });
 
-    // ==================== LIMPEZA AO SAIR ====================
     window.addEventListener('beforeunload', function() {
-        if (autoRefreshInterval) {
-            clearInterval(autoRefreshInterval);
-        }
-        if (logTimerInterval) {
-            clearInterval(logTimerInterval);
-        }
+        if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+        if (logTimerInterval) clearInterval(logTimerInterval);
         desativarWakeLock();
         if (typeof logSessionTimeLeft === 'number') {
             localStorage.setItem('logTimeLeft', logSessionTimeLeft);
@@ -3158,8 +3118,11 @@ tr:hover{ background:#f9f9f9; }
 })();
 </script>
 
+<!-- ===================================================================== -->
+<!-- BLOCO 21 - CONTEÚDO DA ABA DASHBOARD PIX
+<!-- ===================================================================== -->
+
 <?php elseif ($abaAtiva === 'dashboard'): ?>
-<!-- ==================== ABA DASHBOARD PIX ==================== -->
 
 <!-- Timer de sessão -->
 <?php if ($_SESSION['auto_logout']): ?>
@@ -3488,8 +3451,11 @@ if ($_SESSION['nivel'] === 'admin') {
     Auto-logout: <?= $_SESSION['auto_logout'] ? '✅ ATIVADO' : '❌ DESATIVADO' ?>
 </div>
 
+<!-- ===================================================================== -->
+<!-- BLOCO 22 - CONTEÚDO DA ABA USUÁRIOS (APENAS ADMIN)
+<!-- ===================================================================== -->
+
 <?php elseif ($abaAtiva === 'usuarios' && $_SESSION['nivel'] === 'admin'): ?>
-<!-- ==================== ABA GERENCIAR USUÁRIOS ==================== -->
 
 <?php
 // Processar ações de gerenciamento
@@ -3623,7 +3589,7 @@ if (file_exists(ARQUIVO_LOG_ACESSOS)) {
 }
 ?>
 
-<!-- INÍCIO DO HTML DO GERENCIAMENTO DE USUÁRIOS -->
+<!-- HTML do Gerenciamento de Usuários -->
 <div style="max-width:1200px; margin:0 auto; padding:20px;">
     <!-- Header -->
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px; background:white; padding:20px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.1); flex-wrap:wrap; gap:15px;">
@@ -3722,22 +3688,16 @@ if (file_exists(ARQUIVO_LOG_ACESSOS)) {
                         <th style="padding:12px 10px; text-align:left;">Nível</th>
                         <th style="padding:12px 10px; text-align:left;">Status</th>
                         <th style="padding:12px 10px; text-align:left;">Auto-logout</th>
+                        <th style="padding:12px 10px; text-align:left;">Última Alteração</th>
                         <th style="padding:12px 10px; text-align:left;">Último Acesso</th>
                         <th style="padding:12px 10px; text-align:left;">Ações</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php foreach ($usuarios as $usuario_nome => $dados): 
-                        // Carregar preferência de auto-logout do usuário
-                        $pref_file = "/var/log/pix_acessos/preferencias_{$usuario_nome}.json";
-                        $auto_logout_pref = true; // Padrão
-                        $pref_alteracao = '';
-                        
-                        if (file_exists($pref_file)) {
-                            $pref = json_decode(file_get_contents($pref_file), true);
-                            $auto_logout_pref = $pref['auto_logout'] ?? true;
-                            $pref_alteracao = isset($pref['ultima_alteracao']) ? ' (' . date('d/m/Y', strtotime($pref['ultima_alteracao'])) . ')' : '';
-                        }
+                        $auto_logout_pref = $dados['auto_logout'] ?? true;
+                        $ultima_alteracao = isset($dados['ultima_alteracao_autologout']) ? 
+                            date('d/m/Y H:i', strtotime($dados['ultima_alteracao_autologout'])) : '';
                     ?>
                     <tr style="border-bottom:1px solid #eee;">
                         <td style="padding:12px 10px;"><strong><?= htmlspecialchars($usuario_nome) ?></strong></td>
@@ -3763,9 +3723,16 @@ if (file_exists(ARQUIVO_LOG_ACESSOS)) {
                                     ❌ OFF
                                 </span>
                             <?php endif; ?>
-                            <small style="display:block; color:#666; font-size:10px; margin-top:2px;">
-                                <?= $pref_alteracao ?: 'Padrão' ?>
-                            </small>
+                        </td>
+                        <td style="padding:12px 10px;">
+                            <?php if ($ultima_alteracao): ?>
+                                <small><?= $ultima_alteracao ?></small><br>
+                                <?php if (isset($dados['ip_alteracao_autologout'])): ?>
+                                    <small style="color:#666;">IP: <?= htmlspecialchars($dados['ip_alteracao_autologout']) ?></small>
+                                <?php endif; ?>
+                            <?php else: ?>
+                                <small style="color:#999;">Nunca alterado</small>
+                            <?php endif; ?>
                         </td>
                         <td style="padding:12px 10px;">
                             <?= $dados['ultimo_acesso'] ? date('d/m/Y H:i', strtotime($dados['ultimo_acesso'])) : 'Nunca' ?><br>
@@ -3946,7 +3913,6 @@ function exportarLogsCSV() {
     link.click();
 }
 
-// Fechar modal ao clicar fora
 window.onclick = function(event) {
     const modal = document.getElementById('modalAlterarSenhaUsuario');
     if (event.target === modal) {
@@ -3954,7 +3920,6 @@ window.onclick = function(event) {
     }
 }
 
-// Fechar com ESC
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
         fecharModalUsuario();
@@ -3964,121 +3929,62 @@ document.addEventListener('keydown', function(e) {
 
 <?php endif; ?>
 
-<!-- ==================== INÍCIO DO SCRIPT PRINCIPAL ==================== -->
+<!-- ===================================================================== -->
+<!-- BLOCO 23 - SCRIPTS JS PRINCIPAIS (CORRIGIDO)
+<!-- ===================================================================== -->
+
 <script>
-// ==================== SCRIPT PRINCIPAL - ESCOPO ISOLADO ====================
+// ==================== SCRIPT PRINCIPAL - AUTO-LOGOUT CORRIGIDO ====================
 (function() {
     // ==================== VARIÁVEIS GLOBAIS ====================
-    let autoRefreshInterval;
-    let ultimoTamanhoArquivo = 0;
-    let buscandoAtivo = false;
-    let linhasSelecionadas = 500;
-    let buscaAtiva = '';
-
-    // ==================== VARIÁVEIS GLOBAIS DE AUTO-LOGOUT ====================
     let autoLogoutEnabled = <?= $_SESSION['auto_logout'] ? 'true' : 'false' ?>;
     let sessionTimeLeft = <?= TEMPO_SESSAO ?>;
     let heartbeatInterval;
-    let lastHeartbeatTime = Date.now();
     let timerInterval = null;
     let currentAba = '<?= $abaAtiva ?>';
     let currentTabId = Math.random().toString(36).substring(7);
+    let lastServerSync = 0;
+    let lastUserActivity = Date.now();
+    let isLogAba = (currentAba === 'log');
 
-    const coresTerminal = {
-        fundo: '#0C0C0C',
-        texto: '#CCCCCC',
-        timestamp: '#7CFC00',
-        verdeFluor: '#7CFC00',
-        verdeClaro: '#90EE90',
-        azul: '#5C5CFF',
-        amarelo: '#FFFF00',
-        laranja: '#FFA500',
-        vermelho: '#FF5F5F',
-        ciano: '#00FFFF',
-        magenta: '#FF77FF',
-        cinza: '#888888'
-    };
-
-    // ==================== FUNÇÕES DE TIMER GLOBAL ====================
-    let resetTimeout;
-
-    function initGlobalTimer() {
-        if (currentAba === 'log') {
+    // ==================== FUNÇÕES DE TIMER ====================
+    
+    /**
+     * Inicia o timer apenas se estiver na aba correta e auto-logout ativado
+     */
+    function initTimer() {
+        if (isLogAba) {
             console.log('📋 Aba de logs - usando timer próprio');
             return;
         }
         
-        if (autoLogoutEnabled) {
-            if (!timerInterval) {
-                timerInterval = setInterval(updateGlobalTimer, 1000);
-                console.log('⏰ Timer iniciado na aba: ' + currentAba);
-            }
-            
-            if (!heartbeatInterval) {
-                heartbeatInterval = setInterval(sendHeartbeat, 30000);
-            }
-            
-            setupActivityListeners();
-            updateTimerDisplay();
-        }
-    }
-
-    function updateGlobalTimer() {
-        if (currentAba === 'log') return;
         if (!autoLogoutEnabled) {
-            stopGlobalTimer();
+            stopTimer();
             return;
         }
         
-        sessionTimeLeft--;
+        // Sincronizar com o servidor imediatamente
+        syncWithServer();
         
-        if (sessionTimeLeft <= 0) {
-            window.location.href = 'index.php?auto_logout=1&expired=true';
-            return;
+        // Iniciar heartbeat a cada 30 segundos
+        if (!heartbeatInterval) {
+            heartbeatInterval = setInterval(syncWithServer, 30000);
         }
         
-        updateTimerDisplay();
-    }
-
-    function formatTime(seconds) {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const secs = seconds % 60;
-        return [
-            hours.toString().padStart(2, '0'),
-            minutes.toString().padStart(2, '0'),
-            secs.toString().padStart(2, '0')
-        ].join(':');
-    }
-
-    function updateTimerDisplay() {
-        const timerElement = document.getElementById('sessionTimer');
-        const timeElement = document.getElementById('sessionTime');
-        
-        if (timerElement && timeElement) {
-            timerElement.style.display = 'block';
-            timeElement.textContent = formatTime(sessionTimeLeft);
-            
-            if (sessionTimeLeft < 300) {
-                timerElement.style.background = 'rgba(231, 76, 60, 0.9)';
-                timerElement.style.color = '#fff';
-                timerElement.style.boxShadow = '0 0 15px rgba(231, 76, 60, 0.7)';
-                timerElement.style.borderLeft = '4px solid #c0392b';
-            } else if (sessionTimeLeft < 600) {
-                timerElement.style.background = 'rgba(241, 196, 15, 0.9)';
-                timerElement.style.color = '#000';
-                timerElement.style.boxShadow = '0 0 15px rgba(241, 196, 15, 0.7)';
-                timerElement.style.borderLeft = '4px solid #f39c12';
-            } else {
-                timerElement.style.background = 'rgba(46, 204, 113, 0.9)';
-                timerElement.style.color = '#fff';
-                timerElement.style.boxShadow = '0 0 15px rgba(46, 204, 113, 0.5)';
-                timerElement.style.borderLeft = '4px solid #27ae60';
-            }
+        // Iniciar timer visual apenas se não existir
+        if (!timerInterval) {
+            timerInterval = setInterval(updateVisualTimer, 1000);
+            console.log('⏰ Timer visual iniciado');
         }
+        
+        // Configurar listeners de atividade do usuário
+        setupActivityListeners();
     }
-
-    function stopGlobalTimer() {
+    
+    /**
+     * Para todos os timers
+     */
+    function stopTimer() {
         if (timerInterval) {
             clearInterval(timerInterval);
             timerInterval = null;
@@ -4094,94 +4000,199 @@ document.addEventListener('keydown', function(e) {
             timerElement.style.display = 'none';
         }
     }
-
-    function setupActivityListeners() {
-        const resetEvents = ['mousemove', 'keypress', 'click', 'scroll', 'touchstart', 'touchmove'];
-        
-        resetEvents.forEach(event => {
-            document.removeEventListener(event, resetGlobalTimer);
-            document.addEventListener(event, resetGlobalTimer, { passive: true });
-        });
-    }
-
-    let lastResetTime = 0;
-
-    function resetGlobalTimer() {
-        if (currentAba === 'log') return;
-        if (!autoLogoutEnabled) return;
-        
-        if (resetTimeout) {
-            clearTimeout(resetTimeout);
-        }
-        
-        resetTimeout = setTimeout(() => {
-            sessionTimeLeft = <?= TEMPO_SESSAO ?>;
-            lastResetTime = Date.now();
-            updateTimerDisplay();
-            sendHeartbeat();
-            
-            if (window.BroadcastChannel) {
-                const channel = new BroadcastChannel('session_channel');
-                channel.postMessage({ 
-                    type: 'USER_ACTIVITY',
-                    tabId: currentTabId
-                });
-                channel.close();
-            }
-            
-            console.log('🖱️ Timer resetado para', sessionTimeLeft);
-            resetTimeout = null;
-        }, 100);
-    }
-
-    // ==================== HEARTBEAT ====================
-    function sendHeartbeat() {
-        if (currentAba === 'log') return;
-        if (!autoLogoutEnabled) return;
+    
+    /**
+     * Sincroniza com o servidor via heartbeat
+     */
+    function syncWithServer() {
+        if (isLogAba || !autoLogoutEnabled) return;
         
         fetch('index.php?heartbeat=1&t=' + Date.now(), {
             method: 'GET',
             cache: 'no-store',
-            headers: {
-                'Cache-Control': 'no-cache'
-            }
+            headers: {'Cache-Control': 'no-cache'}
         })
         .then(response => response.json())
         .then(data => {
             if (data.expired) {
-                if (navigator.serviceWorker.controller) {
-                    navigator.serviceWorker.controller.postMessage({
-                        type: 'SESSION_EXPIRED'
-                    });
-                }
-                window.location.href = 'index.php?auto_logout=1&expired=true';
-            } else {
-                const agora = Date.now();
-                if (agora - lastResetTime > 2000) {
-                    if (data.time_left && data.time_left !== sessionTimeLeft) {
-                        sessionTimeLeft = data.time_left;
-                        updateTimerDisplay();
-                    }
-                }
-                lastHeartbeatTime = agora;
+                // Servidor diz que a sessão expirou
+                forceLogout('Sessão expirada pelo servidor');
+                return;
+            }
+            
+            // Atualizar tempo restante com base no servidor
+            if (data.time_left !== undefined) {
+                sessionTimeLeft = data.time_left;
+                lastServerSync = Date.now();
+                updateTimerDisplay();
             }
         })
         .catch(error => {
             console.error('Erro no heartbeat:', error);
         });
     }
-
+    
+    /**
+     * Atualiza o timer visual a cada segundo
+     */
+    function updateVisualTimer() {
+        if (isLogAba || !autoLogoutEnabled) return;
+        
+        // Decrementar visualmente
+        sessionTimeLeft--;
+        
+        // Se chegou a zero, verificar com servidor antes de deslogar
+        if (sessionTimeLeft <= 0) {
+            // Verificar com servidor se realmente expirou
+            fetch('index.php?check_session=1&t=' + Date.now())
+                .then(response => response.text())
+                .then(status => {
+                    if (status === 'expired') {
+                        forceLogout('Tempo esgotado');
+                    } else {
+                        // Servidor diz que ainda está ativo, resetar timer
+                        syncWithServer();
+                    }
+                })
+                .catch(() => {
+                    // Se erro na comunicação, deslogar por segurança
+                    forceLogout('Erro de comunicação');
+                });
+            return;
+        }
+        
+        updateTimerDisplay();
+    }
+    
+    /**
+     * Força logout e redireciona
+     */
+    function forceLogout(reason) {
+        console.log('🔒 Logout forçado:', reason);
+        
+        // Notificar service worker se existir
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+                type: 'SESSION_EXPIRED',
+                reason: reason
+            });
+        }
+        
+        // Redirecionar
+        window.location.href = 'index.php?auto_logout=1&expired=true';
+    }
+    
+    /**
+     * Formata tempo em HH:MM:SS
+     */
+    function formatTime(seconds) {
+        if (seconds < 0) seconds = 0;
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        return [
+            hours.toString().padStart(2, '0'),
+            minutes.toString().padStart(2, '0'),
+            secs.toString().padStart(2, '0')
+        ].join(':');
+    }
+    
+    /**
+     * Atualiza o display do timer na interface
+     */
+    function updateTimerDisplay() {
+        const timerElement = document.getElementById('sessionTimer');
+        const timeElement = document.getElementById('sessionTime');
+        
+        if (!timerElement || !timeElement) return;
+        
+        timerElement.style.display = 'block';
+        timeElement.textContent = formatTime(sessionTimeLeft);
+        
+        // Mudar cor conforme tempo restante
+        if (sessionTimeLeft < 60) { // Menos de 1 minuto
+            timerElement.style.background = 'rgba(231, 76, 60, 0.95)';
+            timerElement.style.borderLeft = '4px solid #c0392b';
+            timerElement.style.boxShadow = '0 0 20px rgba(231, 76, 60, 0.8)';
+            timerElement.style.color = '#fff';
+        } else if (sessionTimeLeft < 300) { // Menos de 5 minutos
+            timerElement.style.background = 'rgba(241, 196, 15, 0.95)';
+            timerElement.style.borderLeft = '4px solid #f39c12';
+            timerElement.style.boxShadow = '0 0 20px rgba(241, 196, 15, 0.8)';
+            timerElement.style.color = '#000';
+        } else {
+            timerElement.style.background = 'rgba(46, 204, 113, 0.9)';
+            timerElement.style.borderLeft = '4px solid #27ae60';
+            timerElement.style.boxShadow = '0 0 15px rgba(46, 204, 113, 0.5)';
+            timerElement.style.color = '#fff';
+        }
+    }
+    
+    /**
+     * Configura listeners para detectar atividade do usuário
+     */
+    function setupActivityListeners() {
+        if (isLogAba) return;
+        
+        const activityEvents = ['mousemove', 'keypress', 'click', 'scroll', 'touchstart', 'touchmove'];
+        let activityTimeout;
+        
+        function handleUserActivity() {
+            if (!autoLogoutEnabled) return;
+            
+            // Debounce para não enviar muitas requisições
+            if (activityTimeout) clearTimeout(activityTimeout);
+            
+            activityTimeout = setTimeout(() => {
+                // Atualizar último acesso no servidor
+                fetch('index.php?update_session=1&t=' + Date.now(), {
+                    method: 'GET',
+                    cache: 'no-store'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Resetar timer visual para o tempo cheio
+                        sessionTimeLeft = <?= TEMPO_SESSAO ?>;
+                        updateTimerDisplay();
+                        lastUserActivity = Date.now();
+                        
+                        // Notificar outras abas
+                        if (window.BroadcastChannel) {
+                            const channel = new BroadcastChannel('session_channel');
+                            channel.postMessage({ 
+                                type: 'USER_ACTIVITY',
+                                tabId: currentTabId,
+                                timestamp: Date.now()
+                            });
+                            channel.close();
+                        }
+                    }
+                })
+                .catch(error => console.error('Erro ao atualizar sessão:', error));
+            }, 200); // Aguarda entre 100ms e 500ms após última atividade do mouse para reiniciar a contagem do logout
+        }
+        
+        // Remover listeners antigos e adicionar novos
+        activityEvents.forEach(event => {
+            document.removeEventListener(event, handleUserActivity);
+            document.addEventListener(event, handleUserActivity, { passive: true });
+        });
+    }
+    
     // ==================== COMUNICAÇÃO ENTRE ABAS ====================
     if (window.BroadcastChannel) {
         const channel = new BroadcastChannel('session_channel');
         
         channel.addEventListener('message', event => {
+            // Ignorar mensagens da própria aba
             if (event.data.tabId === currentTabId) return;
             
             if (event.data.type === 'USER_ACTIVITY') {
                 console.log('📡 Atividade detectada em outra aba');
-                if (currentAba === 'log') return;
-                if (autoLogoutEnabled) {
+                
+                // Se atividade em outra aba, resetar timer
+                if (!isLogAba && autoLogoutEnabled) {
                     sessionTimeLeft = <?= TEMPO_SESSAO ?>;
                     updateTimerDisplay();
                 }
@@ -4190,143 +4201,33 @@ document.addEventListener('keydown', function(e) {
             if (event.data.type === 'AUTOLOGOUT_TOGGLED') {
                 console.log('📡 Auto-logout global mudou para:', event.data.enabled ? 'ATIVADO' : 'DESATIVADO');
                 autoLogoutEnabled = event.data.enabled;
+                
+                // Atualizar botões na interface
                 updateAutoLogoutButton(event.data.enabled);
                 
-                if (currentAba === 'log') {
+                // Se estiver na aba de logs, recarregar
+                if (isLogAba) {
                     location.reload();
                 } else {
                     if (event.data.enabled) {
+                        // Re-iniciar timer
                         sessionTimeLeft = <?= TEMPO_SESSAO ?>;
-                        initGlobalTimer();
+                        initTimer();
                     } else {
-                        stopGlobalTimer();
+                        // Parar timer
+                        stopTimer();
                     }
                 }
             }
         });
     }
-
-    // ==================== FUNÇÕES DO TELEGRAM ====================
-    window.testarTelegram = function() {
-        const resultDiv = document.getElementById('telegramTestResult');
-        resultDiv.innerHTML = '⏳ Enviando mensagem de teste...';
-        resultDiv.style.color = '#666';
-        
-        fetch('?testar_telegram=1&t=' + Date.now())
-            .then(response => response.json())
-            .then(data => {
-                if (data.sucesso) {
-                    resultDiv.innerHTML = '✅ ' + data.mensagem;
-                    resultDiv.style.color = '#28a745';
-                } else {
-                    resultDiv.innerHTML = '❌ ' + data.mensagem;
-                    resultDiv.style.color = '#dc3545';
-                }
-            })
-            .catch(error => {
-                resultDiv.innerHTML = '❌ Erro ao testar: ' + error.message;
-                resultDiv.style.color = '#dc3545';
-            });
-    };
-
-    // ==================== FUNÇÕES DO DASHBOARD ====================
-    window.sairDashboard = function() {
-        if (confirm('Deseja realmente sair do sistema?')) {
-            window.location.href = 'index.php?action=logout';
-        }
-    };
-
-    window.toggleAutoLogout = function() {
-        const currentState = <?= $_SESSION['auto_logout'] ? 'true' : 'false' ?>;
-        const newState = currentState ? 'off' : 'on';
-        
-        if (confirm('Deseja ' + (currentState ? 'DESATIVAR' : 'ATIVAR') + ' o auto-logout?')) {
-            if (window.BroadcastChannel) {
-                const channel = new BroadcastChannel('session_channel');
-                channel.postMessage({ 
-                    type: 'AUTOLOGOUT_TOGGLED', 
-                    enabled: !currentState,
-                    timeLeft: <?= TEMPO_SESSAO ?>
-                });
-                channel.close();
-            }
-            
-            window.location.href = 'index.php?toggle_autologout=' + newState + '&aba=' + currentAba;
-        }
-    };
-
-    window.abrirModalAlterarSenhaDashboard = function() {
-        document.getElementById('modalAlterarSenhaDashboard').style.display = 'flex';
-        document.getElementById('senha_atual').focus();
-    };
-
-    window.fecharModalAlterarSenhaDashboard = function() {
-        document.getElementById('modalAlterarSenhaDashboard').style.display = 'none';
-        document.getElementById('senha_atual').value = '';
-        document.getElementById('nova_senha').value = '';
-        document.getElementById('confirmar_nova_senha').value = '';
-    };
-
-    window.validarSenhaDashboard = function() {
-        const senhaAtual = document.getElementById('senha_atual');
-        const novaSenha = document.getElementById('nova_senha');
-        const confirmarSenha = document.getElementById('confirmar_nova_senha');
-        
-        if (!senhaAtual.value) {
-            alert('Digite sua senha atual!');
-            senhaAtual.focus();
-            return false;
-        }
-        
-        if (novaSenha.value !== confirmarSenha.value) {
-            alert('As novas senhas não coincidem!');
-            confirmarSenha.focus();
-            return false;
-        }
-        
-        if (novaSenha.value.length < 6) {
-            alert('A nova senha deve ter no mínimo 6 caracteres!');
-            novaSenha.focus();
-            return false;
-        }
-        
-        return confirm('Deseja alterar sua senha?');
-    };
-
-    window.limparLogsFiltros = function() {
-        if (confirm('Deseja limpar os logs de filtros?\n\nIsso não afeta os logs principais de acesso.')) {
-            window.location.href = 'index.php?aba=dashboard&limpar_filtros=1';
-        }
-    };
-
-    window.exportarCSV = function() {
-        let csv = 'Data;Hora;Vencimento;IP;Cliente;CPF;Título\n';
-        
-        document.querySelectorAll('table tbody tr').forEach(row => {
-            const cells = row.querySelectorAll('td');
-            if (cells.length >= 7) {
-                csv += `"${cells[0].textContent}";"${cells[1].textContent}";"${cells[2].textContent}";"${cells[3].textContent}";"${cells[4].textContent}";"${cells[5].textContent}";"${cells[6].textContent}"\n`;
-            }
-        });
-        
-        if (csv === 'Data;Hora;Vencimento;IP;Cliente;CPF;Título\n') {
-            csv += '"Nenhum registro encontrado";"";"";"";"";"";""\n';
-        }
-        
-        const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        
-        link.setAttribute('href', url);
-        link.setAttribute('download', 'pix_acessos_<?= $diaSelecionado ?>.csv');
-        link.style.visibility = 'hidden';
-        
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
-    function updateAutoLogoutButton(enabled) {
+    
+    // ==================== FUNÇÕES DE INTERFACE ====================
+    
+    /**
+     * Atualiza botões de auto-logout na interface
+     */
+    window.updateAutoLogoutButton = function(enabled) {
         const buttons = document.querySelectorAll('.btn-autologout');
         buttons.forEach(button => {
             if (enabled) {
@@ -4356,21 +4257,98 @@ document.addEventListener('keydown', function(e) {
                 if (text) text.textContent = 'Auto-logout: OFF';
             }
         });
+    };
+    
+    // ==================== INICIALIZAÇÃO ====================
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('🚀 Inicializando sistema com auto-logout:', autoLogoutEnabled ? 'ATIVADO' : 'DESATIVADO');
         
-        autoLogoutEnabled = enabled;
+        // Iniciar timer se não for aba de logs
+        if (!isLogAba) {
+            initTimer();
+        }
         
-        if (currentAba === 'log') {
-            location.reload();
-        } else {
-            if (enabled) {
-                sessionTimeLeft = <?= TEMPO_SESSAO ?>;
-                initGlobalTimer();
-            } else {
-                stopGlobalTimer();
-            }
+        // Configurar verificações de status do WhatsApp (apenas na aba config)
+        const statusDiv = document.querySelector('.status');
+        if (statusDiv && currentAba === 'config') {
+            monitorWhatsAppStatus();
+        }
+        
+        // Se veio com parâmetro salvo, limpar URL
+        if (window.location.search.includes('salvo=1')) {
+            const params = new URLSearchParams(window.location.search);
+            const newUrl = window.location.pathname + (params.get('aba') ? '?aba=' + params.get('aba') : '');
+            window.history.replaceState({}, document.title, newUrl);
+        }
+        
+        // Auto-remover mensagens de sucesso após 3 segundos
+        const msg = document.getElementById('msg');
+        if (msg) {
+            setTimeout(() => {
+                msg.style.opacity = '0';
+                setTimeout(() => msg.remove(), 500);
+            }, 3000);
+        }
+    });
+    
+    /**
+     * Monitora status do WhatsApp
+     */
+    function monitorWhatsAppStatus() {
+        console.log('🔍 Monitorando status do WhatsApp...');
+        
+        let statusAtual = document.querySelector('.status')?.classList.contains('online') ? 'online' : 
+                         document.querySelector('.status')?.classList.contains('qr') ? 'qr' : 'offline';
+        
+        const intervalo = setInterval(() => {
+            fetch('?api_status=1&t=' + Date.now())
+                .then(r => r.text())
+                .then(novoStatus => {
+                    if (novoStatus !== statusAtual) {
+                        console.log('✅ Status mudou de', statusAtual, 'para', novoStatus);
+                        clearInterval(intervalo);
+                        location.reload();
+                    }
+                })
+                .catch(() => console.log('Erro na verificação'));
+        }, 3000);
+        
+        // Se estiver em modo QR, atualizar imagem a cada 3 segundos
+        if (statusAtual === 'qr') {
+            setInterval(() => {
+                const img = document.getElementById('qrImg');
+                if (img && img.src.includes('qrcode_view.php')) {
+                    img.src = 'qrcode_view.php?t=' + Date.now();
+                }
+            }, 3000);
         }
     }
-
+    
+    // ==================== LIMPEZA AO SAIR ====================
+    window.addEventListener('beforeunload', function() {
+        if (timerInterval) clearInterval(timerInterval);
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+    });
+    
+    // ==================== EXPOR FUNÇÕES GLOBAIS ====================
+    window.toggleAutoLogout = function() {
+        const currentState = <?= $_SESSION['auto_logout'] ? 'true' : 'false' ?>;
+        const newState = currentState ? 'off' : 'on';
+        
+        if (confirm('Deseja ' + (currentState ? 'DESATIVAR' : 'ATIVAR') + ' o auto-logout?')) {
+            if (window.BroadcastChannel) {
+                const channel = new BroadcastChannel('session_channel');
+                channel.postMessage({ 
+                    type: 'AUTOLOGOUT_TOGGLED', 
+                    enabled: !currentState
+                });
+                channel.close();
+            }
+            
+            window.location.href = 'index.php?toggle_autologout=' + newState + '&aba=' + currentAba;
+        }
+    };
+    
     window.validarTempoAutologout = function() {
         const tempo = document.getElementById('tempo_autologout').value;
         
@@ -4386,154 +4364,102 @@ document.addEventListener('keydown', function(e) {
         
         return confirm('Deseja alterar o tempo de auto-logout para ' + formatTime(parseInt(tempo)) + '?');
     };
+    
+    window.abrirModalAlterarSenhaDashboard = function() {
+        document.getElementById('modalAlterarSenhaDashboard').style.display = 'flex';
+        document.getElementById('senha_atual').focus();
+    };
+    
+    window.fecharModalAlterarSenhaDashboard = function() {
+        document.getElementById('modalAlterarSenhaDashboard').style.display = 'none';
+        document.getElementById('senha_atual').value = '';
+        document.getElementById('nova_senha').value = '';
+        document.getElementById('confirmar_nova_senha').value = '';
+    };
+    
+    window.validarSenhaDashboard = function() {
+        const senhaAtual = document.getElementById('senha_atual');
+        const novaSenha = document.getElementById('nova_senha');
+        const confirmarSenha = document.getElementById('confirmar_nova_senha');
+        
+        if (!senhaAtual.value) {
+            alert('Digite sua senha atual!');
+            senhaAtual.focus();
+            return false;
+        }
+        
+        if (novaSenha.value !== confirmarSenha.value) {
+            alert('As novas senhas não coincidem!');
+            confirmarSenha.focus();
+            return false;
+        }
+        
+        if (novaSenha.value.length < 6) {
+            alert('A nova senha deve ter no mínimo 6 caracteres!');
+            novaSenha.focus();
+            return false;
+        }
+        
+        return confirm('Deseja alterar sua senha?');
+    };
+    
+    window.testarTelegram = function() {
+        const resultDiv = document.getElementById('telegramTestResult');
+        resultDiv.innerHTML = '⏳ Enviando...';
+        resultDiv.style.color = '#666';
+        
+        fetch('?testar_telegram=1&t=' + Date.now())
+            .then(response => response.json())
+            .then(data => {
+                resultDiv.innerHTML = data.sucesso ? '✅ ' + data.mensagem : '❌ ' + data.mensagem;
+                resultDiv.style.color = data.sucesso ? '#28a745' : '#dc3545';
+            })
+            .catch(error => {
+                resultDiv.innerHTML = '❌ Erro ao testar: ' + error.message;
+                resultDiv.style.color = '#dc3545';
+            });
+    };
 
-    // ==================== INICIALIZAÇÃO ====================
-    document.addEventListener('DOMContentLoaded', function() {
-        const params = new URLSearchParams(window.location.search);
-        const aba = params.get('aba');
+    // ==================== FUNÇÃO DO OLHINHO MK-AUTH ====================
+    window.toggleClientSecretVisibility = function() {
+        const secretField = document.getElementById('mkauth_client_secret');
+        const button = event.currentTarget;
+    
+    if (secretField.type === 'password') {
+        secretField.type = 'text';
+        button.innerHTML = '🙈';
+        button.title = 'Esconder Client Secret';
+    } else {
+        secretField.type = 'password';
+        button.innerHTML = '👁️';
+        button.title = 'Mostrar Client Secret';
+    }
+    };
+    
+    window.exportarCSV = function() {
+        let csv = 'Data;Hora;Vencimento;IP;Cliente;CPF;Título\n';
         
-        if (aba !== 'log') {
-            initGlobalTimer();
-        }
-        
-        if (aba === 'log') {
-            // A aba de logs tem seu próprio script isolado
-            return;
-        }
-        
-        const statusDiv = document.querySelector('.status');
-        if (statusDiv && aba !== 'log') {
-            console.log('🔍 Monitorando status do WhatsApp...');
-            
-            let statusAtual;
-            if (statusDiv.classList.contains('online')) {
-                statusAtual = 'online';
-            } else if (statusDiv.classList.contains('qr')) {
-                statusAtual = 'qr';
-            } else {
-                statusAtual = 'offline';
-            }
-            
-            const intervalo = setInterval(() => {
-                fetch('?api_status=1&t=' + Date.now())
-                    .then(r => r.text())
-                    .then(novoStatus => {
-                        if (novoStatus !== statusAtual) {
-                            console.log('✅ Status mudou de', statusAtual, 'para', novoStatus);
-                            clearInterval(intervalo);
-                            location.reload();
-                        }
-                    })
-                    .catch(() => console.log('Erro na verificação'));
-            }, 3000);
-            
-            if (statusAtual === 'qr') {
-                setInterval(() => {
-                    const img = document.getElementById('qrImg');
-                    if (img && img.src.includes('qrcode_view.php')) {
-                        img.src = 'qrcode_view.php?t=' + Date.now();
-                    }
-                }, 3000);
-            }
-        }
-        
-        if (window.location.search.includes('salvo=1')) {
-            window.history.replaceState({}, document.title, window.location.pathname + (params.get('aba') ? '?aba=' + params.get('aba') : ''));
-        }
-        
-        const msg = document.getElementById('msg');
-        if (msg) {
-            setTimeout(() => {
-                msg.style.opacity = '0';
-                setTimeout(() => msg.remove(), 500);
-            }, 3000);
-        }
-        
-        const secretField = document.querySelector('input[name="mkauth_client_secret"]');
-        if (secretField) {
-            const wrapper = document.createElement('div');
-            wrapper.style.display = 'flex';
-            wrapper.style.alignItems = 'center';
-            wrapper.style.gap = '10px';
-            wrapper.style.width = '100%';
-            
-            secretField.parentNode.insertBefore(wrapper, secretField);
-            wrapper.appendChild(secretField);
-            
-            secretField.style.flex = '1';
-            secretField.style.margin = '0';
-            
-            const showPasswordBtn = document.createElement('button');
-            showPasswordBtn.type = 'button';
-            showPasswordBtn.innerHTML = '👁️';
-            showPasswordBtn.style.cssText = `
-                background: #f0f0f0;
-                border: 1px solid #d1d5db;
-                border-radius: 8px;
-                cursor: pointer;
-                font-size: 18px;
-                padding: 10px 15px;
-                height: 42px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                margin: 0;
-            `;
-            
-            wrapper.appendChild(showPasswordBtn);
-            
-            showPasswordBtn.addEventListener('click', function() {
-                if (secretField.type === 'password') {
-                    secretField.type = 'text';
-                    this.innerHTML = '🙈';
-                } else {
-                    secretField.type = 'password';
-                    this.innerHTML = '👁️';
-                }
-            });
-        }
-        
-        const checkboxes = document.querySelectorAll('input[type="checkbox"][name^="telegram_notificar_"]');
-        checkboxes.forEach(checkbox => {
-            if (!checkbox.checked) {
-                checkbox.value = 'Não';
-            }
-            checkbox.addEventListener('change', function() {
-                this.value = this.checked ? 'Sim' : 'Não';
-            });
-        });
-        
-        document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-                window.fecharModalAlterarSenhaDashboard();
+        document.querySelectorAll('table tbody tr').forEach(row => {
+            const cells = row.querySelectorAll('td');
+            if (cells.length >= 7) {
+                csv += `"${cells[0].textContent}";"${cells[1].textContent}";"${cells[2].textContent}";"${cells[3].textContent}";"${cells[4].textContent}";"${cells[5].textContent}";"${cells[6].textContent}"\n`;
             }
         });
         
-        const mensagemSenha = document.getElementById('mensagemSenha');
-        if (mensagemSenha) {
-            setTimeout(() => {
-                mensagemSenha.style.animation = 'slideOut 0.3s ease-out';
-                setTimeout(() => {
-                    mensagemSenha.style.display = 'none';
-                }, 300);
-            }, 5000);
+        const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'pix_acessos_<?= $diaSelecionado ?>.csv';
+        link.click();
+    };
+    
+    window.limparLogsFiltros = function() {
+        if (confirm('Deseja limpar os logs de filtros?')) {
+            window.location.href = 'index.php?aba=dashboard&limpar_filtros=1';
         }
-    });
-
-    window.addEventListener('beforeunload', function() {
-        if (autoRefreshInterval) {
-            clearInterval(autoRefreshInterval);
-        }
-        if (heartbeatInterval) {
-            clearInterval(heartbeatInterval);
-        }
-        if (timerInterval) {
-            clearInterval(timerInterval);
-        }
-    });
+    };
 })();
 </script>
-<!-- ==================== FIM DO SCRIPT PRINCIPAL ==================== -->
 
 </body>
 </html>
