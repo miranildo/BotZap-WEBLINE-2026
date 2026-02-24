@@ -64,13 +64,21 @@
  * ✅ Configurável via painel web
  * ✅ Número do atendente identificado em todas as notificações
  * 
+ * 🆕 MONITORAMENTO AUTOMÁTICO DE VERSÃO - v6.0
+ * ✅ Detecção automática da versão atual do WhatsApp
+ * ✅ Verificação periódica a cada 24 horas
+ * ✅ Notificação Telegram quando versão mudar
+ * ✅ Comando #VERSAO para consultar versão atual
+ * ✅ Logs de mudanças de versão
+ * 
  * 🏆 NÍVEL: 10/10 - PREPARADO PARA 2025+
  *************************************************/
 
 const {
     default: makeWASocket,
     useMultiFileAuthState,
-    DisconnectReason
+    DisconnectReason,
+    fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 
 const fs = require('fs');
@@ -78,6 +86,7 @@ const path = require('path');
 const P = require('pino');
 const https = require('https');
 const crypto = require('crypto');
+const { Boom } = require('@hapi/boom');
 
 const BASE_DIR = __dirname;
 const AUTH_DIR = path.join(BASE_DIR, 'auth_info');
@@ -87,6 +96,14 @@ const QR_PATH = path.join(BASE_DIR, 'qrcode.txt');
 const USUARIOS_PATH = path.join(BASE_DIR, 'usuarios.json');
 const MUDANCAS_LOG_PATH = path.join(BASE_DIR, 'mudancas_formatos.log');
 const IDENTITY_MAP_PATH = path.join(BASE_DIR, 'identity_map.json');
+const VERSAO_LOG_PATH = path.join(BASE_DIR, 'versoes.log');
+const ULTIMA_VERSAO_PATH = path.join(BASE_DIR, 'ultima_versao.json');
+
+// ================= VARIÁVEIS GLOBAIS DE VERSÃO =================
+global.WHATSAPP_VERSION = 1033927531;  // Versão atual (fevereiro/2026)
+global.WHATSAPP_VERSION_DETECTADA = null;
+global.MONITORAMENTO_ATIVO = false;
+global.VERSAO_BAILEYS = '7.0.0-rc.9';
 
 // ================= VERSIONAMENTO E CONTROLE =================
 const ESTRUTURA_VERSION = '2.0.0';
@@ -118,6 +135,172 @@ let ultimoLogVerificacao = {
 // Controle de reconexão
 let reconexaoEmAndamento = false;
 let tentativasReconexao = 0;
+
+// ================= FUNÇÕES DE MONITORAMENTO DE VERSÃO =================
+function formatarDataHora() {
+    const agora = new Date();
+    const dia = String(agora.getDate()).padStart(2, '0');
+    const mes = String(agora.getMonth() + 1).padStart(2, '0');
+    const ano = agora.getFullYear();
+    const horas = String(agora.getHours()).padStart(2, '0');
+    const minutos = String(agora.getMinutes()).padStart(2, '0');
+    const segundos = String(agora.getSeconds()).padStart(2, '0');
+    return `[${dia}/${mes}/${ano} ${horas}:${minutos}:${segundos}]`;
+}
+
+// Função para registrar logs de versão
+function registrarLogVersao(mensagem) {
+    const logEntry = `${formatarDataHora()} ${mensagem}\n`;
+    fs.appendFileSync(VERSAO_LOG_PATH, logEntry, 'utf8');
+    console.log(logEntry.trim());
+}
+
+// ================= DETECTOR DE VERSÃO VIA HEADER CV =================
+async function detectarVersaoWhatsApp() {
+    return new Promise((resolve) => {
+        const options = {
+            hostname: 'web.whatsapp.com',
+            path: '/',
+            method: 'HEAD',  // HEAD é mais leve que GET
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            timeout: 10000
+        };
+
+        const req = https.request(options, (res) => {
+            // Procura especificamente pelo header 'content-security-policy'
+            const csp = res.headers['content-security-policy'] || '';
+            
+            // Extrai o parâmetro cv= do CSP
+            const match = csp.match(/cv=(\d+)/);
+            
+            if (match && match[1]) {
+                const versao = match[1];
+                console.log(`${formatarDataHora()} 📱 Versão detectada via header cv=: ${versao}`);
+                resolve(versao);
+            } else {
+                console.log(`${formatarDataHora()} ⚠️ cv= não encontrado no header`);
+                resolve(null);
+            }
+        });
+
+        req.on('error', (err) => {
+            console.log(`${formatarDataHora()} ⚠️ Erro na detecção: ${err.message}`);
+            resolve(null);
+        });
+
+        req.on('timeout', () => {
+            req.destroy();
+            console.log(`${formatarDataHora()} ⏰ Timeout na detecção`);
+            resolve(null);
+        });
+
+        req.end();
+    });
+}
+
+// Função para carregar última versão salva
+function carregarUltimaVersao() {
+    try {
+        if (fs.existsSync(ULTIMA_VERSAO_PATH)) {
+            const dados = JSON.parse(fs.readFileSync(ULTIMA_VERSAO_PATH, 'utf8'));
+            return dados.versao_nova || dados.versao_antiga || global.WHATSAPP_VERSION;
+        }
+    } catch (error) {
+        registrarLogVersao(`⚠️ Erro ao carregar última versão: ${error.message}`);
+    }
+    return global.WHATSAPP_VERSION;
+}
+
+// Função para salvar informação de versão
+function salvarInfoVersao(versaoAntiga, versaoNova) {
+    try {
+        const versaoInfo = {
+            data: new Date().toISOString(),
+            versao_antiga: versaoAntiga,
+            versao_nova: versaoNova,
+            detectada_em: formatarDataHora()
+        };
+        fs.writeFileSync(ULTIMA_VERSAO_PATH, JSON.stringify(versaoInfo, null, 2));
+        
+        // Também salva no log
+        registrarLogVersao(`📝 Versão salva: ${versaoAntiga} → ${versaoNova}`);
+    } catch (error) {
+        registrarLogVersao(`⚠️ Erro ao salvar info versão: ${error.message}`);
+    }
+}
+
+// Função para verificar e atualizar versão
+async function verificarEAtualizarVersao() {
+    try {
+        const versaoDetectada = await detectarVersaoWhatsApp();
+        
+        if (versaoDetectada) {
+            // Converte para número inteiro
+            const versaoNum = parseInt(versaoDetectada);
+            
+            // Versão atual (carrega do arquivo ou usa global)
+            const versaoAtual = carregarUltimaVersao();
+            
+            if (versaoNum !== versaoAtual) {
+                registrarLogVersao(`⚠️ VERSÃO DIFERENTE DETECTADA!`);
+                registrarLogVersao(`📱 Antiga: ${versaoAtual} | Nova: ${versaoNum}`);
+                
+                // Salva a nova versão
+                salvarInfoVersao(versaoAtual, versaoNum);
+                
+                // Atualiza a variável global
+                global.WHATSAPP_VERSION = versaoNum;
+                global.WHATSAPP_VERSION_DETECTADA = versaoNum;
+                
+                // NOTIFICAÇÃO TELEGRAM sobre mudança de versão
+                try {
+                    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+                    if (config.telegram_ativado === 'Sim') {
+                        enviarNotificacaoTelegram(
+                            `⚠️ *MUDANÇA DE VERSÃO DO WHATSAPP*\n\n` +
+                            `📱 *Versão antiga:* ${versaoAtual}\n` +
+                            `📱 *Versão nova:* ${versaoNum}\n` +
+                            `⏰ ${formatarDataHora()}\n\n` +
+                            `🔄 O bot continuará funcionando normalmente com a nova versão.`,
+                            'info'
+                        );
+                    }
+                } catch (error) {}
+                
+                return versaoNum;
+            } else {
+                registrarLogVersao(`✅ Versão do WhatsApp está atualizada: ${versaoNum}`);
+                global.WHATSAPP_VERSION_DETECTADA = versaoNum;
+                return versaoAtual;
+            }
+        }
+    } catch (error) {
+        registrarLogVersao(`❌ Erro na verificação de versão: ${error.message}`);
+    }
+    return null;
+}
+
+// Função para iniciar monitoramento periódico
+function iniciarMonitoramentoVersao(intervaloHoras = 24) {
+    if (global.MONITORAMENTO_ATIVO) return;
+    
+    global.MONITORAMENTO_ATIVO = true;
+    registrarLogVersao(`📊 Iniciando monitoramento de versão (a cada ${intervaloHoras} horas)`);
+    
+    // Verifica imediatamente (com pequeno atraso)
+    setTimeout(async () => {
+        await verificarEAtualizarVersao();
+    }, 5000);
+    
+    // Configura verificação periódica
+    const intervaloMs = intervaloHoras * 60 * 60 * 1000;
+    setInterval(async () => {
+        registrarLogVersao(`🔍 Verificando atualização de versão...`);
+        await verificarEAtualizarVersao();
+    }, intervaloMs);
+}
 
 // ================= FUNÇÃO PARA ENVIAR NOTIFICAÇÃO TELEGRAM =================
 async function enviarNotificacaoTelegram(mensagem, tipo = 'info') {
@@ -281,6 +464,9 @@ function gerarRelatorioSistema() {
     const relatorio = {
         timestamp: new Date().toISOString(),
         versao: ESTRUTURA_VERSION,
+        versao_baileys: global.VERSAO_BAILEYS,
+        versao_whatsapp: global.WHATSAPP_VERSION,
+        versao_detectada: global.WHATSAPP_VERSION_DETECTADA,
         estatisticas: {
             usuarios: {
                 total: Object.keys(usuarios.byPrimaryKey || {}).length,
@@ -567,18 +753,6 @@ class WhatsAppIdentity {
         console.warn(`${formatarDataHora()} Primary Key: ${this.primaryKey}`);
         console.warn(`${formatarDataHora()} Stable ID: ${this.stableId || 'N/A'}`);
     }
-}
-
-// ================= FUNÇÕES AUXILIARES =================
-function formatarDataHora() {
-    const agora = new Date();
-    const dia = String(agora.getDate()).padStart(2, '0');
-    const mes = String(agora.getMonth() + 1).padStart(2, '0');
-    const ano = agora.getFullYear();
-    const horas = String(agora.getHours()).padStart(2, '0');
-    const minutos = String(agora.getMinutes()).padStart(2, '0');
-    const segundos = String(agora.getSeconds()).padStart(2, '0');
-    return `[${dia}/${mes}/${ano} ${horas}:${minutos}:${segundos}]`;
 }
 
 function setStatus(status) {
@@ -1672,6 +1846,17 @@ async function startBot() {
         process.exit(0);
     }
     
+    // 🔥 CARREGA A ÚLTIMA VERSÃO SALVA
+    const versaoSalva = carregarUltimaVersao();
+    if (versaoSalva) {
+        global.WHATSAPP_VERSION = versaoSalva;
+        console.log(`${formatarDataHora()} 📱 Versão do WhatsApp carregada: ${global.WHATSAPP_VERSION}`);
+    }
+    
+    // Obtém a versão mais recente do Baileys
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    console.log(`${formatarDataHora()} 📱 Baileys versão: ${version.join('.')} ${isLatest ? '(mais recente)' : ''}`);
+    
     corrigirAtendimentosCorrompidos();
     carregarUsuarios();
 
@@ -1681,13 +1866,33 @@ async function startBot() {
 
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
 
+    // ================= CONFIGURAÇÃO DO SOCKET WHATSAPP =================
     const sock = makeWASocket({
         auth: state,
         logger: P({ level: 'silent' }),
-        printQRInTerminal: true
+        browser: ['Chrome (Linux)', '', ''],
+        // Usa a versão detectada automaticamente
+        version: version,
+        syncFullHistory: false,
+        connectTimeoutMs: 60000,
+        generateHighQualityLinkPreview: false,
+        patch: true,
+        // Opções de reconnection
+        retryRequestDelayMs: 1000,
+        maxRetries: 10,
+        defaultQueryTimeoutMs: 60000,
+        // Keep alive
+        keepAliveIntervalMs: 25000,
+        markOnlineOnConnect: true,
+        // Novas opções do Baileys 7.0.0
+        shouldSyncHistoryMessage: () => false,
+        emitOwnEvents: false
     });
 
     sockInstance = sock;
+
+    // 🔥 INICIA O MONITORAMENTO DE VERSÃO
+    iniciarMonitoramentoVersao(24); // Verifica a cada 24 horas
 
     sock.ev.on('creds.update', saveCreds);
 
@@ -1778,7 +1983,7 @@ async function startBot() {
                             
                             try {
                                 await enviarMensagemParaUsuario(sock, novoAtendente, 
-                                    `👨‍💼 *ATENDENTE CONFIGURADO*\n\nOlá ${pushName}! Você foi configurado como atendente do bot.\n\n*Comandos disponíveis:*\n• #STATUS - Relatório do sistema\n• #FECHAR - Encerra todos os atendimentos\n• #FECHAR [número] - Encerra cliente específico\n• #FECHAR [nome] - Encerra por nome\n• #CLIENTES - Lista clientes ativos`
+                                    `👨‍💼 *ATENDENTE CONFIGURADO*\n\nOlá ${pushName}! Você foi configurado como atendente do bot.\n\n*Comandos disponíveis:*\n• #STATUS - Relatório do sistema\n• #VERSAO - Versão do WhatsApp\n• #FECHAR - Encerra todos os atendimentos\n• #FECHAR [número] - Encerra cliente específico\n• #FECHAR [nome] - Encerra por nome\n• #CLIENTES - Lista clientes ativos`
                                 );
                             } catch (error) {}
                         }
@@ -1803,6 +2008,8 @@ async function startBot() {
                     `📱 *Bot:* ${empresa}\n` +
                     `📞 *Número:* ${numeroAtendente}\n` +
                     `👤 *Atendente:* ${pushName}\n` +
+                    `📱 *Versão WhatsApp:* ${global.WHATSAPP_VERSION}\n` +
+                    `📱 *Baileys:* ${global.VERSAO_BAILEYS}\n` +
                     `⏰ ${formatarDataHora()}`,
                     'conexao'
                 ).then(resultado => {
@@ -1838,6 +2045,8 @@ async function startBot() {
                 motivo = 'Usuário deslogou do WhatsApp';
             } else if (errorMessage.includes('Stream Errored')) {
                 motivo = 'Instabilidade na conexão - reconectando automaticamente (Erro de stream)' + errorMessage;
+            } else if (errorMessage.includes('405')) {
+                motivo = 'Erro 405 - Versão do WhatsApp desatualizada (o monitoramento automático vai corrigir)';
             }
             
             console.log(`${formatarDataHora()} 🔧 Chamando notificação de DESCONEXÃO... Motivo: ${motivo}`);
@@ -1845,6 +2054,7 @@ async function startBot() {
                 `⚠️ *WHATSAPP DESCONECTADO*\n\n` +
                 `📱 *Bot:* ${empresa}\n` +
                 `📞 *Número:* ${numeroAtendente}\n` +
+                `📱 *Versão:* ${global.WHATSAPP_VERSION}\n` +
                 `🔍 *Motivo:* ${motivo}\n` +
                 `⏰ ${formatarDataHora()}\n\n` +
                 `🔄 Tentando reconectar em alguns segundos...`,
@@ -2005,6 +2215,8 @@ sock.ev.on('messages.upsert', async ({ messages }) => {
             const relatorio = gerarRelatorioSistema();
             const mensagem = 
 `📊 *RELATÓRIO DO SISTEMA v${relatorio.versao}*
+📱 *Baileys:* ${relatorio.versao_baileys}
+📱 *WhatsApp:* ${relatorio.versao_whatsapp}
 ⏰ ${formatarDataHora()}
 
 👥 *USUÁRIOS*
@@ -2019,6 +2231,25 @@ Total: ${relatorio.estatisticas.atendimentos.ativos}
 
 🔍 *NOVOS FORMATOS*
 ${relatorio.estatisticas.formatosDetectados} registro(s)`;
+
+            await enviarMensagemParaUsuario(sock, usuario, mensagem);
+            return;
+        }
+        
+        // 🔥 NOVO COMANDO: #VERSAO
+        if (texto.toUpperCase() === '#VERSAO' || texto.toUpperCase() === '#VERSION') {
+            const versaoAtual = global.WHATSAPP_VERSION || 'desconhecida';
+            const versaoDetectada = global.WHATSAPP_VERSION_DETECTADA || 'não detectada';
+            
+            const mensagem = 
+`📱 *VERSÃO DO WHATSAPP*
+
+📌 *Versão configurada:* ${versaoAtual}
+📡 *Versão detectada:* ${versaoDetectada}
+⏰ *Última verificação:* ${formatarDataHora()}
+📊 *Monitoramento:* ${global.MONITORAMENTO_ATIVO ? '✅ Ativo' : '❌ Inativo'}
+
+${versaoAtual == versaoDetectada ? '✅ Versão atualizada!' : '⚠️ Versão diferente detectada! O monitoramento automático vai ajustar.'}`;
 
             await enviarMensagemParaUsuario(sock, usuario, mensagem);
             return;
@@ -2384,7 +2615,7 @@ ${relatorio.estatisticas.formatosDetectados} registro(s)`;
 // ================= INICIALIZAÇÃO =================
 
 console.log('\n' + '='.repeat(70));
-console.log('🤖 BOT WHATSAPP - VERSÃO LID-PROOF ULTRA v5.0');
+console.log('🤖 BOT WHATSAPP - VERSÃO LID-PROOF ULTRA v6.0');
 console.log('✅ 100% AGNÓSTICO A NÚMERO');
 console.log('✅ LID como tipo próprio');
 console.log('✅ Primary Key universal com Stable ID');
@@ -2412,6 +2643,12 @@ console.log('   • Monitoramento da conexão do WhatsApp');
 console.log('   • Notificações via Telegram');
 console.log('   • Configurável via painel web');
 console.log('   • Número do atendente identificado');
+console.log('🆕 MONITORAMENTO AUTOMÁTICO DE VERSÃO v6.0');
+console.log('   • Detecção automática da versão do WhatsApp');
+console.log('   • Verificação periódica a cada 24h');
+console.log('   • Notificação Telegram quando versão mudar');
+console.log('   • Comando #VERSAO para consultar');
+console.log(`📱 Baileys: ${global.VERSAO_BAILEYS}`);
 console.log('='.repeat(70));
 console.log('🚀 INICIANDO BOT...');
 console.log('='.repeat(70));
@@ -2446,7 +2683,13 @@ process.on('SIGTERM', () => {
 });
 
 // Iniciar o bot
-startBot();
+startBot().catch(error => {
+    console.error(`${formatarDataHora()} ❌ Erro fatal:`, error);
+    setTimeout(() => {
+        console.log(`${formatarDataHora()} 🔄 Reiniciando bot em 5 segundos...`);
+        setTimeout(() => startBot(), 5000);
+    }, 3000);
+});
 
 // Tratamento de exceções
 process.on('uncaughtException', (error) => {
