@@ -986,12 +986,24 @@ if (isset($_POST['alterar_senha_dashboard'])) {
 
 $configPath = '/opt/whatsapp-bot/config.json';
 $statusPath = '/opt/whatsapp-bot/status.json';
+$versaoPath = '/opt/whatsapp-bot/ultima_versao.json';
 $pixPath = '/var/www/botzap/pix.php';
 $logPath = '/var/log/botzap.log';
 
 $mensagem = '';
 $erro = '';
 $abaAtiva = isset($_GET['aba']) ? $_GET['aba'] : 'config';
+
+// Carregar versão do WhatsApp
+$versao_whatsapp = '1033927531'; // Versão padrão
+$versao_detectada = null;
+if (file_exists($versaoPath)) {
+    $versao_data = json_decode(file_get_contents($versaoPath), true);
+    if ($versao_data) {
+        $versao_whatsapp = $versao_data['versao_bot'] ?? $versao_data['versao_nova'] ?? $versao_whatsapp;
+        $versao_detectada = $versao_data['versao_detectada'] ?? null;
+    }
+}
 
 // Configurações padrão
 $config = [
@@ -1559,6 +1571,71 @@ button {
     display: flex;
     align-items: center;
     gap: 8px;
+}
+
+/* ==================== VERSÃO DO WHATSAPP ==================== */
+.whatsapp-version {
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 12px 15px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.version-info {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.version-badge {
+    background: #2563eb;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.version-number {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.version-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.version-status .atualizada {
+    color: #059669;
+    background: #d1fae5;
+    padding: 4px 8px;
+    border-radius: 16px;
+    font-weight: 600;
+}
+
+.version-status .desatualizada {
+    color: #b45309;
+    background: #ffedd5;
+    padding: 4px 8px;
+    border-radius: 16px;
+    font-weight: 600;
+}
+
+.version-detectada {
+    color: #6b7280;
+    font-size: 12px;
 }
 
 /* ==================== ESTILOS DO TERMINAL ==================== */
@@ -2283,7 +2360,7 @@ tr:hover{ background:#f9f9f9; }
     <div class="tabs">
         <a href="?aba=config" class="tab <?= $abaAtiva === 'config' ? 'active' : '' ?>">⚙️ Configurações</a>
         <a href="?aba=log" class="tab <?= $abaAtiva === 'log' ? 'active' : '' ?>">📋 Exibir Log</a>
-        <a href="?aba=dashboard" class="tab <?= $abaAtiva === 'dashboard' ? 'active' : '' ?>">📊 Dashboard PIX</a>
+        <a href="?aba=dashboard" class="tab <?= $abaAtiva === 'dashboard' ? 'active' : '' ?>">📊 Consultas Fatura</a>
         <?php if ($_SESSION['nivel'] === 'admin'): ?>
         <a href="?aba=usuarios" class="tab <?= $abaAtiva === 'usuarios' ? 'active' : '' ?>">👥 Usuários</a>
         <?php endif; ?>
@@ -2291,7 +2368,7 @@ tr:hover{ background:#f9f9f9; }
 </div>
 
 <!-- ===================================================================== -->
-<!-- BLOCO 19 - CONTEÚDO DA ABA CONFIGURAÇÕES (CORRIGIDO COM TODAS AS DICAS)
+<!-- BLOCO 19 - CONTEÚDO DA ABA CONFIGURAÇÕES (COM VERSÃO DO WHATSAPP)
 <!-- ===================================================================== -->
 
 <?php if ($abaAtiva === 'config'): ?>
@@ -2315,6 +2392,24 @@ tr:hover{ background:#f9f9f9; }
         <?php if ($erro): ?>
             <div class="alert error"><?= $erro ?></div>
         <?php endif; ?>
+
+        <!-- NOVO: Informação da versão do WhatsApp -->
+        <div class="whatsapp-version">
+            <div class="version-info">
+                <span class="version-badge">📱 WhatsApp</span>
+                <span class="version-number"><?= htmlspecialchars($versao_whatsapp) ?></span>
+                <?php if ($versao_detectada && $versao_detectada != $versao_whatsapp): ?>
+                <span class="version-detectada">(nova detectada: <?= htmlspecialchars($versao_detectada) ?>)</span>
+                <?php endif; ?>
+            </div>
+            <div class="version-status">
+                <?php if ($versao_detectada && $versao_detectada != $versao_whatsapp): ?>
+                <span class="desatualizada">⚠️ Desatualizada</span>
+                <?php else: ?>
+                <span class="atualizada">✅ Atualizada</span>
+                <?php endif; ?>
+            </div>
+        </div>
 
         <!-- FORMULÁRIO PRINCIPAL -->
         <form method="post">
