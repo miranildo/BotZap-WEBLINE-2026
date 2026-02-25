@@ -413,8 +413,7 @@ cat > "$BOT_DIR/package.json" <<'PKGEOF'
   "description": "Bot WhatsApp para atendimento automático",
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
-    "pino": "^10.3.1",
-    "qrcode-terminal": "^0.12.0"
+    "pino": "^10.3.0"
   }
 }
 PKGEOF
@@ -510,9 +509,6 @@ WEB_FILES=(
     "service-worker.js"
     "status.php"
     "teste_ipv6.php"
-    "monitor-versao.js"
-    "teste-notificacao.js"
-    "teste-versao.js"
 )
 
 DOWNLOAD_COUNT=0
@@ -542,30 +538,9 @@ if [ -f "bot.js" ]; then
     echo "✅ bot.js copiado para $BOT_DIR/"
 fi
 
-if [ -f "monitor-versao.js" ]; then
-    cp "monitor-versao.js" "$BOT_DIR/"
-    chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/monitor-versao.js"
-    chmod 750 "$BOT_DIR/monitor-versao.js"
-    echo "✅ monitor-versao.js copiado para $BOT_DIR/"
-fi
-
-if [ -f "teste-notificacao.js" ]; then
-    cp "teste-notificacao.js" "$BOT_DIR/"
-    chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/teste-notificacao.js"
-    chmod 750 "$BOT_DIR/teste-notificacao.js"
-    echo "✅ teste-notificacao.js copiado para $BOT_DIR/"
-fi
-
-if [ -f "teste-versao.js" ]; then
-    cp "teste-versao.js" "$BOT_DIR/"
-    chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/teste-versao.js"
-    chmod 750 "$BOT_DIR/teste-versao.js"
-    echo "✅ teste-versao.js copiado para $BOT_DIR/"
-fi
-
 WEB_FILES_COPIED=0
 for file in *; do
-    if [ "$file" != "bot.js" ] && [ "$file" != "monitor-versao.js" ] && [ "$file" != "teste-notificacao.js" ] && [ "$file" != "teste-versao.js" ] && [ -f "$file" ]; then
+    if [ "$file" != "bot.js" ] && [ -f "$file" ]; then
         cp "$file" "$WEB_DIR/"
         WEB_FILES_COPIED=$((WEB_FILES_COPIED + 1))
         echo "   ✅ $file"
@@ -843,22 +818,6 @@ cat > /etc/logrotate.d/pix_acessos <<'LOGEOF'
 }
 LOGEOF
 
-cat > /etc/logrotate.d/botzap-monitor <<'LOGEOF'
-/var/log/botzap-monitor.log
-/opt/whatsapp-bot/versoes.log {
-    daily
-    missingok
-    rotate 30
-    compress
-    delaycompress
-    notifempty
-    create 0640 botzap www-data
-    sharedscripts
-}
-LOGEOF
-
-echo "✅ Logrotate configurado"
-
 # =====================================================
 # CONFIGURAR HOSTS LOCAL
 # =====================================================
@@ -867,55 +826,6 @@ echo "🌐 Configurando hosts local..."
 sed -i "/$DOMAIN_BASE/d" /etc/hosts
 echo "127.0.0.1 $BOT_DOMAIN www.$DOMAIN_BASE" >> /etc/hosts
 echo "✅ Hosts local configurado"
-
-# =====================================================
-# CONFIGURAR CRON PARA MONITOR DE VERSÃO (CORRIGIDO)
-# =====================================================
-echo "⏰ Configurando cron para monitor de versão..."
-
-# Criar arquivo de log do cron
-touch /var/log/botzap-monitor.log
-chown "$BOT_USER:$WEB_GROUP" /var/log/botzap-monitor.log
-chmod 664 /var/log/botzap-monitor.log
-
-# Configurar editor padrão para não interagir
-export EDITOR=nano
-export VISUAL=nano
-
-# Primeiro método: tentar adicionar via pipe
-echo "📝 Adicionando entrada ao crontab..."
-(crontab -l 2>/dev/null | grep -v "monitor-versao.js"; echo "0 */6 * * * cd $BOT_DIR && /usr/bin/node monitor-versao.js >> /var/log/botzap-monitor.log 2>&1") | crontab -
-
-# Verificar se funcionou
-if crontab -l 2>/dev/null | grep -q "monitor-versao.js"; then
-    echo "✅ Cron configurado com sucesso via método 1"
-else
-    echo "⚠️ Método 1 falhou, tentando método alternativo..."
-    
-    # Método alternativo: escrever direto no arquivo do crontab
-    TMP_CRON=$(mktemp)
-    crontab -l > "$TMP_CRON" 2>/dev/null || true
-    echo "# Monitor de versão do WhatsApp" >> "$TMP_CRON"
-    echo "0 */6 * * * cd $BOT_DIR && /usr/bin/node monitor-versao.js >> /var/log/botzap-monitor.log 2>&1" >> "$TMP_CRON"
-    
-    if crontab "$TMP_CRON" 2>/dev/null; then
-        echo "✅ Cron configurado com sucesso via método alternativo"
-    else
-        echo "⚠️ Não foi possível configurar o cron automaticamente"
-        echo "   Para configurar manualmente, execute:"
-        echo "   crontab -e"
-        echo "   E adicione a linha:"
-        echo "   0 */6 * * * cd $BOT_DIR && /usr/bin/node monitor-versao.js >> /var/log/botzap-monitor.log 2>&1"
-    fi
-    
-    rm -f "$TMP_CRON"
-fi
-
-# Mostrar configuração atual
-echo ""
-echo "📋 Configuração atual do crontab:"
-crontab -l 2>/dev/null || echo "   (vazio)"
-echo ""
 
 # =====================================================
 # CRIAR SCRIPT DE DIAGNÓSTICO
@@ -932,7 +842,8 @@ echo "Data: $(date)"
 echo ""
 
 # Versão atual
-echo "📱 Versão configurada: [2, 3000, 1033927531]"
+ULTIMA_VERSAO=$(cat /opt/whatsapp-bot/ultima_versao.json 2>/dev/null | grep -o '"versao":[0-9]*' | cut -d':' -f2)
+echo "📱 Versão configurada: [2, 3000, ${ULTIMA_VERSAO:-1033927531}]"
 echo ""
 
 # Status do bot
@@ -1044,15 +955,6 @@ cat << EOF
 $SSL_STATUS
 • URL de acesso:           $SSL_URL
 
-⚡ NOVOS COMANDOS DISPONÍVEIS:
------------------------------
-• Monitor de versão:        node monitor-versao.js
-• Teste notificação:        node teste-notificacao.js
-• Teste versão:             node teste-versao.js
-• Diagnóstico:              ./diagnostico.sh
-• Log do monitor:           tail -f /var/log/botzap-monitor.log
-• Log de versões:           tail -f $BOT_DIR/versoes.log
-
 ⚡ COMANDOS ÚTEIS:
 -----------------
 • Status do bot:            systemctl status botzap
@@ -1062,6 +964,7 @@ $SSL_STATUS
 • Reiniciar Nginx:          systemctl reload nginx
 • Logs Nginx:               tail -f /var/log/nginx/botzap_error.log
 • Dashboard Pix logs:       ls -la /var/log/pix_acessos/
+• Diagnóstico:              ./diagnostico.sh
 • node bot.js               Inicia o bot normalmente
 • node bot.js --clear-auth  Limpa sessões corrompidas
 • node bot.js --clean       Mesmo que --clear-auth
