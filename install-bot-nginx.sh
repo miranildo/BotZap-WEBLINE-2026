@@ -461,7 +461,7 @@ cat > "$BOT_DIR/config.json" <<'CFGEOF'
     "mkauth_client_id": "",
     "mkauth_client_secret": "",
     "planos_ativos": "Sim",
-    "planos_mensagem": "📶 *100 megas* 💰 R$ 59,90 - FIBRA\n📶 *200 megas* 💰 R$ 69,90 - FIBRA\n📶 *300 megas* 💰 R$ 89,90 - FIBRA\n\n*Taxa de instalação* 💰 R$ 50,00 à vista ou R$ 60,00 no cartão em 2x.\n\n*Tá esperando o que?* 😱\n\n2️⃣ Falar com um Atendente    5️⃣ Assine Já!",
+    "planos_mensagem": "📶 *50 mega*  💰 R$ 54,90 - FIBRA\r\n📶 *100 mega* 💰 R$ 59,90 - FIBRA\r\n📶 *200 mega* 💰 R$ 69,90 - FIBRA\r\n📶 *300 mega* 💰 R$ 89,90 - FIBRA\r\n\r\n*Taxa de instalação* 💰 R$ 50,00 à vista ou R$ 60,00 no cartão em 2x.\r\n\r\n*Tá esperando o que?* 😱\r\n\r\n5️⃣ Assine Já!",
     "link_assinatura": "https://www.weblinetelecom.com.br/cadastro.hhvm"
 }
 CFGEOF
