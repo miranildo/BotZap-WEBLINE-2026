@@ -443,7 +443,7 @@ echo "⚙️ Criando arquivos de configuração do bot..."
 cat > "$BOT_DIR/config.json" <<'CFGEOF'
 {
     "empresa": "PROVEDOR",
-    "menu": "Olá! *{{nome}}*👋\r\n\r\nBem-vindo ao atendimento da *{{empresa}}*\r\n\r\n1️⃣ Baixar Fatura\r\n2️⃣ Falar com Atendente\r\n\r\nDigite o número da opção desejada:",
+    "menu": "Olá! *{{nome}}*👋\r\n\r\nBem-vindo ao atendimento da *{{empresa}}*\r\n\r\n1️⃣ Baixar Fatura\r\n2️⃣ Falar com Atendente\r\n3️⃣ Não sou Cliente!\r\n\r\nDigite o número da opção desejada:",
     "boleto_url": "https://www.SEU_DOMINIO.com.br/pix.php",
     "atendente_numero": "55XXXXXXXXXX",
     "tempo_atendimento_humano": 30,
@@ -459,7 +459,10 @@ cat > "$BOT_DIR/config.json" <<'CFGEOF'
     "telegram_notificar_qr": "Sim",
     "mkauth_url": "https://www.SEU_DOMINIO.com.br/api",
     "mkauth_client_id": "",
-    "mkauth_client_secret": ""
+    "mkauth_client_secret": "",
+    "planos_ativos": "Sim",
+    "planos_mensagem": "📶 *100 megas* 💰 R$ 59,90 - FIBRA\n📶 *200 megas* 💰 R$ 69,90 - FIBRA\n📶 *300 megas* 💰 R$ 89,90 - FIBRA\n\n*Taxa de instalação* 💰 R$ 50,00 à vista ou R$ 60,00 no cartão em 2x.\n\n*Tá esperando o que?* 😱\n\n2️⃣ Falar com um Atendente    5️⃣ Assine Já!",
+    "link_assinatura": "https://www.weblinetelecom.com.br/cadastro.hhvm"
 }
 CFGEOF
 chown "$BOT_USER:$WEB_GROUP" "$BOT_DIR/config.json"
