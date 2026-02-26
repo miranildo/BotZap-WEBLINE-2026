@@ -981,7 +981,7 @@ if (isset($_POST['alterar_senha_dashboard'])) {
 }
 
 // =====================================================================
-// BLOCO 12 - VARIÁVEIS DO WHATSAPP E CONFIGURAÇÕES
+// BLOCO 12 - VARIÁVEIS DO WHATSAPP E CONFIGURAÇÕES (CORRIGIDO)
 // =====================================================================
 
 $configPath = '/opt/whatsapp-bot/config.json';
@@ -994,14 +994,31 @@ $mensagem = '';
 $erro = '';
 $abaAtiva = isset($_GET['aba']) ? $_GET['aba'] : 'config';
 
-// Carregar versão do WhatsApp
-$versao_whatsapp = '1033927531'; // Versão padrão
+// Carregar versão do WhatsApp (CORRIGIDO)
+$versao_whatsapp = '1033927531'; // Versão padrão (fallback)
 $versao_detectada = null;
+$versao_completa = null;
+$fonte_versao = 'desconhecida';
+
 if (file_exists($versaoPath)) {
     $versao_data = json_decode(file_get_contents($versaoPath), true);
-    if ($versao_data) {
-        $versao_whatsapp = $versao_data['versao_bot'] ?? $versao_data['versao_nova'] ?? $versao_whatsapp;
-        $versao_detectada = $versao_data['versao_detectada'] ?? null;
+    if ($versao_data && is_array($versao_data)) {
+        // NOVA ESTRUTURA (gerada pelo fetchLatestBaileysVersion)
+        if (isset($versao_data['versao'])) {
+            $versao_whatsapp = $versao_data['versao'];
+            $versao_completa = $versao_data['versao_completa'] ?? null;
+            $fonte_versao = $versao_data['fonte'] ?? 'desconhecida';
+        }
+        // ESTRUTURA ANTIGA (para compatibilidade)
+        elseif (isset($versao_data['versao_bot'])) {
+            $versao_whatsapp = $versao_data['versao_bot'];
+            $versao_detectada = $versao_data['versao_detectada'] ?? null;
+            $fonte_versao = 'monitor';
+        }
+        elseif (isset($versao_data['versao_nova'])) {
+            $versao_whatsapp = $versao_data['versao_nova'];
+            $fonte_versao = 'monitor';
+        }
     }
 }
 
@@ -1578,7 +1595,7 @@ button {
     background: #f3f4f6;
     border: 1px solid #e5e7eb;
     border-radius: 8px;
-    padding: 12px 15px;
+    padding: 10px 15px;
     margin-bottom: 20px;
     display: flex;
     align-items: center;
@@ -1590,7 +1607,7 @@ button {
 .version-info {
     display: flex;
     align-items: center;
-    gap: 15px;
+    gap: 10px;
     flex-wrap: wrap;
 }
 
@@ -1610,31 +1627,20 @@ button {
     color: #1f2937;
 }
 
-.version-status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 13px;
+.version-fonte {
+    background: #e5e7eb;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    color: #4b5563;
 }
 
 .version-status .atualizada {
     color: #059669;
     background: #d1fae5;
-    padding: 4px 8px;
+    padding: 4px 10px;
     border-radius: 16px;
     font-weight: 600;
-}
-
-.version-status .desatualizada {
-    color: #b45309;
-    background: #ffedd5;
-    padding: 4px 8px;
-    border-radius: 16px;
-    font-weight: 600;
-}
-
-.version-detectada {
-    color: #6b7280;
     font-size: 12px;
 }
 
@@ -2393,23 +2399,17 @@ tr:hover{ background:#f9f9f9; }
             <div class="alert error"><?= $erro ?></div>
         <?php endif; ?>
 
-        <!-- NOVO: Informação da versão do WhatsApp -->
-        <div class="whatsapp-version">
-            <div class="version-info">
-                <span class="version-badge">📱 WhatsApp</span>
-                <span class="version-number"><?= htmlspecialchars($versao_whatsapp) ?></span>
-                <?php if ($versao_detectada && $versao_detectada != $versao_whatsapp): ?>
-                <span class="version-detectada">(nova detectada: <?= htmlspecialchars($versao_detectada) ?>)</span>
-                <?php endif; ?>
-            </div>
-            <div class="version-status">
-                <?php if ($versao_detectada && $versao_detectada != $versao_whatsapp): ?>
-                <span class="desatualizada">⚠️ Desatualizada</span>
-                <?php else: ?>
-                <span class="atualizada">✅ Atualizada</span>
-                <?php endif; ?>
-            </div>
-        </div>
+<!-- VERSÃO SIMPLIFICADA DO WHATSAPP -->
+<div class="whatsapp-version">
+    <div class="version-info">
+        <span class="version-badge">📱 WhatsApp</span>
+        <span class="version-number"><?= htmlspecialchars($versao_whatsapp) ?></span>
+        <span class="version-fonte">via Baileys</span>
+    </div>
+    <div class="version-status">
+        <span class="atualizada">✅ Atualizada</span>
+    </div>
+</div>
 
         <!-- FORMULÁRIO PRINCIPAL -->
         <form method="post">
