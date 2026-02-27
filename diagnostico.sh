@@ -7,7 +7,7 @@ echo "Data: $(date)"
 echo ""
 
 # Versão atual
-echo "📱 Versão configurada: [2, 3000, 1033927531]"
+echo "📱 Versão configurada: [2, 3000, 1033846690]"
 echo ""
 
 # Status do bot
