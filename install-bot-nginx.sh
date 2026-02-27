@@ -498,6 +498,7 @@ cd "$TEMP_DIR"
 WEB_FILES=(
     "auth.php"
     "bot.js"
+    "diagnostico.sh"
     "hora.php"
     "index.php"
     "info.php"
