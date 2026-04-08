@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Iniciando instalação do Bot WhatsApp – Debian 12 (Nginx + PHP-FPM)"
+echo "🚀 Iniciando instalação do Bot WhatsApp – Debian 12 (Nginx + PHP-FPM) - FEV/2026"
 echo "📅 $(date)"
 echo ""
 
