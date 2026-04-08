@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Iniciando instalação do Bot WhatsApp – Debian 12 (Nginx + PHP-FPM)"
+echo "🚀 Iniciando instalação do Bot WhatsApp – Debian 12 (Nginx + PHP-FPM) - ABRIL/2026"
 echo "📅 $(date)"
 echo ""
 
@@ -832,6 +832,73 @@ echo "127.0.0.1 $BOT_DOMAIN www.$DOMAIN_BASE" >> /etc/hosts
 echo "✅ Hosts local configurado"
 
 # =====================================================
+# CONFIGURAR FIREWALL NFTABLES
+# =====================================================
+echo "🛡️ Configurando firewall nftables..."
+
+# Detectar porta SSH ativa
+echo "🔍 Detectando porta SSH ativa..."
+SSH_PORT="22"
+
+if [ -f /etc/ssh/sshd_config ]; then
+    DETECTED_PORT=$(grep -E "^Port\s+[0-9]+" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
+    if [ ! -z "$DETECTED_PORT" ]; then
+        SSH_PORT="$DETECTED_PORT"
+        echo "   ✅ Porta SSH detectada: $SSH_PORT"
+    fi
+fi
+
+echo "📌 Porta SSH que será liberada: $SSH_PORT"
+
+# Instalar nftables se necessário
+if ! command -v nft &> /dev/null; then
+    echo "📦 Instalando nftables..."
+    apt update -qq
+    apt install -y nftables
+fi
+
+# Backup da configuração existente
+if [ -f /etc/nftables.conf ]; then
+    cp /etc/nftables.conf /etc/nftables.conf.backup.$(date +%Y%m%d%H%M%S) 2>/dev/null
+fi
+
+# Limpar regras existentes
+nft flush ruleset 2>/dev/null
+
+# Aplicar regras
+echo "🔄 Aplicando regras do firewall..."
+
+nft add table inet filter
+nft add chain inet filter input { type filter hook input priority 0\; policy drop\; }
+nft add chain inet filter forward { type filter hook forward priority 0\; policy drop\; }
+nft add chain inet filter output { type filter hook output priority 0\; policy accept\; }
+
+nft add rule inet filter input ct state established,related accept
+nft add rule inet filter input iif lo accept
+nft add rule inet filter input ip protocol icmp icmp type echo-request limit rate 10/second accept 2>/dev/null || true
+nft add rule inet filter input tcp dport $SSH_PORT accept
+nft add rule inet filter input tcp dport 80 accept
+nft add rule inet filter input tcp dport 443 accept
+nft add rule inet filter input tcp dport 5222 accept
+nft add rule inet filter input tcp flags syn limit rate 20/second accept 2>/dev/null || true
+nft add rule inet filter input tcp dport $SSH_PORT limit rate 4/minute accept 2>/dev/null || true
+nft add rule inet filter input log prefix \"NFTABLES-DROP: \" drop
+
+# Salvar configuração
+nft list ruleset > /etc/nftables.conf
+sed -i 's/\\//g' /etc/nftables.conf
+
+# Configurar persistência
+systemctl unmask nftables 2>/dev/null
+systemctl enable nftables
+systemctl restart nftables
+
+echo "✅ Firewall nftables configurado com sucesso"
+echo "   • Porta SSH: $SSH_PORT"
+echo "   • HTTP/HTTPS: 80, 443"
+echo "   • WhatsApp: 5222"
+
+# =====================================================
 # CRIAR SCRIPT DE DIAGNÓSTICO
 # =====================================================
 echo "🔧 Criando script de diagnóstico..."
@@ -959,6 +1026,11 @@ cat << EOF
 $SSL_STATUS
 • URL de acesso:           $SSL_URL
 
+🛡️ FIREWALL CONFIGURADO:
+------------------------
+• Porta SSH:               $SSH_PORT
+• Portas liberadas:        HTTP(80), HTTPS(443), WhatsApp(5222)
+
 ⚡ COMANDOS ÚTEIS:
 -----------------
 • Status do bot:            systemctl status botzap
@@ -969,6 +1041,7 @@ $SSL_STATUS
 • Logs Nginx:               tail -f /var/log/nginx/botzap_error.log
 • Dashboard Pix logs:       ls -la /var/log/pix_acessos/
 • Diagnóstico:              ./diagnostico.sh
+• Ver firewall:             nft list ruleset
 • node bot.js               Inicia o bot normalmente
 • node bot.js --clear-auth  Limpa sessões corrompidas
 • node bot.js --clean       Mesmo que --clear-auth
