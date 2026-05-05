@@ -448,6 +448,7 @@ cat > "$BOT_DIR/config.json" <<'CFGEOF'
     "atendente_numero": "55XXXXXXXXXX",
     "tempo_atendimento_humano": 30,
     "tempo_inatividade_global": 30,
+    "reset_timer_on_activity": true,
     "feriados_ativos": "Sim",
     "feriado_local_ativado": "Não",
     "feriado_local_mensagem": "📅 *Comunicado importante:*\r\n\r\nDeixe aqui a mensagem do feriado!!!\r\n\r\nO acesso a faturas PIX continua disponível 24/7! 🎉",
