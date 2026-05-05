@@ -1,6 +1,6 @@
 /*************************************************
  * ✅ BOT WHATSAPP - ÍNICIO DO PROJETO EM ‎Segunda-feira, ‎2‎ de ‎fevereiro‎ de ‎2026, ‏‎19:12:50 por MIRANILDO DE LIMA SANTOS
- *    BOT WHATSAPP - VERSÃO COMPLETA COM FERIADOS
+ *    BOT WHATSAPP - VERSÃO COMPLETA COM FERIADOS v1.0
  * ✅ Controle de feriados via painel web
  * ✅ CORRIGIDO: Bloqueia grupos (@g.us), permite listas (@lid) e individuais (@s.whatsapp.net)
  * ✅ ADICIONADO: Data/hora nos logs + Limpeza automática de usuários
@@ -12,7 +12,7 @@
  * ✅ ADICIONADO: Atualização automática do número do atendente no config.json
  * ✅ ADICIONADO: Limpeza automática da pasta auth_info ao detectar desconexão (loggedOut)
  * ✅ CORRIGIDO: Comando #FECHAR do atendente agora funciona corretamente
- * ✅ ADICIONADO: Comandos #FECHAR [número] e #FECHAR [nome] para encerrar individualmente
+ * ✅ ADICIONADO: Comando #FECHAR [número] e #FECHAR [nome] para encerrar individualmente
  * ✅ ADICIONADO: Comando #CLIENTES para listar atendimentos ativos
  * ✅ CORRIGIDO: Bot NÃO responde em grupos - apenas individualmente
  * ✅ ADICIONADO: Verificação MK-Auth para CPF/CNPJ existentes antes de gerar link PIX
@@ -21,13 +21,13 @@
  * ✅ CORRIGIDO: "Para Fatura" fora do horário e "Tentar outro CPF" agora vão para tela CPF
  * ✅ ATUALIZADO: Permite cliente inativo COM fatura em aberto acessar PIX normalmente
  * ✅ ADICIONADO: Exibe nome do cliente quando CPF/CNPJ é encontrado
- *    BOT WHATSAPP - VERSÃO LID-PROOF CORRIGIDA
+ *    BOT WHATSAPP - VERSÃO LID-PROOF CORRIGIDA v1.1
  * ✅ CORRIGIDO: Loop de timeout para usuários individuais
  * ✅ MANTIDO: Todas mensagens do fluxo original
  * ✅ CORRIGIDO: Sistema de encerramento completo
  * ✅ CORRIGIDO: Apenas status@broadcast ignorado
  * ✅ CORRIGIDO: Clientes @lid e @broadcast atendidos
- *    BOT WHATSAPP - VERSÃO LID-PROOF ULTRA v2.0
+ *    BOT WHATSAPP - VERSÃO LID-PROOF ULTRA v1.2
  * ✅ 100% AGNÓSTICO A NÚMERO
  * ✅ LID como tipo próprio
  * ✅ Primary Key universal (stable ID para JIDs rotativos)
@@ -36,39 +36,53 @@
  * ✅ Extração robusta de JID (participant/remoteJid/contextInfo)
  * ✅ Gerenciamento profissional de intervalos
  * ✅ Health check e debug integrado
- * ✅ Migração automática V1 → V2
+ * ✅ Migração automática V1.2 → V1.3
  * ✅ TODAS as mensagens e fluxo ORIGINAIS preservados
  * 
- * 🆕 SISTEMA UNIFICADO DE TIMEOUT - v3.0
+ * 🆕 SISTEMA UNIFICADO DE TIMEOUT - v1.4
  * ✅ Tempo único configurável via index.php (tempo_inatividade_global)
  * ✅ Aplica-se a TODOS os contextos: menu, CPF, PIX, atendimento humano
  * ✅ Cliente inativo volta ao menu inicial automaticamente
  * ✅ Mantém compatibilidade com timeout específico do atendimento humano
  * ✅ CORREÇÃO: Menu inicial agora é monitorado pelo sistema de timeout
  * 
- * 🆕 CORREÇÃO DE MENSAGENS INDEVIDAS - v3.1
+ * 🆕 CORREÇÃO DE MENSAGENS INDEVIDAS - v1.5
  * ✅ Ignora mensagens de contexto de grupo (participant/participant_lid)
  * ✅ Ignora mensagens de broadcast não direcionadas
  * ✅ Processa apenas mensagens diretas (@lid, @s.whatsapp.net)
  * 
- * 🆕 FERIADO LOCAL PERSONALIZÁVEL - v4.0
+ * 🆕 FERIADO LOCAL PERSONALIZÁVEL - v1.6
  * ✅ Checkbox no painel para ativar/desativar feriado local
  * ✅ Mensagem personalizável para feriados locais
  * ✅ Mantém compatibilidade com feriados nacionais
  * ✅ Se ativado, bloqueia atendimento humano com mensagem customizada
  * ✅ Fluxo do PIX permanece 100% intacto
  * 
- * 🆕 NOTIFICAÇÕES TELEGRAM - v5.0
+ * 🆕 NOTIFICAÇÕES TELEGRAM - v1.7
  * ✅ Monitoramento da conexão do WhatsApp
  * ✅ Notificações via Telegram quando conectar, desconectar ou gerar QR Code
  * ✅ Configurável via painel web
  * ✅ Número do atendente identificado em todas as notificações
  * 
- * 🆕 DETECÇÃO AUTOMÁTICA DE VERSÃO v6.0
- * ✅ Versão do WhatsApp obtida via fetchLatestBaileysVersion()
- * ✅ Versão do Baileys lida dinamicamente do package.json
+ * 🆕 DETECÇÃO AUTOMÁTICA DE VERSÃO v1.8
+ * ✅ Versão WhatsApp via fetchLatestBaileysVersion()
+ * ✅ Versão Baileys lida do package.json
  * ✅ Sempre atualizado sem intervenção manual
  * ✅ Comando #VERSAO para consultar
+ * 
+ * 🆕 OPÇÃO 3 - NÃO SOU CLIENTE v1.9
+ * ✅ Planos configuráveis via painel web
+ * ✅ Link de assinatura personalizável
+ * ✅ Opções 2 (Atendente) e 5 (Assinar) no submenu
+ * ✅ Totalmente customizável
+ * 
+ * 🆕 CORREÇÃO DE DESCONEXÃO v2.0 - 02/05/2026
+ * ✅ Diferencia problemas de rede de desconexão real da Meta
+ * ✅ Mantém sessão em caso de queda de internet
+ * ✅ Apenas limpa sessão quando Meta realmente deslogar
+ * ✅ Após loggedOut, NÃO reconecta automaticamente (aguarda QR)
+ * ✅ ✅ NOTIFICAÇÕES TELEGRAM APENAS PARA CONEXÕES REAIS E DESCONEXÕES REAIS
+ * ✅ ✅ NENHUMA NOTIFICAÇÃO para problemas de rede ou reconexões automáticas
  * 
  * 🏆 NÍVEL: 10/10 - PREPARADO PARA 2025+
  *************************************************/
@@ -85,7 +99,6 @@ const path = require('path');
 const P = require('pino');
 const https = require('https');
 const crypto = require('crypto');
-const { Boom } = require('@hapi/boom');
 
 const BASE_DIR = __dirname;
 const AUTH_DIR = path.join(BASE_DIR, 'auth_info');
@@ -103,6 +116,10 @@ global.WHATSAPP_VERSION = 1033927531;  // Versão fallback
 global.WHATSAPP_VERSION_COMPLETA = null;
 global.VERSAO_BAILEYS = 'desconhecida';
 global.WHATSAPP_VERSION_DETECTADA = null;
+
+// ================= CONTROLE DE NOTIFICAÇÕES =================
+let ultimaNotificacaoDesconexao = 0;
+let limiteMinimoNotificacao = 30000; // 30 segundos entre notificações
 
 // ================= VERSIONAMENTO E CONTROLE =================
 const ESTRUTURA_VERSION = '2.0.0';
@@ -134,6 +151,13 @@ let ultimoLogVerificacao = {
 // Controle de reconexão
 let reconexaoEmAndamento = false;
 let tentativasReconexao = 0;
+let aguardandoQR = false;
+let reconexaoAposProblemaRede = false;
+let foiProblemaRede = false;
+let enviouNotificacaoDesconexaoReal = false;
+let isReconnecting = false;  // 🔥 FLAG CRÍTICA: Indica se é uma reconexão automática
+let primeiraConexao = true;   // 🔥 FLAG: Primeira inicialização do bot
+let modoLoggedOut = false;  // 🔥 Indica que estamos em processo de loggedOut
 
 // ================= FUNÇÕES AUXILIARES =================
 function formatarDataHora() {
@@ -174,7 +198,6 @@ function salvarInfoVersao(versao, versao_completa, fonte) {
 // ================= FUNÇÃO PARA OBTER VERSÃO DO BAILEYS DO PACKAGE.JSON =================
 function obterVersaoBaileys() {
     try {
-        // Tenta ler do package.json do Baileys na node_modules
         const packagePath = path.join(BASE_DIR, 'node_modules', '@whiskeysockets', 'baileys', 'package.json');
         if (fs.existsSync(packagePath)) {
             const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
@@ -184,7 +207,6 @@ function obterVersaoBaileys() {
         console.log(`${formatarDataHora()} ⚠️ Erro ao ler versão do Baileys: ${error.message}`);
     }
     
-    // Fallback: tenta ler do package.json principal
     try {
         const mainPackagePath = path.join(BASE_DIR, 'package.json');
         if (fs.existsSync(mainPackagePath)) {
@@ -192,7 +214,6 @@ function obterVersaoBaileys() {
             const baileysVersion = mainPackage.dependencies?.['@whiskeysockets/baileys'] || 
                                    mainPackage.devDependencies?.['@whiskeysockets/baileys'] || 
                                    'desconhecida';
-            // Remove ^ ou ~ se existir (ex: "^7.0.0-rc.9" → "7.0.0-rc.9")
             return baileysVersion.replace(/^[\^~]/, '');
         }
     } catch (error) {}
@@ -205,7 +226,6 @@ async function enviarNotificacaoTelegram(mensagem, tipo = 'info') {
     try {
         const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
         
-        // Verifica se Telegram está ativado
         if (config.telegram_ativado !== 'Sim') {
             return false;
         }
@@ -218,7 +238,6 @@ async function enviarNotificacaoTelegram(mensagem, tipo = 'info') {
             return false;
         }
         
-        // Verifica qual tipo de notificação deve enviar
         if (tipo === 'conexao' && config.telegram_notificar_conexao !== 'Sim') return false;
         if (tipo === 'desconexao' && config.telegram_notificar_desconexao !== 'Sim') return false;
         if (tipo === 'qr' && config.telegram_notificar_qr !== 'Sim') return false;
@@ -309,23 +328,15 @@ function pararIntervalos() {
 
 // FERIADOS FIXOS
 const FERIADOS_NACIONAIS = [
-    '01-01', // Ano Novo
-    '04-21', // Tiradentes
-    '05-01', // Dia do Trabalho
-    '09-07', // Independência
-    '10-12', // Nossa Senhora Aparecida
-    '11-02', // Finados
-    '11-15', // Proclamação da República
-    '12-25', // Natal
+    '01-01', '04-21', '05-01', '09-07', '10-12', '11-02', '11-15', '12-25'
 ];
 
-// ================= FUNÇÕES DE EXTRAÇÃO DE JID - ULTRA ROBUSTAS =================
+// ================= FUNÇÕES DE EXTRAÇÃO DE JID =================
 function extrairJIDCompleto(msg) {
     try {
         const key = msg.key || {};
         const message = msg.message || {};
         
-        // 🔥 PRIORIDADE 1: Participant explícito (grupos, LIDs em contexto)
         if (key.participant) {
             const jid = key.participant;
             if (jid.includes('@lid')) {
@@ -334,7 +345,6 @@ function extrairJIDCompleto(msg) {
             return { jid, source: 'participant', ignore: false };
         }
         
-        // 🔥 PRIORIDADE 2: RemoteJID padrão
         if (key.remoteJid) {
             const jid = key.remoteJid;
             if (jid === 'status@broadcast') {
@@ -343,7 +353,6 @@ function extrairJIDCompleto(msg) {
             return { jid, source: 'remote', ignore: false };
         }
         
-        // 🔥 PRIORIDADE 3: ContextInfo (Baileys específico)
         if (message.extendedTextMessage?.contextInfo?.participant) {
             const jid = message.extendedTextMessage.contextInfo.participant;
             return { jid, source: 'context_info', ignore: false };
@@ -454,205 +463,6 @@ async function limparSessoesECredenciais() {
     }
 }
 
-// ================= CLASSE WHATSAPP IDENTITY - VERSÃO FINAL 10/10 =================
-class WhatsAppIdentity {
-    constructor(rawJid) {
-        this.raw = rawJid || '';
-        this.normalized = this.normalizeJID(rawJid);
-        this.type = this.detectType();
-        this.subType = this.detectSubType();
-        this.internalId = this.generateInternalId();
-        this.stableId = this.generateStableId();
-        this.primaryKey = this.generatePrimaryKey();
-        this.sendCapability = this.determineSendCapability();
-    }
-    
-    normalizeJID(jid) {
-        if (!jid) return { identifier: '', domain: 'unknown', full: '' };
-        const parts = jid.split('@');
-        return {
-            identifier: parts[0] || '',
-            domain: parts[1] || 'unknown',
-            full: jid
-        };
-    }
-    
-    detectType() {
-        const jid = this.raw;
-        if (!jid) return 'unknown';
-        
-        if (jid.includes('@lid')) return 'lid';
-        if (jid === 'status@broadcast') return 'status';
-        if (jid.includes('@broadcast')) return 'broadcast';
-        if (jid.includes('@g.us')) return 'group';
-        if (jid.includes('@s.whatsapp.net')) return 'individual';
-        
-        if (jid.includes('@wa.encrypted') || 
-            jid.includes('@lid.enc') || 
-            /^[a-f0-9]{32,64}@/.test(jid) ||
-            /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}@/.test(jid)) {
-            console.log(`${formatarDataHora()} 🔐 JID CRIPTOGRAFADO DETECTADO: ${jid}`);
-            return 'encrypted_jid';
-        }
-        
-        if (jid.includes('@')) {
-            this.logNovoFormato();
-            return 'new_format';
-        }
-        
-        return 'unknown';
-    }
-    
-    detectSubType() {
-        if (this.type === 'lid') return 'individual_lid';
-        if (this.type === 'broadcast' && this.raw !== 'status@broadcast') return 'list_broadcast';
-        if (this.type === 'individual') return 'legacy_individual';
-        if (this.type === 'encrypted_jid') return 'encrypted_identity';
-        return 'standard';
-    }
-    
-    generateStableId() {
-        if (this.type === 'encrypted_jid') {
-            const parts = this.raw.split('@');
-            const identifier = parts[0] || '';
-            
-            // 🔥 Identificador com 64 caracteres hex (SHA-256)
-            if (/^[a-f0-9]{64}$/i.test(identifier)) {
-                return `enc_stable:${identifier.substring(0, 16)}`;
-            }
-            
-            // 🔥 Identificador com formato UUID
-            if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(identifier)) {
-                return `enc_uuid:${identifier}`;
-            }
-            
-            // 🔥 Identificador com 32 caracteres hex (MD5)
-            if (/^[a-f0-9]{32}$/i.test(identifier)) {
-                return `enc_md5:${identifier.substring(0, 16)}`;
-            }
-        }
-        
-        if (this.type === 'lid') {
-            const lidPart = this.normalized.identifier;
-            return `lid:${lidPart}`;
-        }
-        
-        return null;
-    }
-    
-    generatePrimaryKey() {
-        // 🔥 PRIORIDADE 1: Stable ID (para JIDs rotativos)
-        if (this.stableId) {
-            return this.stableId;
-        }
-        
-        // 🔥 PRIORIDADE 2: LID
-        if (this.type === 'lid') {
-            const lidPart = this.normalized.identifier;
-            return `lid:${lidPart}`;
-        }
-        
-        // 🔥 PRIORIDADE 3: Broadcast (usa identificador, não domínio)
-        if (this.type === 'broadcast' && this.raw !== 'status@broadcast') {
-            const identifier = this.normalized.identifier;
-            return `broadcast:${identifier}`;
-        }
-        
-        // 🔥 PRIORIDADE 4: Individual (tenta número primeiro)
-        if (this.type === 'individual') {
-            const phoneNumber = this.extractPhoneNumber();
-            if (phoneNumber) {
-                return `tel:${phoneNumber}`;
-            }
-            return `jid:${this.normalized.identifier}`;
-        }
-        
-        // 🔥 PRIORIDADE 5: Novo formato
-        if (this.type === 'new_format') {
-            return `new:${this.internalId.substring(5)}`; // Remove 'hash:'
-        }
-        
-        // 🔥 FALLBACK: Hash interno
-        return this.internalId;
-    }
-    
-    generateInternalId() {
-        if (!this.raw) return null;
-        const hash = crypto.createHash('sha256')
-            .update(this.raw)
-            .digest('hex')
-            .substring(0, 16);
-        return `hash:${hash}`;
-    }
-    
-    extractIdentifier() {
-        if (this.stableId) return this.stableId;
-        if (this.type === 'lid') return this.normalized.identifier;
-        if (this.type === 'individual') return this.normalized.identifier;
-        return this.internalId;
-    }
-    
-    extractPhoneNumber() {
-        try {
-            if (this.type === 'individual') {
-                let numero = this.normalized.identifier;
-                if (numero.includes(':')) numero = numero.split(':')[0];
-                numero = numero.replace(/\D/g, '');
-                if (numero.length >= 10 && numero.length <= 13) {
-                    if (!numero.startsWith('55')) numero = '55' + numero;
-                    return numero;
-                }
-            }
-            return null;
-        } catch (error) {
-            return null;
-        }
-    }
-    
-    getSendJID() {
-        if (!this.raw) return null;
-        
-        if (['lid', 'broadcast', 'individual', 'encrypted_jid', 'new_format'].includes(this.type)) {
-            return this.raw;
-        }
-        
-        return null;
-    }
-    
-    determineSendCapability() {
-        return {
-            lid: this.type === 'lid',
-            individual: this.type === 'individual',
-            broadcast: this.type === 'broadcast',
-            encrypted: this.type === 'encrypted_jid',
-            new_format: this.type === 'new_format',
-            canSend: ['lid', 'individual', 'broadcast', 'encrypted_jid', 'new_format'].includes(this.type),
-            canReceive: !['status', 'group', 'unknown'].includes(this.type)
-        };
-    }
-    
-    logNovoFormato() {
-        const novidade = {
-            timestamp: new Date().toISOString(),
-            jid: this.raw,
-            tipo: 'novo_formato',
-            normalized: this.normalized,
-            domain: this.normalized.domain,
-            internalId: this.internalId,
-            stableId: this.stableId,
-            primaryKey: this.primaryKey
-        };
-        
-        formatosDetectados.push(novidade);
-        fs.appendFileSync(MUDANCAS_LOG_PATH, JSON.stringify(novidade, null, 2) + '\n---\n');
-        
-        console.warn(`${formatarDataHora()} ⚠️ NOVO FORMATO DETECTADO!`);
-        console.warn(`${formatarDataHora()} JID: ${this.raw}`);
-        console.warn(`${formatarDataHora()} Primary Key: ${this.primaryKey}`);
-        console.warn(`${formatarDataHora()} Stable ID: ${this.stableId || 'N/A'}`);
-    }
-}
-
 function setStatus(status) {
     fs.writeFileSync(
         STATUS_PATH,
@@ -728,7 +538,7 @@ function atualizarAtendenteNoConfig(numeroAtendente) {
     }
 }
 
-// ================= FUNÇÕES DE VERIFICAÇÃO DE FERIADOS (ATUALIZADO) =================
+// ================= FUNÇÕES DE VERIFICAÇÃO DE FERIADOS =================
 function ehFeriado(data = new Date()) {
     try {
         const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
@@ -740,22 +550,18 @@ function ehFeriado(data = new Date()) {
     }
 }
 
-// 🔥 NOVA FUNÇÃO: Verifica feriado local (personalizável)
 function ehFeriadoLocal() {
     try {
         const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
-        // Verifica se o feriado local está ativado
         return config.feriado_local_ativado === 'Sim';
     } catch (error) {
         return false;
     }
 }
 
-// 🔥 NOVA FUNÇÃO: Retorna a mensagem personalizada do feriado local
 function getMensagemFeriadoLocal() {
     try {
         const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
-        // Retorna a mensagem configurada ou uma padrão
         return config.feriado_local_mensagem || "📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊";
     } catch (error) {
         return "📅 Hoje é feriado local. Retornaremos amanhã!";
@@ -774,7 +580,6 @@ function formatarHorarioComercial() {
             mensagem += "• Feriados Nacionais: Fechado\n";
         }
         
-        // 🔥 NOVO: Adiciona informação sobre feriado local se ativo
         if (config.feriado_local_ativado === 'Sim') {
             mensagem += "• Feriado Local ATIVO (verifique comunicado)\n";
         }
@@ -796,10 +601,7 @@ function dentroHorarioComercial() {
     const dia = d.getDay();
     const h = d.getHours() + d.getMinutes() / 60;
 
-    // 🔥 Verifica feriado nacional
     if (ehFeriado(d)) return false;
-    
-    // 🔥 NOVO: Verifica feriado local (se ativo, bloqueia atendimento)
     if (ehFeriadoLocal()) return false;
     
     if (dia === 0) return false;
@@ -815,7 +617,190 @@ function dentroHorarioComercial() {
     return false;
 }
 
-// ================= GESTÃO DE USUÁRIOS - VERSÃO 2.0 =================
+// ================= CLASSE WHATSAPP IDENTITY =================
+class WhatsAppIdentity {
+    constructor(rawJid) {
+        this.raw = rawJid || '';
+        this.normalized = this.normalizeJID(rawJid);
+        this.type = this.detectType();
+        this.subType = this.detectSubType();
+        this.internalId = this.generateInternalId();
+        this.stableId = this.generateStableId();
+        this.primaryKey = this.generatePrimaryKey();
+        this.sendCapability = this.determineSendCapability();
+    }
+    
+    normalizeJID(jid) {
+        if (!jid) return { identifier: '', domain: 'unknown', full: '' };
+        const parts = jid.split('@');
+        return {
+            identifier: parts[0] || '',
+            domain: parts[1] || 'unknown',
+            full: jid
+        };
+    }
+    
+    detectType() {
+        const jid = this.raw;
+        if (!jid) return 'unknown';
+        
+        if (jid.includes('@lid')) return 'lid';
+        if (jid === 'status@broadcast') return 'status';
+        if (jid.includes('@broadcast')) return 'broadcast';
+        if (jid.includes('@g.us')) return 'group';
+        if (jid.includes('@s.whatsapp.net')) return 'individual';
+        
+        if (jid.includes('@wa.encrypted') || 
+            jid.includes('@lid.enc') || 
+            /^[a-f0-9]{32,64}@/.test(jid) ||
+            /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}@/.test(jid)) {
+            console.log(`${formatarDataHora()} 🔐 JID CRIPTOGRAFADO DETECTADO: ${jid}`);
+            return 'encrypted_jid';
+        }
+        
+        if (jid.includes('@')) {
+            this.logNovoFormato();
+            return 'new_format';
+        }
+        
+        return 'unknown';
+    }
+    
+    detectSubType() {
+        if (this.type === 'lid') return 'individual_lid';
+        if (this.type === 'broadcast' && this.raw !== 'status@broadcast') return 'list_broadcast';
+        if (this.type === 'individual') return 'legacy_individual';
+        if (this.type === 'encrypted_jid') return 'encrypted_identity';
+        return 'standard';
+    }
+    
+    generateStableId() {
+        if (this.type === 'encrypted_jid') {
+            const parts = this.raw.split('@');
+            const identifier = parts[0] || '';
+            
+            if (/^[a-f0-9]{64}$/i.test(identifier)) {
+                return `enc_stable:${identifier.substring(0, 16)}`;
+            }
+            
+            if (/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(identifier)) {
+                return `enc_uuid:${identifier}`;
+            }
+            
+            if (/^[a-f0-9]{32}$/i.test(identifier)) {
+                return `enc_md5:${identifier.substring(0, 16)}`;
+            }
+        }
+        
+        if (this.type === 'lid') {
+            const lidPart = this.normalized.identifier;
+            return `lid:${lidPart}`;
+        }
+        
+        return null;
+    }
+    
+    generatePrimaryKey() {
+        if (this.stableId) {
+            return this.stableId;
+        }
+        
+        if (this.type === 'lid') {
+            const lidPart = this.normalized.identifier;
+            return `lid:${lidPart}`;
+        }
+        
+        if (this.type === 'broadcast' && this.raw !== 'status@broadcast') {
+            const identifier = this.normalized.identifier;
+            return `broadcast:${identifier}`;
+        }
+        
+        if (this.type === 'individual') {
+            const phoneNumber = this.extractPhoneNumber();
+            if (phoneNumber) {
+                return `tel:${phoneNumber}`;
+            }
+            return `jid:${this.normalized.identifier}`;
+        }
+        
+        if (this.type === 'new_format') {
+            return `new:${this.internalId.substring(5)}`;
+        }
+        
+        return this.internalId;
+    }
+    
+    generateInternalId() {
+        if (!this.raw) return null;
+        const hash = crypto.createHash('sha256')
+            .update(this.raw)
+            .digest('hex')
+            .substring(0, 16);
+        return `hash:${hash}`;
+    }
+    
+    extractPhoneNumber() {
+        try {
+            if (this.type === 'individual') {
+                let numero = this.normalized.identifier;
+                if (numero.includes(':')) numero = numero.split(':')[0];
+                numero = numero.replace(/\D/g, '');
+                if (numero.length >= 10 && numero.length <= 13) {
+                    if (!numero.startsWith('55')) numero = '55' + numero;
+                    return numero;
+                }
+            }
+            return null;
+        } catch (error) {
+            return null;
+        }
+    }
+    
+    getSendJID() {
+        if (!this.raw) return null;
+        
+        if (['lid', 'broadcast', 'individual', 'encrypted_jid', 'new_format'].includes(this.type)) {
+            return this.raw;
+        }
+        
+        return null;
+    }
+    
+    determineSendCapability() {
+        return {
+            lid: this.type === 'lid',
+            individual: this.type === 'individual',
+            broadcast: this.type === 'broadcast',
+            encrypted: this.type === 'encrypted_jid',
+            new_format: this.type === 'new_format',
+            canSend: ['lid', 'individual', 'broadcast', 'encrypted_jid', 'new_format'].includes(this.type),
+            canReceive: !['status', 'group', 'unknown'].includes(this.type)
+        };
+    }
+    
+    logNovoFormato() {
+        const novidade = {
+            timestamp: new Date().toISOString(),
+            jid: this.raw,
+            tipo: 'novo_formato',
+            normalized: this.normalized,
+            domain: this.normalized.domain,
+            internalId: this.internalId,
+            stableId: this.stableId,
+            primaryKey: this.primaryKey
+        };
+        
+        formatosDetectados.push(novidade);
+        fs.appendFileSync(MUDANCAS_LOG_PATH, JSON.stringify(novidade, null, 2) + '\n---\n');
+        
+        console.warn(`${formatarDataHora()} ⚠️ NOVO FORMATO DETECTADO!`);
+        console.warn(`${formatarDataHora()} JID: ${this.raw}`);
+        console.warn(`${formatarDataHora()} Primary Key: ${this.primaryKey}`);
+        console.warn(`${formatarDataHora()} Stable ID: ${this.stableId || 'N/A'}`);
+    }
+}
+
+// ================= GESTÃO DE USUÁRIOS =================
 function adicionarUsuario(usuario) {
     if (!usuario || !usuario.primaryKey) {
         console.error(`${formatarDataHora()} ❌ Tentativa de adicionar usuário sem primaryKey`);
@@ -880,7 +865,6 @@ function buscarUsuario(criterio) {
 
 function salvarUsuarios() {
     try {
-        // 🔥 VERSÃO 100% SEGURA - Sem precedência ambígua
         const dadosParaSalvar = {
             __version: ESTRUTURA_VERSION,
             __savedAt: new Date().toISOString(),
@@ -919,111 +903,15 @@ function resetarEstruturaUsuarios() {
     };
 }
 
-function migrarParaEstruturaAgnostica(estruturaAntiga) {
-    const novaEstrutura = {
-        __version: ESTRUTURA_VERSION,
-        __migratedAt: new Date().toISOString(),
-        byPrimaryKey: {},
-        byJid: {},
-        byNumero: {},
-        byLegacyId: {}
-    };
-    
-    let migrados = 0;
-    let lidsCriados = 0;
-    
-    if (estruturaAntiga.byId) {
-        for (const [id, usuario] of Object.entries(estruturaAntiga.byId)) {
-            if (!usuario) continue;
-            
-            let primaryKey = usuario.primaryKey;
-            if (!primaryKey) {
-                if (usuario.whatsappId && usuario.whatsappId.includes('@lid')) {
-                    const lidPart = usuario.whatsappId.split('@')[0];
-                    primaryKey = `lid:${lidPart}`;
-                    lidsCriados++;
-                } else if (usuario.whatsappId) {
-                    primaryKey = `jid:${usuario.whatsappId.replace(/[^a-zA-Z0-9:@.-]/g, '_')}`;
-                } else {
-                    const hash = crypto.createHash('sha256')
-                        .update(usuario.id || Date.now().toString())
-                        .digest('hex')
-                        .substring(0, 16);
-                    primaryKey = `hash:${hash}`;
-                }
-            }
-            
-            usuario.primaryKey = primaryKey;
-            usuario.id = primaryKey;
-            
-            if (!usuario.jids) {
-                usuario.jids = {
-                    current: usuario.whatsappId || null,
-                    lid: usuario.whatsappId?.includes('@lid') ? usuario.whatsappId : null,
-                    individual: usuario.whatsappId?.includes('@s.whatsapp.net') ? usuario.whatsappId : null,
-                    broadcast: usuario.whatsappId?.includes('@broadcast') && !usuario.whatsappId?.includes('status@') ? usuario.whatsappId : null
-                };
-            }
-            
-            novaEstrutura.byPrimaryKey[primaryKey] = usuario;
-            
-            if (usuario.whatsappId) {
-                novaEstrutura.byJid[usuario.whatsappId] = primaryKey;
-            }
-            
-            if (usuario.numero) {
-                novaEstrutura.byNumero[usuario.numero] = primaryKey;
-            }
-            
-            novaEstrutura.byLegacyId[id] = primaryKey;
-            migrados++;
-        }
-    }
-    
-    if (estruturaAntiga.byWhatsappId) {
-        for (const [jid, id] of Object.entries(estruturaAntiga.byWhatsappId)) {
-            if (novaEstrutura.byLegacyId[id]) {
-                novaEstrutura.byJid[jid] = novaEstrutura.byLegacyId[id];
-            }
-        }
-    }
-    
-    if (estruturaAntiga.byNumero) {
-        for (const [numero, id] of Object.entries(estruturaAntiga.byNumero)) {
-            if (novaEstrutura.byLegacyId[id]) {
-                novaEstrutura.byNumero[numero] = novaEstrutura.byLegacyId[id];
-            }
-        }
-    }
-    
-    console.log(`${formatarDataHora()} 🔄 Migração concluída: ${migrados} usuários, ${lidsCriados} LIDs identificados`);
-    return novaEstrutura;
-}
-
-function migrarDeV1ParaV2(dadosAntigos) {
-    console.log(`${formatarDataHora()} 🔄 Executando migração V1 → V2...`);
-    const migrados = migrarParaEstruturaAgnostica(dadosAntigos);
-    migrados.__version = ESTRUTURA_VERSION;
-    migrados.__migratedAt = new Date().toISOString();
-    return migrados;
-}
-
 function carregarUsuarios() {
     try {
         if (fs.existsSync(USUARIOS_PATH)) {
             const dados = JSON.parse(fs.readFileSync(USUARIOS_PATH, 'utf8'));
-            
             const versaoArquivo = dados.__version || '1.0.0';
             
             if (versaoArquivo !== ESTRUTURA_VERSION) {
                 console.log(`${formatarDataHora()} 🔄 Migrando estrutura v${versaoArquivo} → v${ESTRUTURA_VERSION}...`);
-                
-                if (versaoArquivo.startsWith('1.')) {
-                    usuarios = migrarDeV1ParaV2(dados);
-                } else {
-                    usuarios = migrarParaEstruturaAgnostica(dados);
-                }
-                
+                usuarios = dados;
                 usuarios.__version = ESTRUTURA_VERSION;
                 usuarios.__migratedAt = new Date().toISOString();
                 salvarUsuarios();
@@ -1103,7 +991,6 @@ function identificarUsuario(jid, pushName, texto = '', ignorarExtracaoNumero = f
         stableId: identity.stableId,
         identityType: identity.type,
         identitySubType: identity.subType,
-        
         whatsappId: identity.raw,
         jids: {
             current: identity.raw,
@@ -1112,23 +999,18 @@ function identificarUsuario(jid, pushName, texto = '', ignorarExtracaoNumero = f
             individual: identity.type === 'individual' ? identity.raw : null,
             encrypted: identity.type === 'encrypted_jid' ? identity.raw : null
         },
-        
         sendCapability: identity.sendCapability,
-        
         numero: identity.extractPhoneNumber(),
         pushName: pushName || 'Cliente',
-        
         tipo: 'cliente',
         origem: identity.type === 'lid' ? 'lid' : 
                 identity.type === 'broadcast' ? 'lista' : 
                 identity.type === 'individual' ? 'individual' : 
                 identity.type === 'encrypted_jid' ? 'encrypted' : 'novo_formato',
-        
         cadastradoEm: new Date().toISOString(),
         ultimaInteracao: new Date().toISOString(),
         temporario: false,
         lidSession: identity.type === 'lid',
-        
         metadata: {
             domain: identity.normalized.domain,
             identifier: identity.normalized.identifier,
@@ -1149,12 +1031,6 @@ function identificarUsuario(jid, pushName, texto = '', ignorarExtracaoNumero = f
     }
     
     return null;
-}
-
-function getUsuarioDoAtendimento(chaveAtendimento) {
-    const atendimento = atendimentos[chaveAtendimento];
-    if (!atendimento) return null;
-    return buscarUsuario(atendimento.usuarioPrimaryKey);
 }
 
 // ================= FUNÇÕES PRINCIPAIS DO BOT =================
@@ -1205,22 +1081,11 @@ async function enviarMensagemParaUsuario(sock, usuario, mensagem) {
     }
 }
 
-// ================= FUNÇÃO PARA ATUALIZAR ATIVIDADE DO USUÁRIO =================
-function atualizarAtividadeUsuario(usuario) {
-    if (!usuario || !usuario.primaryKey) return;
-    
-    const chave = usuario.primaryKey;
-    if (atendimentos[chave]) {
-        atendimentos[chave].ultimaAtividade = Date.now();
-    }
-}
-
 async function enviarMenuPrincipal(sock, usuario, texto = '') {
     try {
         const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
         const pushName = usuario?.pushName || '';
         
-        // 🔥 CRIA ATENDIMENTO PARA O MENU (se não existir)
         if (!atendimentos[usuario.primaryKey]) {
             atendimentos[usuario.primaryKey] = {
                 tipo: 'menu',
@@ -1231,7 +1096,6 @@ async function enviarMenuPrincipal(sock, usuario, texto = '') {
             console.log(`${formatarDataHora()} 📋 Atendimento criado para ${pushName} (menu)`);
         }
         
-        // 🔥 USA A MENSAGEM DO CONFIG (com substituição da variável {{empresa}})
         let menuText = config.menu || 
 `Olá! 👋  ${pushName ? pushName + ' ' : ''}
 
@@ -1239,13 +1103,11 @@ Bem-vindo ao atendimento da *${config.empresa}*
 
  1️⃣ Baixar Fatura
  2️⃣ Falar com Atendente
+ 3️⃣ Não sou Cliente!
 
 Digite o número da opção desejada:`;
 
-        // Substitui a variável {{empresa}} pelo nome da empresa
         menuText = menuText.replace(/\{\{empresa\}\}/g, config.empresa);
-        
-        // Adiciona o nome do cliente se tiver a variável
         menuText = menuText.replace(/\{\{nome\}\}/g, pushName || 'Cliente');
 
         const resultado = await enviarMensagemParaUsuario(sock, usuario, menuText);
@@ -1270,11 +1132,9 @@ async function encerrarAtendimento(usuario, config, motivo = "encerrado", chaveE
     
     console.log(`${formatarDataHora()} 🚪 Encerrando ${pushName} (${motivo}) - PK: ${chaveAtendimento}`);
     
-    // 🔥 MARCA QUE HOUVE UM ENCERRAMENTO RECENTE (para evitar processamento automático)
     if (!usuario.metadata) usuario.metadata = {};
     usuario.metadata.ultimoEncerramento = Date.now();
     
-    // 🔥 LIMPEZA COMPLETA: Remove TODOS os registros do usuário
     const chavesParaRemover = new Set();
     chavesParaRemover.add(chaveAtendimento);
     chavesParaRemover.add(usuario.primaryKey);
@@ -1321,10 +1181,7 @@ async function encerrarAtendimento(usuario, config, motivo = "encerrado", chaveE
     try {
         await new Promise(resolve => setTimeout(resolve, 500));
         await enviarMensagemParaUsuario(sockInstance, usuario, mensagem);
-        
-        // 🔥 SALVA O USUÁRIO COM A MARCA DE ENCERRAMENTO
         salvarUsuarios();
-        
         return true;
     } catch (error) {
         console.error(`${formatarDataHora()} ❌ Erro ao enviar mensagem de encerramento:`, error);
@@ -1332,7 +1189,6 @@ async function encerrarAtendimento(usuario, config, motivo = "encerrado", chaveE
     }
 }
 
-// ================= NOVA FUNÇÃO DE VERIFICAÇÃO DE TIMEOUTS (SILENCIOSA) =================
 async function verificarTimeouts() {
     try {
         const configRaw = fs.readFileSync(CONFIG_PATH, 'utf8');
@@ -1348,10 +1204,8 @@ async function verificarTimeouts() {
         
         const tempoInatividadeGlobal = tempoGlobalMinutos * 60 * 1000;
         
-        // 🔥 LOG INICIAL APENAS QUANDO HÁ ATENDIMENTOS
         const totalAtendimentos = Object.keys(atendimentos).length;
         if (totalAtendimentos > 0) {
-            // Só mostra a verificação se houver atendimentos ativos
             console.log(`${formatarDataHora()} 🔍 Verificando ${totalAtendimentos} atendimento(s)...`);
         }
         
@@ -1375,26 +1229,20 @@ async function verificarTimeouts() {
             }
             
             const pushName = usuario.pushName || 'Cliente';
-            
-            // USA ultimaAtividade, se não existir usa inicio, se não existir usa agora
             const referenciaTempo = atendimento.ultimaAtividade || atendimento.inicio || agora;
             const tempoInativo = agora - referenciaTempo;
-            
             const minutosInativo = Math.round(tempoInativo / 60000);
             
-            // 🔥 VERIFICA SE DEVE ENCERRAR
             if (tempoInativo > tempoInatividadeGlobal) {
                 console.log(`${formatarDataHora()} ⏰ ENCERRANDO ${pushName} - ${minutosInativo}min inativo > ${tempoGlobalMinutos}min`);
                 await encerrarAtendimento(usuario, config, "timeout", usuario.primaryKey);
                 continue;
             }
             
-            // 🔥 LOG APENAS A CADA 5 MINUTOS DE INATIVIDADE (para não poluir)
             if (minutosInativo % 5 === 0 && minutosInativo > 0) {
                 console.log(`${formatarDataHora()} ⏱️ ${pushName} - ${minutosInativo}min inativo (limite: ${tempoGlobalMinutos}min)`);
             }
             
-            // MANTÉM COMPATIBILIDADE COM O TIMEOUT ESPECÍFICO DO ATENDIMENTO HUMANO
             if (atendimento.tipo === 'humano' && atendimento.timeout && agora > atendimento.timeout) {
                 console.log(`${formatarDataHora()} ⏰ Timeout específico do atendimento humano - Encerrando ${pushName}`);
                 await encerrarAtendimento(usuario, config, "timeout", usuario.primaryKey);
@@ -1408,26 +1256,37 @@ async function verificarTimeouts() {
 }
 
 async function reconectarComSeguranca() {
+    if (aguardandoQR) {
+        console.log(`${formatarDataHora()} ⏸️ Bot aguardando escaneamento de QR Code - ignorando reconexão automática`);
+        return;
+    }
+    
     if (reconexaoEmAndamento) return;
     
     reconexaoEmAndamento = true;
     tentativasReconexao++;
+    isReconnecting = true;  // 🔥 Marcar que é reconexão automática   
+    console.log(`${formatarDataHora()} 🔄 Reconexão automática iniciada (tentativa ${tentativasReconexao})`);
     
     try {
         const delay = Math.min(1000 * Math.pow(2, tentativasReconexao), 30000);
-        console.log(`${formatarDataHora()} ⏱️ Aguardando ${delay/1000}s antes de reconectar...`);
+        console.log(`${formatarDataHora()} ⏱️ Aguardando ${delay/1000}s antes de reconectar (tentativa ${tentativasReconexao})...`);
         
         await new Promise(resolve => setTimeout(resolve, delay));
         
-        if (tentativasReconexao >= 3) {
-            console.log(`${formatarDataHora()} 🧹 Múltiplas falhas - limpando sessões...`);
-            await limparSessoesECredenciais();
-            tentativasReconexao = 0;
-            await new Promise(resolve => setTimeout(resolve, 5000));
+        if (aguardandoQR) {
+            console.log(`${formatarDataHora()} ⏸️ Estado alterado para aguardando QR - cancelando reconexão`);
+            return;
+        }
+        
+        if (tentativasReconexao > 10) {
+            console.log(`${formatarDataHora()} ⚠️ Múltiplas tentativas de reconexão (${tentativasReconexao}) - verifique sua conexão de internet`);
         }
         
         await startBot();
         
+    } catch (error) {
+        console.error(`${formatarDataHora()} ❌ Erro na reconexão:`, error.message);
     } finally {
         reconexaoEmAndamento = false;
     }
@@ -1723,6 +1582,7 @@ function corrigirAtendimentosCorrompidos() {
 
 // ================= FUNÇÃO PRINCIPAL DO BOT =================
 async function startBot() {
+    modoLoggedOut = false;  // 🔥 ADICIONAR no início da função
     const args = process.argv.slice(2);
     
     if (args.includes('--clear-auth') || args.includes('--clean')) {
@@ -1744,28 +1604,25 @@ async function startBot() {
         process.exit(0);
     }
     
-    // Obtém a versão do Baileys do package.json (dinâmico)
+    // Obtém a versão do Baileys do package.json
     global.VERSAO_BAILEYS = obterVersaoBaileys();
     console.log(`${formatarDataHora()} 📱 Versão do Baileys instalada: ${global.VERSAO_BAILEYS}`);
     
     // Obtém a versão mais recente do Baileys para o WhatsApp
     console.log(`${formatarDataHora()} 📱 Buscando versão mais recente do WhatsApp via Baileys...`);
-    let waVersion = [2, 3000, 1033927531]; // Versão fallback
+    let waVersion = [2, 3000, 1033927531];
 
     try {
         const { version, isLatest } = await fetchLatestBaileysVersion();
         if (version && version.length >= 3) {
             waVersion = version;
-            
-            // VERSÕES DINÂMICAS
-            global.WHATSAPP_VERSION = version[2];                 // Versão numérica do WhatsApp
-            global.WHATSAPP_VERSION_COMPLETA = version.join('.'); // Versão completa do WhatsApp
+            global.WHATSAPP_VERSION = version[2];
+            global.WHATSAPP_VERSION_COMPLETA = version.join('.');
             
             console.log(`${formatarDataHora()} ✅ Versão do WhatsApp obtida: ${global.WHATSAPP_VERSION_COMPLETA} ${isLatest ? '(mais recente)' : ''}`);
             console.log(`${formatarDataHora()} 📱 Versão do Baileys: ${global.VERSAO_BAILEYS}`);
             console.log(`${formatarDataHora()} 📱 Versão do WhatsApp: ${global.WHATSAPP_VERSION}`);
             
-            // Salva a versão para referência
             salvarInfoVersao(global.WHATSAPP_VERSION, global.WHATSAPP_VERSION_COMPLETA, 'fetchLatestBaileysVersion');
         } else {
             console.log(`${formatarDataHora()} ⚠️ Não foi possível obter versão, usando fallback: ${waVersion[2]}`);
@@ -1795,7 +1652,7 @@ async function startBot() {
         auth: state,
         logger: P({ level: 'silent' }),
         browser: ['Chrome (Linux)', '', ''],
-        version: waVersion, // Usa a versão obtida do Baileys
+        version: waVersion,
         syncFullHistory: false,
         connectTimeoutMs: 60000,
         generateHighQualityLinkPreview: false,
@@ -1819,7 +1676,15 @@ async function startBot() {
             setStatus('qr');
             console.log(`${formatarDataHora()} 📱 QR Code gerado. Escaneie com o WhatsApp.`);
             
-            // 🔥 NOTIFICAÇÃO TELEGRAM: QR CODE - COM NÚMERO DO ATENDENTE
+            if (aguardandoQR) {
+                //aguardandoQR = false;
+                console.log(`${formatarDataHora()} 🔓 Flag de aguardando QR liberada - novo QR disponível`);
+            }
+            
+            // 🔥 Resetar flags de reconexão quando novo QR é gerado
+            isReconnecting = false;
+            primeiraConexao = true;
+            
             try {
                 const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
                 const empresa = config.empresa || 'Bot WhatsApp';
@@ -1847,7 +1712,6 @@ async function startBot() {
             setStatus('online');
             tentativasReconexao = 0;
             
-            // 🔥 DECLARAR AS VARIÁVEIS FORA DO TRY
             let pushName = 'Atendente';
             let phoneNumber = 'Número não disponível';
             let userJid = null;
@@ -1913,226 +1777,322 @@ async function startBot() {
             console.log(`${formatarDataHora()} ✅ WhatsApp conectado com sucesso!`);
             console.log(`${formatarDataHora()} 👥 ${Object.keys(usuarios.byPrimaryKey || {}).length} usuário(s)`);
             console.log(`${formatarDataHora()} 📱 Versão do WhatsApp: ${global.WHATSAPP_VERSION_COMPLETA || global.WHATSAPP_VERSION}`);
-            
-            // 🔥 NOTIFICAÇÃO TELEGRAM: CONEXÃO - COM NÚMERO DO ATENDENTE (CORRIGIDO)
-            try {
-                const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-                const empresa = config.empresa || 'Bot WhatsApp';
-                const numeroAtendente = config.atendente_numero || 'NÃO CONFIGURADO';
-                
-                console.log(`${formatarDataHora()} 🔧 Enviando notificação de CONEXÃO...`);
-                enviarNotificacaoTelegram(
-                    `✅ *WHATSAPP CONECTADO*\n\n` +
-                    `📱 *Bot:* ${empresa}\n` +
-                    `📞 *Número:* ${numeroAtendente}\n` +
-                    `👤 *Atendente:* ${pushName}\n` +
-                    `📱 *Versão WhatsApp:* ${global.WHATSAPP_VERSION}\n` +
-                    `📱 *Baileys:* ${global.VERSAO_BAILEYS}\n` +
-                    `⏰ ${formatarDataHora()}`,
-                    'conexao'
-                ).then(resultado => {
-                    console.log(`${formatarDataHora()} 🔧 Resultado conexão: ${resultado ? '✅ enviada' : '❌ falhou'}`);
-                });
-            } catch (error) {
-                console.error(`${formatarDataHora()} ❌ Erro ao enviar notificação de conexão:`, error.message);
+
+            // 🔥 ADICIONE ESTA LINHA AQUI (força a notificação na primeira conexão)
+            if (primeiraConexao === true) {
+            aguardandoQR = true;
             }
             
-            // 🔥 INICIAR INTERVALOS GERENCIADOS
+            // 🔥 NOTIFICAÇÃO DE CONEXÃO: Apenas se NÃO for reconexão automática E NÃO for primeira inicialização
+            // Ou se for primeira inicialização
+            const deveNotificarConexao = aguardandoQR || !isReconnecting;
+            //const deveNotificarConexao = !isReconnecting && (primeiraConexao || !reconexaoEmAndamento);
+            
+            if (deveNotificarConexao) {
+                try {
+                    const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+                    const empresa = config.empresa || 'Bot WhatsApp';
+                    const numeroAtendente = config.atendente_numero || 'NÃO CONFIGURADO';
+                    
+                    console.log(`${formatarDataHora()} 🔧 Enviando notificação de CONEXÃO (conexão real)...`);
+                    enviarNotificacaoTelegram(
+                        `✅ *WHATSAPP CONECTADO*\n\n` +
+                        `📱 *Bot:* ${empresa}\n` +
+                        `📞 *Número:* ${numeroAtendente}\n` +
+                        `👤 *Atendente:* ${pushName}\n` +
+                        `📱 *Versão WhatsApp:* ${global.WHATSAPP_VERSION}\n` +
+                        `📱 *Baileys:* ${global.VERSAO_BAILEYS}\n` +
+                        `⏰ ${formatarDataHora()}`,
+                        'conexao'
+                    ).then(resultado => {
+                        console.log(`${formatarDataHora()} 🔧 Resultado conexão: ${resultado ? '✅ enviada' : '❌ falhou'}`);
+                    });
+                } catch (error) {
+                    console.error(`${formatarDataHora()} ❌ Erro ao enviar notificação de conexão:`, error.message);
+                }
+            } else {
+                console.log(`${formatarDataHora()} 🔧 Notificação de CONEXÃO SUPRIMIDA (reconexão automática após problema de rede)`);
+            }
+            
+            // Resetar flags após conexão bem sucedida
+            isReconnecting = false;
+            primeiraConexao = false;
+            aguardandoQR = false;  // 🔥 IMPORTANTE: Resetar flag de aguardando QR
+            
             iniciarIntervalos();
         }
 
         if (connection === 'close') {
-            // 🔥 PARAR INTERVALOS antes de reconectar
             pararIntervalos();
             setStatus('offline');
             
             const errorMessage = lastDisconnect?.error?.message || '';
             const errorOutput = lastDisconnect?.error?.output || {};
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const agoraMs = Date.now();
             
-            console.log(`${formatarDataHora()} 🔌 Desconectado. Último erro:`, errorMessage);
+            console.log(`${formatarDataHora()} 🔌 Desconectado. Código: ${statusCode} - Erro: ${errorMessage}`);
             
-            // 🔥 NOTIFICAÇÃO TELEGRAM: DESCONEXÃO - COM NÚMERO DO ATENDENTE
-            const config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-            const empresa = config.empresa || 'Bot WhatsApp';
-            const numeroAtendente = config.atendente_numero || 'NÃO CONFIGURADO';
+        // =====================================================
+        // 🔥 CORREÇÃO: PRIORIDADE CORRETA DOS TIPOS DE DESCONEXÃO
+        // =====================================================
+        
+        let motivo = 'Desconexão detectada';
+        let deveLimparSessao = false;
+        
+        // 🔥 PRIORIDADE 1: LOGGED OUT (NÃO pode ser sobrescrito)
+        const isLoggedOut = (statusCode === DisconnectReason.loggedOut) ||
+                            errorMessage.includes('logged out') ||
+                            errorOutput?.statusCode === DisconnectReason.loggedOut ||
+                            errorMessage.includes('Stream Errored (conflict)');
+        
+        if (isLoggedOut) {
+            motivo = 'Usuário deslogou do WhatsApp (desconexão solicitada)';
+            deveLimparSessao = true;
+            aguardandoQR = true;
+            reconexaoAposProblemaRede = false;
+            foiProblemaRede = false;
+            isReconnecting = false;  // 🔥 IMPORTANTE: Resetar para false em loggedOut
+            console.log(`${formatarDataHora()} 🔐 LOGGED OUT DETECTADO - Sessão será limpa e novo QR gerado`);
             
-            let motivo = 'Desconexão detectada';
-            if (errorMessage.includes('Bad MAC') || errorMessage.includes('session')) {
-                motivo = 'Erro de sessão/criptografia';
-            } else if (lastDisconnect?.error?.output?.statusCode === DisconnectReason.loggedOut) {
-                motivo = 'Usuário deslogou do WhatsApp';
-            } else if (errorMessage.includes('Stream Errored')) {
-                motivo = 'Instabilidade na conexão - reconectando automaticamente (Erro de stream)' + errorMessage;
-            } else if (errorMessage.includes('405')) {
-                motivo = 'Erro 405 - Versão do WhatsApp desatualizada (o Baileys vai corrigir automaticamente)';
-            }
-            
-            console.log(`${formatarDataHora()} 🔧 Chamando notificação de DESCONEXÃO... Motivo: ${motivo}`);
-            enviarNotificacaoTelegram(
-                `⚠️ *WHATSAPP DESCONECTADO*\n\n` +
-                `📱 *Bot:* ${empresa}\n` +
-                `📞 *Número:* ${numeroAtendente}\n` +
-                `📱 *Versão:* ${global.WHATSAPP_VERSION}\n` +
-                `📱 *Baileys:* ${global.VERSAO_BAILEYS}\n` +
-                `🔍 *Motivo:* ${motivo}\n` +
-                `⏰ ${formatarDataHora()}\n\n` +
-                `🔄 Tentando reconectar em alguns segundos...`,
-                'desconexao'
-            ).then(resultado => {
-                console.log(`${formatarDataHora()} 🔧 Resultado notificação DESCONEXÃO:`, resultado ? 'ENVIADA' : 'FALHOU');
-            });
-            
-            if (errorMessage.includes('Bad MAC') || 
-                errorMessage.includes('Failed to decrypt') ||
-                errorMessage.includes('MAC mismatch') ||
-                (errorOutput.statusCode === 401 && errorMessage.includes('session'))) {
+            // 🔥 Enviar notificação APENAS para loggedOut (desconexão real da Meta)
+            if (!enviouNotificacaoDesconexaoReal) {
+                enviouNotificacaoDesconexaoReal = true;
                 
-                console.log(`${formatarDataHora()} 🚨 ERRO DE CRIPTOGRAFIA DETECTADO!`);
-                console.log(`${formatarDataHora()} 🧹 Limpando automaticamente...`);
+                const configNotif = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
+                const empresa = configNotif.empresa || 'Bot WhatsApp';
+                const numeroAtendente = configNotif.atendente_numero || 'NÃO CONFIGURADO';
                 
-                await limparSessoesECredenciais();
-                setTimeout(() => reconectarComSeguranca(), 5000);
-                return;
-            }
-            
-            if (lastDisconnect?.error?.output?.statusCode === DisconnectReason.loggedOut) {
-                console.log(`${formatarDataHora()} 🔐 WhatsApp desconectado pelo usuário (loggedOut)`);
-                limparAuthInfo();
-                setTimeout(() => reconectarComSeguranca(), 2000);
+                enviarNotificacaoTelegram(
+                    `⚠️ *WHATSAPP DESCONECTADO*\n\n` +
+                    `📱 *Bot:* ${empresa}\n` +
+                    `📞 *Número:* ${numeroAtendente}\n` +
+                    `🔐 Desconexão real da Meta detectada (LoggedOut).\n` +
+                    `📱 *Versão WhatsApp:* ${global.WHATSAPP_VERSION}\n` +
+                    `✅ Um novo QR Code será gerado em instantes.\n` +
+                    `⏰ ${formatarDataHora()}`,
+                    'desconexao'
+                );
             } else {
-                reconectarComSeguranca();
+                console.log(`${formatarDataHora()} 🔧 Notificação de DESCONEXÃO REAL suprimida (já enviada)`);
+            }
+            
+            // EXECUTAR AÇÃO DE LIMPEZA E REINICIO
+            console.log(`${formatarDataHora()} 🧹 Limpando sessão e credenciais...`);
+            await limparSessoesECredenciais();
+            
+            console.log(`${formatarDataHora()} 📱 Aguardando escaneamento do novo QR Code...`);
+            console.log(`${formatarDataHora()} 🔄 O bot será reiniciado para gerar um novo QR Code`);
+            
+            // Resetar flags
+            reconexaoEmAndamento = false;
+            tentativasReconexao = 0;
+            foiProblemaRede = false;
+            
+            // Aguardar e reiniciar o bot completamente
+            setTimeout(async () => {
+                console.log(`${formatarDataHora()} 🔄 Reiniciando bot para gerar novo QR Code...`);
+                aguardandoQR = false;
+                enviouNotificacaoDesconexaoReal = false;
+                isReconnecting = false;
+                await startBot();
+            }, 3000);
+            
+            return; // ⚠️ IMPORTANTE: SAIR AQUI para não executar outras condições
+        }
+        
+        // 🔥 PRIORIDADE 2: Problemas de rede - NÃO ENVIAR NENHUMA NOTIFICAÇÃO
+        const isNetworkError = (errorMessage.includes('ETIMEDOUT') ||
+            errorMessage.includes('ECONNRESET') ||
+            errorMessage.includes('ENOTFOUND') ||
+            errorMessage.includes('ECONNREFUSED') ||
+            errorMessage.includes('socket hang up') ||
+            errorMessage.includes('timeout') ||
+            errorMessage.includes('network') ||
+            errorMessage.includes('getaddrinfo') ||
+            errorMessage.includes('WebSocket Error') ||
+            errorMessage.includes('Connection Failure') ||
+            errorMessage.includes('Connection was lost') ||
+            statusCode === 408 ||
+            statusCode === 405 ||
+            statusCode === 515);
+        
+        if (isNetworkError) {
+           console.log(`${formatarDataHora()} 🌐 PROBLEMA DE REDE/INTERNET - Mantendo sessão`);
+           console.log(`${formatarDataHora()} 🔕 NENHUMA NOTIFICAÇÃO TELEGRAM SERÁ ENVIADA (problema de rede)`);
+           deveLimparSessao = false;
+           foiProblemaRede = true;
+           isReconnecting = true;  // Marcar que é reconexão automática
+        }
+        // Erro de sessão/criptografia
+        else if (errorMessage.includes('Bad MAC') || 
+                 errorMessage.includes('Failed to decrypt') ||
+                 errorMessage.includes('MAC mismatch') ||
+                 errorMessage.includes('session')) {
+            console.log(`${formatarDataHora()} 🧹 SESSÃO CORROMPIDA - Limpando...`);
+            console.log(`${formatarDataHora()} 🔕 NENHUMA NOTIFICAÇÃO TELEGRAM SERÁ ENVIADA (erro de sessão)`);
+            deveLimparSessao = true;
+        }
+        // Conexão substituída
+        else if (statusCode === DisconnectReason.connectionReplaced) {
+            console.log(`${formatarDataHora()} 🔄 CONEXÃO SUBSTITUÍDA - Sessão será limpa`);
+            console.log(`${formatarDataHora()} 🔕 NENHUMA NOTIFICAÇÃO TELEGRAM SERÁ ENVIADA (conexão substituída)`);
+            deveLimparSessao = true;
+        }
+        // Stream Errored (sem ser conflict)
+        else if (errorMessage.includes('Stream Errored') && errorMessage.includes('restart required')) {
+            console.log(`${formatarDataHora()} 🔌 INSTABILIDADE - Mantendo sessão`);
+            console.log(`${formatarDataHora()} 🔕 NENHUMA NOTIFICAÇÃO TELEGRAM SERÁ ENVIADA (instabilidade)`);
+            deveLimparSessao = false;
+        }
+        // Erro desconhecido
+        else {
+            console.log(`${formatarDataHora()} ⚠️ ERRO DESCONHECIDO - Mantendo sessão`);
+            console.log(`${formatarDataHora()} 🔕 NENHUMA NOTIFICAÇÃO TELEGRAM SERÁ ENVIADA (erro desconhecido)`);
+            deveLimparSessao = false;
+        }
+        
+        // NENHUMA NOTIFICAÇÃO TELEGRAM PARA PROBLEMAS DE REDE OU OUTROS ERROS
+        // Apenas loggedOut envia notificação de desconexão
+        
+        // AÇÃO BASEADA NO TIPO DE DESCONEXÃO (apenas para não-loggedOut)
+        if (deveLimparSessao) {
+            console.log(`${formatarDataHora()} 🧹 Limpando sessão e credenciais...`);
+            await limparSessoesECredenciais();
+            console.log(`${formatarDataHora()} 🔄 Reiniciando bot após limpeza...`);
+            setTimeout(async () => {
+                isReconnecting = false;
+                await startBot();
+            }, 2000);
+        } else {
+            console.log(`${formatarDataHora()} 💾 Mantendo sessão intacta, apenas reconectando...`);
+            if (fs.existsSync(AUTH_DIR)) {
+                console.log(`${formatarDataHora()} 📁 Sessão mantida em: ${AUTH_DIR}`);
+            }
+            
+            if (!aguardandoQR && !reconexaoEmAndamento) {
+                setTimeout(() => {
+                    reconectarComSeguranca();
+                }, 2000);
             }
         }
+     }
     });
 
-// ============ INÍCIO DO BLOCO MESSAGES ============
-sock.ev.on('messages.upsert', async ({ messages }) => {
-    if (!messages || !Array.isArray(messages) || messages.length === 0) return;
+    // ============ INÍCIO DO BLOCO MESSAGES ============
+    sock.ev.on('messages.upsert', async ({ messages }) => {
+        if (!messages || !Array.isArray(messages) || messages.length === 0) return;
 
-    const msg = messages[0];
-    
-    // 🔥 PROTEÇÃO CONTRA NULL
-    if (!msg || !msg.message) {
-        console.log(`${formatarDataHora()} ⚠️ Mensagem sem conteúdo ignorada`);
-        return;
-    }
-    
-    // 🔥 EXTRAÇÃO SEGURA DO TEXTO
-    let texto = '';
-    try {
-        texto = msg.message.conversation || 
-                msg.message.extendedTextMessage?.text || 
-                '';
-        texto = texto.trim();
-    } catch (error) {
-        console.log(`${formatarDataHora()} ⚠️ Erro ao extrair texto:`, error.message);
-        texto = '';
-    }
-    
-    const jidInfo = extrairJIDCompleto(msg);
-    if (jidInfo.ignore) {
-        if (jidInfo.source === 'status') {
-            console.log(`${formatarDataHora()} 📱 Visualização de STATUS - IGNORANDO`);
-        }
-        return;
-    }
-
-    const jidRemetente = jidInfo.jid;
-    const sourceType = jidInfo.source;
-
-    if (msg.key.fromMe) return;
-    if (msg.message.protocolMessage || msg.message.senderKeyDistributionMessage) return;
-    if (!jidRemetente) {
-        console.error(`${formatarDataHora()} ❌ Não foi possível obter JID do remetente`);
-        return;
-    }
-
-    // 🔥 FILTRO PRINCIPAL - IGNORA MENSAGENS DE CONTEXTO
-    const isGroupMessage = jidRemetente.includes('@g.us');
-    const isParticipantSource = sourceType === 'participant' || sourceType === 'participant_lid';
-    const isBroadcastSource = sourceType === 'broadcast';
-    
-    if (isGroupMessage || isParticipantSource || isBroadcastSource) {
-        console.log(`${formatarDataHora()} 🚫 Mensagem IGNORADA - fonte: ${sourceType}, jid: ${jidRemetente}`);
-        return;
-    }
-
-    if (sourceType !== 'remote') {
-        console.log(`${formatarDataHora()} 🚫 Mensagem ignorada - apenas mensagens diretas (remote) são processadas`);
-        return;
-    }
-
-    const pushName = msg.pushName || 'Cliente';
-    console.log(`\n${formatarDataHora()} 📨 MENSAGEM DE: ${pushName} (${jidRemetente}) [fonte: ${sourceType}] - "${texto}"`);
-
-    const usuario = identificarUsuario(jidRemetente, pushName, texto, false);
-    
-    if (!usuario) {
-        console.log(`${formatarDataHora()} ❌ Usuário não identificado`);
-        return;
-    }
-
-    // ============ INÍCIO DA VERIFICAÇÃO DE ENCERRAMENTO RECENTE ============
-    const agora = Date.now();
-    const ultimoEncerramento = usuario.metadata?.ultimoEncerramento || 0;
-    const tempoDesdeEncerramento = agora - ultimoEncerramento;
-    
-    // Se houve encerramento nos últimos 30 segundos
-    if (ultimoEncerramento > 0 && tempoDesdeEncerramento < 30000) {
-        console.log(`${formatarDataHora()} 🔄 Encerramento recente (${Math.round(tempoDesdeEncerramento/1000)}s) - REENVIANDO MENU`);
+        const msg = messages[0];
         
-        // 🔥 GARANTE QUE NÃO HÁ ATENDIMENTO RESIDUAL
-        if (atendimentos[usuario.primaryKey]) {
-            delete atendimentos[usuario.primaryKey];
-            console.log(`${formatarDataHora()} 🗑️ Atendimento residual removido`);
-        }
-        if (contextos[usuario.primaryKey]) {
-            delete contextos[usuario.primaryKey];
-            console.log(`${formatarDataHora()} 🗑️ Contexto residual removido`);
+        if (!msg || !msg.message) {
+            console.log(`${formatarDataHora()} ⚠️ Mensagem sem conteúdo ignorada`);
+            return;
         }
         
-        // 🔥 REMOVE A MARCA DE ENCERRAMENTO
-        if (usuario.metadata) {
-            delete usuario.metadata.ultimoEncerramento;
-            salvarUsuarios();
-            console.log(`${formatarDataHora()} 🗑️ Marca de encerramento removida`);
+        let texto = '';
+        try {
+            texto = msg.message.conversation || 
+                    msg.message.extendedTextMessage?.text || 
+                    '';
+            texto = texto.trim();
+        } catch (error) {
+            console.log(`${formatarDataHora()} ⚠️ Erro ao extrair texto:`, error.message);
+            texto = '';
         }
         
-        await enviarMenuPrincipal(sock, usuario, texto);
-        return;
-    }
-    // ============ FIM DA VERIFICAÇÃO DE ENCERRAMENTO RECENTE ============
+        const jidInfo = extrairJIDCompleto(msg);
+        if (jidInfo.ignore) {
+            if (jidInfo.source === 'status') {
+                console.log(`${formatarDataHora()} 📱 Visualização de STATUS - IGNORANDO`);
+            }
+            return;
+        }
 
-    // ============ INÍCIO DA CRIAÇÃO/ATUALIZAÇÃO DE ATENDIMENTO ============
-    
-    // 🔥 VERIFICA SE JÁ EXISTE UM ATENDIMENTO PARA ESTE USUÁRIO
-    const atendimentoExistente = atendimentos[usuario.primaryKey];
-    
-    if (!atendimentoExistente) {
-        // 🔥 NÃO EXISTE ATENDIMENTO - CRIA UM NOVO
-        atendimentos[usuario.primaryKey] = {
-            tipo: 'menu',
-            inicio: Date.now(),
-            ultimaAtividade: Date.now(),
-            usuarioPrimaryKey: usuario.primaryKey
-        };
-        console.log(`${formatarDataHora()} 📋 NOVO atendimento criado para ${usuario.pushName}`);
-    } else {
-        // 🔥 JÁ EXISTE ATENDIMENTO - APENAS ATUALIZA ATIVIDADE
-        atendimentos[usuario.primaryKey].ultimaAtividade = Date.now();
-        console.log(`${formatarDataHora()} 📋 Atendimento existente atualizado para ${usuario.pushName}`);
-    }
-    // ============ FIM DA CRIAÇÃO/ATUALIZAÇÃO DE ATENDIMENTO ============
+        const jidRemetente = jidInfo.jid;
+        const sourceType = jidInfo.source;
 
-    const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
-    const isAtendente = usuario.tipo === 'atendente';
-    
-    if (isAtendente) {
-        console.log(`${formatarDataHora()} 👨‍💼 Mensagem do atendente: ${texto}`);
+        if (msg.key.fromMe) return;
+        if (msg.message.protocolMessage || msg.message.senderKeyDistributionMessage) return;
+        if (!jidRemetente) {
+            console.error(`${formatarDataHora()} ❌ Não foi possível obter JID do remetente`);
+            return;
+        }
+
+        const isGroupMessage = jidRemetente.includes('@g.us');
+        const isParticipantSource = sourceType === 'participant' || sourceType === 'participant_lid';
+        const isBroadcastSource = sourceType === 'broadcast';
         
-        if (texto.toUpperCase() === '#STATUS' || texto.toUpperCase() === '#RELATORIO') {
-            const relatorio = gerarRelatorioSistema();
-            const mensagem = 
+        if (isGroupMessage || isParticipantSource || isBroadcastSource) {
+            console.log(`${formatarDataHora()} 🚫 Mensagem IGNORADA - fonte: ${sourceType}, jid: ${jidRemetente}`);
+            return;
+        }
+
+        if (sourceType !== 'remote') {
+            console.log(`${formatarDataHora()} 🚫 Mensagem ignorada - apenas mensagens diretas (remote) são processadas`);
+            return;
+        }
+
+        const pushName = msg.pushName || 'Cliente';
+        console.log(`\n${formatarDataHora()} 📨 MENSAGEM DE: ${pushName} (${jidRemetente}) [fonte: ${sourceType}] - "${texto}"`);
+
+        const usuario = identificarUsuario(jidRemetente, pushName, texto, false);
+        
+        if (!usuario) {
+            console.log(`${formatarDataHora()} ❌ Usuário não identificado`);
+            return;
+        }
+
+        const agora = Date.now();
+        const ultimoEncerramento = usuario.metadata?.ultimoEncerramento || 0;
+        const tempoDesdeEncerramento = agora - ultimoEncerramento;
+        
+        if (ultimoEncerramento > 0 && tempoDesdeEncerramento < 30000) {
+            console.log(`${formatarDataHora()} 🔄 Encerramento recente (${Math.round(tempoDesdeEncerramento/1000)}s) - REENVIANDO MENU`);
+            
+            if (atendimentos[usuario.primaryKey]) {
+                delete atendimentos[usuario.primaryKey];
+                console.log(`${formatarDataHora()} 🗑️ Atendimento residual removido`);
+            }
+            if (contextos[usuario.primaryKey]) {
+                delete contextos[usuario.primaryKey];
+                console.log(`${formatarDataHora()} 🗑️ Contexto residual removido`);
+            }
+            
+            if (usuario.metadata) {
+                delete usuario.metadata.ultimoEncerramento;
+                salvarUsuarios();
+                console.log(`${formatarDataHora()} 🗑️ Marca de encerramento removida`);
+            }
+            
+            await enviarMenuPrincipal(sock, usuario, texto);
+            return;
+        }
+
+        const atendimentoExistente = atendimentos[usuario.primaryKey];
+        
+        if (!atendimentoExistente) {
+            atendimentos[usuario.primaryKey] = {
+                tipo: 'menu',
+                inicio: Date.now(),
+                ultimaAtividade: Date.now(),
+                usuarioPrimaryKey: usuario.primaryKey
+            };
+            console.log(`${formatarDataHora()} 📋 NOVO atendimento criado para ${usuario.pushName}`);
+        } else {
+            atendimentos[usuario.primaryKey].ultimaAtividade = Date.now();
+            console.log(`${formatarDataHora()} 📋 Atendimento existente atualizado para ${usuario.pushName}`);
+        }
+
+        const config = JSON.parse(fs.readFileSync(CONFIG_PATH));
+        const isAtendente = usuario.tipo === 'atendente';
+        
+        if (isAtendente) {
+            console.log(`${formatarDataHora()} 👨‍💼 Mensagem do atendente: ${texto}`);
+            
+            if (texto.toUpperCase() === '#STATUS' || texto.toUpperCase() === '#RELATORIO') {
+                const relatorio = gerarRelatorioSistema();
+                const mensagem = 
 `📊 *RELATÓRIO DO SISTEMA v${relatorio.versao}*
 📱 *Baileys:* ${relatorio.versao_baileys}
 📱 *WhatsApp:* ${relatorio.versao_whatsapp} (${relatorio.versao_completa})
@@ -2151,13 +2111,12 @@ Total: ${relatorio.estatisticas.atendimentos.ativos}
 🔍 *NOVOS FORMATOS*
 ${relatorio.estatisticas.formatosDetectados} registro(s)`;
 
-            await enviarMensagemParaUsuario(sock, usuario, mensagem);
-            return;
-        }
-        
-        // 🔥 NOVO COMANDO: #VERSAO
-        if (texto.toUpperCase() === '#VERSAO' || texto.toUpperCase() === '#VERSION') {
-            const mensagem = 
+                await enviarMensagemParaUsuario(sock, usuario, mensagem);
+                return;
+            }
+            
+            if (texto.toUpperCase() === '#VERSAO' || texto.toUpperCase() === '#VERSION') {
+                const mensagem = 
 `📱 *VERSÃO DO WHATSAPP*
 
 📌 *Versão completa:* ${global.WHATSAPP_VERSION_COMPLETA || 'desconhecida'}
@@ -2167,155 +2126,67 @@ ${relatorio.estatisticas.formatosDetectados} registro(s)`;
 
 ✅ O bot está usando a versão recomendada pela biblioteca.`;
 
-            await enviarMensagemParaUsuario(sock, usuario, mensagem);
-            return;
-        }
-        
-        return;
-    }
-
-    let chaveAtendimento = usuario.primaryKey;
-    const contextoAtual = contextos[chaveAtendimento] || 'menu';
-    
-    console.log(`${formatarDataHora()} 🔢 ${pushName} -> ${usuario.primaryKey} (${usuario.tipo})`);
-    console.log(`${formatarDataHora()} 📊 Contexto atual: ${contextoAtual}`);
-
-    // ============ INÍCIO DO BLOCO COMANDO 0 ============
-    if (texto === '0') {
-        console.log(`${formatarDataHora()} 🔄 Cliente digitou "0" - contexto: ${contextoAtual}`);
-        
-        if (contextoAtual === 'pos_pix' || contextoAtual === 'em_atendimento' || contextoAtual === 'aguardando_cpf') {
-            console.log(`${formatarDataHora()} 🚪 Encerrando atendimento por comando do cliente`);
-            await encerrarAtendimento(usuario, config, "cliente", chaveAtendimento);
-            return;
-        } else {
-            console.log(`${formatarDataHora()} ℹ️ Comando "0" ignorado - não está em contexto de atendimento`);
-            await enviarMenuPrincipal(sock, usuario, texto);
-            return;
-        }
-    }
-    // ============ FIM DO BLOCO COMANDO 0 ============
-
-    // ============ INÍCIO DO BLOCO COMANDO 9 ============
-    if (texto === '9') {
-        console.log(`${formatarDataHora()} 🔄 Cliente digitou "9" - voltando ao menu`);
-        
-        // 🔥 NÃO DELETA O ATENDIMENTO - APENAS MUDA O CONTEXTO
-        contextos[chaveAtendimento] = 'menu';
-        
-        // 🔥 ATUALIZA O TIPO DO ATENDIMENTO PARA 'menu'
-        if (atendimentos[chaveAtendimento]) {
-            atendimentos[chaveAtendimento].tipo = 'menu';
-            atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
-        }
-        
-        await enviarMenuPrincipal(sock, usuario, texto);
-        return;
-    }
-    // ============ FIM DO BLOCO COMANDO 9 ============
-
-    // ============ INÍCIO DO BLOCO MENU ============
-    if (contextoAtual === 'menu') {
-        
-        // 🔥 VERIFICA SE É A PRIMEIRA INTERAÇÃO DESTE ATENDIMENTO
-        // Compara se a última atividade é muito próxima do início
-        const atendimento = atendimentos[chaveAtendimento];
-        const primeiraInteracao = atendimento && 
-                                  (atendimento.ultimaAtividade - atendimento.inicio) < 2000; // 2 segundos
-        
-        if (primeiraInteracao) {
-            // ✅ PRIMEIRA INTERAÇÃO - SEMPRE RESPONDE COM MENU
-            console.log(`${formatarDataHora()} 📋 Primeira interação - enviando menu`);
-            await enviarMenuPrincipal(sock, usuario, texto);
-            return;
-        }
-        
-        // 🔥 SÓ RESPONDE A COMANDOS VÁLIDOS NAS INTERAÇÕES SEGUINTES
-        if (texto === '1') {
-            console.log(`${formatarDataHora()} 💠 Cliente escolheu PIX`);
-            contextos[chaveAtendimento] = 'aguardando_cpf';
-            atendimentos[chaveAtendimento].tipo = 'aguardando_cpf';
-            
-            await enviarMensagemParaUsuario(sock, usuario, `🔐 Informe seu CPF ou CNPJ:`);
-            return;
-            
-        } else if (texto === '2') {
-            console.log(`${formatarDataHora()} 👨‍💼 Cliente escolheu atendimento`);
-            
-            if (!dentroHorarioComercial()) {
-                console.log(`${formatarDataHora()} ⏰ Fora do horário comercial ou feriado`);
-                
-                const hoje = new Date();
-                const ehFeriadoHoje = ehFeriado(hoje);
-                const ehFeriadoLocalHoje = ehFeriadoLocal();
-                
-                let mensagemErro = `⏰ *${pushName}*, `;
-                
-                if (ehFeriadoHoje) {
-                    mensagemErro += `hoje é feriado nacional.\n\n`;
-                } else if (ehFeriadoLocalHoje) {
-                    mensagemErro = getMensagemFeriadoLocal() + `\n\n`;
-                } else if (hoje.getDay() === 0) {
-                    mensagemErro += `hoje é domingo.\n\n`;
-                } else {
-                    mensagemErro += `por favor, retorne seu contato em *horário comercial*.\n\n`;
-                }
-                
-                if (!ehFeriadoLocalHoje) {
-                    mensagemErro += `${formatarHorarioComercial()}`;
-                }
-                
-                mensagemErro += `1️⃣  Para Fatura  |  9️⃣  Retornar ao Menu`;
-                
-                await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                await enviarMensagemParaUsuario(sock, usuario, mensagem);
                 return;
             }
             
-            const tempoTimeout = config.tempo_atendimento_humano || 5;
-            atendimentos[chaveAtendimento].tipo = 'humano';
-            atendimentos[chaveAtendimento].timeout = Date.now() + (tempoTimeout * 60 * 1000);
-            contextos[chaveAtendimento] = 'em_atendimento';
-            
-            console.log(`${formatarDataHora()} ⏱️ Atendimento iniciado (${tempoTimeout}min)`);
-            
-            await enviarMensagemParaUsuario(sock, usuario, 
-                `👨‍💼 *ATENDIMENTO INICIADO*\n\n*${pushName}*, um atendente falará com você em instantes, aguarde...\n\n⏱️ Duração: ${tempoTimeout} minutos\n\n 0️⃣ Encerrar Atendimento`
-            );
             return;
+        }
+
+        let chaveAtendimento = usuario.primaryKey;
+        const contextoAtual = contextos[chaveAtendimento] || 'menu';
+        
+        console.log(`${formatarDataHora()} 🔢 ${pushName} -> ${usuario.primaryKey} (${usuario.tipo})`);
+        console.log(`${formatarDataHora()} 📊 Contexto atual: ${contextoAtual}`);
+
+        if (texto === '0') {
+            console.log(`${formatarDataHora()} 🔄 Cliente digitou "0" - contexto: ${contextoAtual}`);
             
-        } else if (texto === '0' || texto === '9') {
-            console.log(`${formatarDataHora()} ℹ️ Comando ${texto} já deveria ser tratado`);
-            return;
+            if (contextoAtual === 'pos_pix' || contextoAtual === 'em_atendimento' || contextoAtual === 'aguardando_cpf' || contextoAtual === 'planos') {
+                console.log(`${formatarDataHora()} 🚪 Encerrando atendimento por comando do cliente`);
+                await encerrarAtendimento(usuario, config, "cliente", chaveAtendimento);
+                return;
+            } else {
+                console.log(`${formatarDataHora()} ℹ️ Comando "0" ignorado - não está em contexto de atendimento`);
+                await enviarMenuPrincipal(sock, usuario, texto);
+                return;
+            }
+        }
+
+        if (texto === '9') {
+            console.log(`${formatarDataHora()} 🔄 Cliente digitou "9" - voltando ao menu`);
             
-        } else {
-            // 🔥 INTERAÇÕES SEGUINTES - IGNORA SILENCIOSAMENTE
-            console.log(`${formatarDataHora()} 🤐 Mensagem ignorada - comando inválido no menu: "${texto}"`);
+            contextos[chaveAtendimento] = 'menu';
             
-            // 🔥 ATUALIZA ATIVIDADE MESMO ASSIM PARA NÃO ENCERRAR POR TIMEOUT
             if (atendimentos[chaveAtendimento]) {
+                atendimentos[chaveAtendimento].tipo = 'menu';
                 atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
             }
             
-            // NÃO ENVIA NADA - APENAS IGNORA
+            await enviarMenuPrincipal(sock, usuario, texto);
             return;
         }
-    }
-    // ============ FIM DO BLOCO MENU ============
 
-    // ============ INÍCIO DO BLOCO AGUARDANDO CPF ============
-    if (contextoAtual === 'aguardando_cpf') {
-        console.log(`${formatarDataHora()} 📄 Contexto aguardando_cpf ATIVADO`);
-        
-        // 🔥 ATUALIZA ATIVIDADE
-        if (atendimentos[chaveAtendimento]) {
-            atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
-        }
-        
-        if (texto === '1' || texto === '2') {
-            console.log(`${formatarDataHora()} 📄 Comando detectado: ${texto}`);
+        if (contextoAtual === 'menu') {
+            const atendimento = atendimentos[chaveAtendimento];
+            const primeiraInteracao = atendimento && 
+                                      (atendimento.ultimaAtividade - atendimento.inicio) < 2000;
             
-            if (texto === '2') {
-                console.log(`${formatarDataHora()} 👨‍💼 Cliente escolheu atendimento após erro no CPF`);
+            if (primeiraInteracao) {
+                console.log(`${formatarDataHora()} 📋 Primeira interação - enviando menu`);
+                await enviarMenuPrincipal(sock, usuario, texto);
+                return;
+            }
+            
+            if (texto === '1') {
+                console.log(`${formatarDataHora()} 💠 Cliente escolheu PIX`);
+                contextos[chaveAtendimento] = 'aguardando_cpf';
+                atendimentos[chaveAtendimento].tipo = 'aguardando_cpf';
+                await enviarMensagemParaUsuario(sock, usuario, `🔐 Informe seu CPF ou CNPJ:`);
+                return;
+                
+            } else if (texto === '2') {
+                console.log(`${formatarDataHora()} 👨‍💼 Cliente escolheu atendimento`);
                 
                 if (!dentroHorarioComercial()) {
                     console.log(`${formatarDataHora()} ⏰ Fora do horário comercial ou feriado`);
@@ -2340,198 +2211,362 @@ ${relatorio.estatisticas.formatosDetectados} registro(s)`;
                         mensagemErro += `${formatarHorarioComercial()}`;
                     }
                     
-                    mensagemErro += `1️⃣  Para Fatura  |  9️⃣  Retornar ao Menu`;
+                    mensagemErro += `1️⃣  Para Fatura  |  3️⃣  Não sou Cliente  |  9️⃣  Retornar ao Menu`;
                     
                     await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
                     return;
                 }
                 
                 const tempoTimeout = config.tempo_atendimento_humano || 5;
-                atendimentos[chaveAtendimento] = {
-                    tipo: 'humano',
-                    inicio: Date.now(),
-                    ultimaAtividade: Date.now(),
-                    timeout: Date.now() + (tempoTimeout * 60 * 1000),
-                    usuarioPrimaryKey: usuario.primaryKey
-                };
+                atendimentos[chaveAtendimento].tipo = 'humano';
+                atendimentos[chaveAtendimento].timeout = Date.now() + (tempoTimeout * 60 * 1000);
                 contextos[chaveAtendimento] = 'em_atendimento';
                 
-                console.log(`${formatarDataHora()} ⏱️ Atendimento humano iniciado após erro CPF (${tempoTimeout}min)`);
+                console.log(`${formatarDataHora()} ⏱️ Atendimento iniciado (${tempoTimeout}min)`);
                 
                 await enviarMensagemParaUsuario(sock, usuario, 
                     `👨‍💼 *ATENDIMENTO INICIADO*\n\n*${pushName}*, um atendente falará com você em instantes, aguarde...\n\n⏱️ Duração: ${tempoTimeout} minutos\n\n 0️⃣ Encerrar Atendimento`
                 );
                 return;
-            } else if (texto === '1') {
-                await enviarMensagemParaUsuario(sock, usuario, `🔐 Informe seu CPF ou CNPJ:`);
+                
+            } else if (texto === '3') {
+                console.log(`${formatarDataHora()} 📶 Cliente escolheu "Não sou Cliente!"`);
+                
+                if (config.planos_ativos !== 'Sim') {
+                    console.log(`${formatarDataHora()} ⚠️ Planos desativados no config.json`);
+                    await enviarMensagemParaUsuario(sock, usuario, 
+                        `❌ Desculpe, a consulta de planos está temporariamente indisponível.\n\n9️⃣ Retornar ao Menu`
+                    );
+                    return;
+                }
+                
+                const planosMensagem = config.planos_mensagem || 
+                    `📶 *100 megas* 💰 R$ 59,90 - FIBRA\n📶 *200 megas* 💰 R$ 69,90 - FIBRA\n📶 *300 megas* 💰 R$ 89,90 - FIBRA\n\n*Taxa de instalação* 💰 R$ 50,00 à vista ou R$ 60,00 no cartão em 2x.\n\n*Tá esperando o que?* 😱\n\n2️⃣ Falar com um Atendente    5️⃣ Assine Já!`;
+                
+                contextos[chaveAtendimento] = 'planos';
+                atendimentos[chaveAtendimento].tipo = 'planos';
+                
+                await enviarMensagemParaUsuario(sock, usuario, planosMensagem);
+                return;
+                
+            } else if (texto === '0' || texto === '9') {
+                console.log(`${formatarDataHora()} ℹ️ Comando ${texto} já deveria ser tratado`);
+                return;
+                
+            } else {
+                console.log(`${formatarDataHora()} 🤐 Mensagem ignorada - comando inválido no menu: "${texto}"`);
+                
+                if (atendimentos[chaveAtendimento]) {
+                    atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
+                }
                 return;
             }
         }
-        
-        const doc = limparDoc(texto);
-        console.log(`${formatarDataHora()} 📄 Documento após limpar: "${doc}"`);
-        
-        const temApenasNumeros = /^\d+$/.test(doc);
-        
-        if ((doc.length === 11 || doc.length === 14) && temApenasNumeros) {
-            console.log(`${formatarDataHora()} 📄 ✅ DOCUMENTO VÁLIDO DETECTADO!`);
+
+        if (contextoAtual === 'planos') {
+            console.log(`${formatarDataHora()} 📶 Contexto planos ATIVADO`);
             
-            try {
-                await enviarMensagemParaUsuario(sock, usuario, 
-                    `🔍 Verificando ${doc.length === 11 ? 'CPF' : 'CNPJ'} ${doc} na base de clientes...`
-                );
+            if (atendimentos[chaveAtendimento]) {
+                atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
+            }
+            
+            if (texto === '2') {
+                console.log(`${formatarDataHora()} 👨‍💼 Cliente escolheu atendimento após ver planos`);
                 
-                const resultado = await verificarClienteMKAuth(doc);
-                
-                if (!resultado.sucesso) {
-                    console.log(`${formatarDataHora()} 📄 ❌ Documento não encontrado ou inativo: ${doc}`);
+                if (!dentroHorarioComercial()) {
+                    console.log(`${formatarDataHora()} ⏰ Fora do horário comercial ou feriado`);
                     
-                    let mensagemErro = `❌ *`;
+                    const hoje = new Date();
+                    const ehFeriadoHoje = ehFeriado(hoje);
+                    const ehFeriadoLocalHoje = ehFeriadoLocal();
                     
-                    if (resultado.ativo === false) {
-                        mensagemErro += `${doc.length === 11 ? 'CPF' : 'CNPJ'} com cadastro inativo*\n\n`;
-                        mensagemErro += `O ${doc.length === 11 ? 'CPF' : 'CNPJ'} *${doc}* está com o cadastro *INATIVO*.\n\n`;
-                        mensagemErro += `*Favor entrar em contato com o Atendente.*\n\n`;
-                        mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
-                        
-                        await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
-                        return;
-                    } else if (resultado.existe === false) {
-                        mensagemErro += `${doc.length === 11 ? 'CPF' : 'CNPJ'} não encontrado*\n\n`;
-                        mensagemErro += `O ${doc.length === 11 ? 'CPF' : 'CNPJ'} *${doc}* não foi encontrado na base de clientes da *${config.empresa}*.\n\n`;
-                    } else if (resultado.temFaturas === false) {
-                        mensagemErro += `Cliente sem faturas*\n\n`;
-                        mensagemErro += `Cliente encontrado, mas não há faturas disponíveis.\n\n`;
-                    } else if (resultado.temPix === false) {
-                        mensagemErro += `Cliente sem PIX*\n\n`;
-                        mensagemErro += `Cliente encontrado, mas não há faturas para pagamento via PIX.\n\n`;
+                    let mensagemErro = `⏰ *${pushName}*, `;
+                    
+                    if (ehFeriadoHoje) {
+                        mensagemErro += `hoje é feriado nacional.\n\n`;
+                    } else if (ehFeriadoLocalHoje) {
+                        mensagemErro = getMensagemFeriadoLocal() + `\n\n`;
+                    } else if (hoje.getDay() === 0) {
+                        mensagemErro += `hoje é domingo.\n\n`;
                     } else {
-                        mensagemErro += `${resultado.mensagem}*\n\n`;
+                        mensagemErro += `por favor, retorne seu contato em *horário comercial*.\n\n`;
                     }
                     
-                    mensagemErro += `Verifique se o ${doc.length === 11 ? 'CPF' : 'CNPJ'} está correto ou entre em contato com nosso atendimento.\n\n`;
-                    mensagemErro += `1️⃣  Tentar outro ${doc.length === 11 ? 'CPF' : 'CNPJ'}  |  2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                    if (!ehFeriadoLocalHoje) {
+                        mensagemErro += `${formatarHorarioComercial()}`;
+                    }
                     
+                    mensagemErro += `1️⃣  Para Fatura  |  3️⃣  Ver Planos  |  9️⃣  Retornar ao Menu`;
+                    
+                    contextos[chaveAtendimento] = 'menu';
                     await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
                     return;
                 }
                 
-                console.log(`${formatarDataHora()} 📄 ✅ Documento válido no MK-Auth! Gerando link...`);
+                const tempoTimeout = config.tempo_atendimento_humano || 5;
+                atendimentos[chaveAtendimento].tipo = 'humano';
+                atendimentos[chaveAtendimento].timeout = Date.now() + (tempoTimeout * 60 * 1000);
+                contextos[chaveAtendimento] = 'em_atendimento';
                 
-                let mensagemPix = '';
+                console.log(`${formatarDataHora()} ⏱️ Atendimento humano iniciado após planos (${tempoTimeout}min)`);
                 
-                if (resultado.ativo === false) {
-                    mensagemPix = `⚠️ *ATENÇÃO: Cadastro INATIVO*\n\n` +
-                                 `Seu cadastro está *INATIVO* na *${config.empresa}*.\n\n` +
-                                 `Você possui faturas em aberto que precisam ser pagas.\n\n` +
-                                 `🔍 ${doc.length === 11 ? 'CPF' : 'CNPJ'} encontrado!\n\n` +
-                                 `${doc.length === 11 ? '👤 Nome' : '🏢 Nome/Razão Social'}: ${resultado.nome_cliente || 'Não disponível'}\n\n` +
-                                 `🔗 Clique no link abaixo para acessar suas faturas PIX:\n\n` +
-                                 `${config.boleto_url}?doc=${doc}\n\n` +
-                                 `⏱️ *Link válido por 10 minutos*\n\n` +
-                                 `0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
-                } else {
-                    mensagemPix = `✅ *${doc.length === 11 ? 'CPF' : 'CNPJ'} encontrado!*\n\n` +
-                                 `${doc.length === 11 ? '👤 Nome' : '🏢 Nome/Razão Social'}: ${resultado.nome_cliente || 'Não disponível'}\n\n` +
-                                 `Clique no link abaixo para acessar sua fatura PIX:\n\n` +
-                                 `🔗 ${config.boleto_url}?doc=${doc}\n\n` +
-                                 `⏱️ *Link válido por 10 minutos*\n\n` +
-                                 `0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
-                }
+                await enviarMensagemParaUsuario(sock, usuario, 
+                    `👨‍💼 *ATENDIMENTO INICIADO*\n\n*${pushName}*, um atendente falará com você em instantes, aguarde...\n\n⏱️ Duração: ${tempoTimeout} minutos\n\n 0️⃣ Encerrar Atendimento`
+                );
+                return;
                 
-                const resultadoEnvio = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
+            } else if (texto === '5') {
+                console.log(`${formatarDataHora()} 🔗 Cliente escolheu "Assine Já!"`);
                 
-                if (resultadoEnvio) {
-                    console.log(`${formatarDataHora()} 📄 ✅ Mensagem PIX enviada com sucesso!`);
+                const linkAssinatura = config.link_assinatura || 'https://www.weblinetelecom.com.br/cadastro.hhvm';
+                
+                await enviarMensagemParaUsuario(sock, usuario, 
+                    `🔗 *LINK PARA ASSINATURA*\n\nAcesse o link abaixo para realizar sua assinatura:\n\n${linkAssinatura}\n\nApós a assinatura, entre em contato para ativação.\n\n9️⃣ Retornar ao Menu`
+                );
+                
+                contextos[chaveAtendimento] = 'menu';
+                atendimentos[chaveAtendimento].tipo = 'menu';
+                return;
+                
+            } else if (texto === '9') {
+                console.log(`${formatarDataHora()} 🔄 Cliente voltou ao menu a partir dos planos`);
+                
+                contextos[chaveAtendimento] = 'menu';
+                atendimentos[chaveAtendimento].tipo = 'menu';
+                await enviarMenuPrincipal(sock, usuario, texto);
+                return;
+                
+            } else {
+                console.log(`${formatarDataHora()} 📶 Cliente enviou texto inválido no contexto planos: "${texto}"`);
+                
+                const planosMensagem = config.planos_mensagem || 
+                    `📶 *100 megas* 💰 R$ 59,90 - FIBRA\n📶 *200 megas* 💰 R$ 69,90 - FIBRA\n📶 *300 megas* 💰 R$ 89,90 - FIBRA\n\n*Taxa de instalação* 💰 R$ 50,00 à vista ou R$ 60,00 no cartão em 2x.\n\n*Tá esperando o que?* 😱\n\n2️⃣ Falar com um Atendente    5️⃣ Assine Já!`;
+                
+                await enviarMensagemParaUsuario(sock, usuario, planosMensagem + '\n\n(Use 2 para Atendente, 5 para Assinar ou 9 para Voltar)');
+                return;
+            }
+        }
+
+        if (contextoAtual === 'aguardando_cpf') {
+            console.log(`${formatarDataHora()} 📄 Contexto aguardando_cpf ATIVADO`);
+            
+            if (atendimentos[chaveAtendimento]) {
+                atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
+            }
+            
+            if (texto === '1' || texto === '2') {
+                console.log(`${formatarDataHora()} 📄 Comando detectado: ${texto}`);
+                
+                if (texto === '2') {
+                    console.log(`${formatarDataHora()} 👨‍💼 Cliente escolheu atendimento após erro no CPF`);
                     
+                    if (!dentroHorarioComercial()) {
+                        console.log(`${formatarDataHora()} ⏰ Fora do horário comercial ou feriado`);
+                        
+                        const hoje = new Date();
+                        const ehFeriadoHoje = ehFeriado(hoje);
+                        const ehFeriadoLocalHoje = ehFeriadoLocal();
+                        
+                        let mensagemErro = `⏰ *${pushName}*, `;
+                        
+                        if (ehFeriadoHoje) {
+                            mensagemErro += `hoje é feriado nacional.\n\n`;
+                        } else if (ehFeriadoLocalHoje) {
+                            mensagemErro = getMensagemFeriadoLocal() + `\n\n`;
+                        } else if (hoje.getDay() === 0) {
+                            mensagemErro += `hoje é domingo.\n\n`;
+                        } else {
+                            mensagemErro += `por favor, retorne seu contato em *horário comercial*.\n\n`;
+                        }
+                        
+                        if (!ehFeriadoLocalHoje) {
+                            mensagemErro += `${formatarHorarioComercial()}`;
+                        }
+                        
+                        mensagemErro += `1️⃣  Para Fatura  |  3️⃣  Não sou Cliente  |  9️⃣  Retornar ao Menu`;
+                        
+                        await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                        return;
+                    }
+                    
+                    const tempoTimeout = config.tempo_atendimento_humano || 5;
                     atendimentos[chaveAtendimento] = {
-                        tipo: 'pos_pix',
+                        tipo: 'humano',
                         inicio: Date.now(),
                         ultimaAtividade: Date.now(),
+                        timeout: Date.now() + (tempoTimeout * 60 * 1000),
                         usuarioPrimaryKey: usuario.primaryKey
                     };
+                    contextos[chaveAtendimento] = 'em_atendimento';
                     
-                    contextos[chaveAtendimento] = 'pos_pix';
-                } else {
-                    console.log(`${formatarDataHora()} 📄 ❌ Falha ao enviar mensagem PIX!`);
+                    console.log(`${formatarDataHora()} ⏱️ Atendimento humano iniciado após erro CPF (${tempoTimeout}min)`);
+                    
                     await enviarMensagemParaUsuario(sock, usuario, 
-                        `❌ Ocorreu um erro ao gerar o link. Tente novamente.`
+                        `👨‍💼 *ATENDIMENTO INICIADO*\n\n*${pushName}*, um atendente falará com você em instantes, aguarde...\n\n⏱️ Duração: ${tempoTimeout} minutos\n\n 0️⃣ Encerrar Atendimento`
+                    );
+                    return;
+                } else if (texto === '1') {
+                    await enviarMensagemParaUsuario(sock, usuario, `🔐 Informe seu CPF ou CNPJ:`);
+                    return;
+                }
+            }
+            
+            const doc = limparDoc(texto);
+            console.log(`${formatarDataHora()} 📄 Documento após limpar: "${doc}"`);
+            
+            const temApenasNumeros = /^\d+$/.test(doc);
+            
+            if ((doc.length === 11 || doc.length === 14) && temApenasNumeros) {
+                console.log(`${formatarDataHora()} 📄 ✅ DOCUMENTO VÁLIDO DETECTADO!`);
+                
+                try {
+                    await enviarMensagemParaUsuario(sock, usuario, 
+                        `🔍 Verificando ${doc.length === 11 ? 'CPF' : 'CNPJ'} ${doc} na base de clientes...`
+                    );
+                    
+                    const resultado = await verificarClienteMKAuth(doc);
+                    
+                    if (!resultado.sucesso) {
+                        console.log(`${formatarDataHora()} 📄 ❌ Documento não encontrado ou inativo: ${doc}`);
+                        
+                        let mensagemErro = `❌ *`;
+                        
+                        if (resultado.ativo === false) {
+                            mensagemErro += `${doc.length === 11 ? 'CPF' : 'CNPJ'} com cadastro inativo*\n\n`;
+                            mensagemErro += `O ${doc.length === 11 ? 'CPF' : 'CNPJ'} *${doc}* está com o cadastro *INATIVO*.\n\n`;
+                            mensagemErro += `*Favor entrar em contato com o Atendente.*\n\n`;
+                            mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                            
+                            await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                            return;
+                        } else if (resultado.existe === false) {
+                            mensagemErro += `${doc.length === 11 ? 'CPF' : 'CNPJ'} não encontrado*\n\n`;
+                            mensagemErro += `O ${doc.length === 11 ? 'CPF' : 'CNPJ'} *${doc}* não foi encontrado na base de clientes da *${config.empresa}*.\n\n`;
+                        } else if (resultado.temFaturas === false) {
+                            mensagemErro += `Cliente sem faturas*\n\n`;
+                            mensagemErro += `Cliente encontrado, mas não há faturas disponíveis.\n\n`;
+                        } else if (resultado.temPix === false) {
+                            mensagemErro += `Cliente sem PIX*\n\n`;
+                            mensagemErro += `Cliente encontrado, mas não há faturas para pagamento via PIX.\n\n`;
+                        } else {
+                            mensagemErro += `${resultado.mensagem}*\n\n`;
+                        }
+                        
+                        mensagemErro += `Verifique se o ${doc.length === 11 ? 'CPF' : 'CNPJ'} está correto ou entre em contato com nosso atendimento.\n\n`;
+                        mensagemErro += `1️⃣  Tentar outro ${doc.length === 11 ? 'CPF' : 'CNPJ'}  |  2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                        
+                        await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                        return;
+                    }
+                    
+                    console.log(`${formatarDataHora()} 📄 ✅ Documento válido no MK-Auth! Gerando link...`);
+                    
+                    let mensagemPix = '';
+                    
+                    if (resultado.ativo === false) {
+                        mensagemPix = `⚠️ *ATENÇÃO: Cadastro INATIVO*\n\n` +
+                                     `Seu cadastro está *INATIVO* na *${config.empresa}*.\n\n` +
+                                     `Você possui faturas em aberto que precisam ser pagas.\n\n` +
+                                     `🔍 ${doc.length === 11 ? 'CPF' : 'CNPJ'} encontrado!\n\n` +
+                                     `${doc.length === 11 ? '👤 Nome' : '🏢 Nome/Razão Social'}: ${resultado.nome_cliente || 'Não disponível'}\n\n` +
+                                     `🔗 Clique no link abaixo para acessar suas faturas PIX:\n\n` +
+                                     `${config.boleto_url}?doc=${doc}\n\n` +
+                                     `⏱️ *Link válido por 10 minutos*\n\n` +
+                                     `0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                    } else {
+                        mensagemPix = `✅ *${doc.length === 11 ? 'CPF' : 'CNPJ'} encontrado!*\n\n` +
+                                     `${doc.length === 11 ? '👤 Nome' : '🏢 Nome/Razão Social'}: ${resultado.nome_cliente || 'Não disponível'}\n\n` +
+                                     `Clique no link abaixo para acessar sua fatura PIX:\n\n` +
+                                     `🔗 ${config.boleto_url}?doc=${doc}\n\n` +
+                                     `⏱️ *Link válido por 10 minutos*\n\n` +
+                                     `0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`;
+                    }
+                    
+                    const resultadoEnvio = await enviarMensagemParaUsuario(sock, usuario, mensagemPix);
+                    
+                    if (resultadoEnvio) {
+                        console.log(`${formatarDataHora()} 📄 ✅ Mensagem PIX enviada com sucesso!`);
+                        
+                        atendimentos[chaveAtendimento] = {
+                            tipo: 'pos_pix',
+                            inicio: Date.now(),
+                            ultimaAtividade: Date.now(),
+                            usuarioPrimaryKey: usuario.primaryKey
+                        };
+                        
+                        contextos[chaveAtendimento] = 'pos_pix';
+                    } else {
+                        console.log(`${formatarDataHora()} 📄 ❌ Falha ao enviar mensagem PIX!`);
+                        await enviarMensagemParaUsuario(sock, usuario, 
+                            `❌ Ocorreu um erro ao gerar o link. Tente novamente.`
+                        );
+                    }
+                    
+                } catch (error) {
+                    console.error(`${formatarDataHora()} 📄 ❌ ERRO:`, error);
+                    await enviarMensagemParaUsuario(sock, usuario, 
+                        `❌ Erro ao consultar ${doc.length === 11 ? 'CPF' : 'CNPJ'}. Tente novamente em alguns instantes.\n\n2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`
                     );
                 }
+                return;
                 
-            } catch (error) {
-                console.error(`${formatarDataHora()} 📄 ❌ ERRO:`, error);
-                await enviarMensagemParaUsuario(sock, usuario, 
-                    `❌ Erro ao consultar ${doc.length === 11 ? 'CPF' : 'CNPJ'}. Tente novamente em alguns instantes.\n\n2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`
-                );
+            } else {
+                console.log(`${formatarDataHora()} 📄 ❌ DOCUMENTO INVÁLIDO`);
+                
+                try {
+                    let mensagemErro = `❌ ${pushName}, formato inválido.\n\n`;
+                    
+                    if (doc.length > 0 && !temApenasNumeros) {
+                        mensagemErro += `⚠️ Contém caracteres inválidos.\n`;
+                    }
+                    
+                    mensagemErro += `\n📋 *Formatos aceitos:*\n`;
+                    mensagemErro += `• CPF: 11 dígitos (ex: 12345678901)\n`;
+                    mensagemErro += `• CNPJ: 14 dígitos (ex: 12345678000199)\n\n`;
+                    mensagemErro += `Digite novamente:\n\n`;
+                    mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
+                    
+                    await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
+                    
+                } catch (error) {
+                    console.error(`${formatarDataHora()} 📄 ❌ ERRO ao enviar mensagem de erro:`, error);
+                }
+            }
+            
+            return;
+        }
+
+        if (contextoAtual === 'pos_pix') {
+            if (atendimentos[chaveAtendimento]) {
+                atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
+            }
+            
+            await enviarMensagemParaUsuario(sock, usuario, 
+                `PIX já gerado. Acesse o link enviado anteriormente.\n\n⏱️ *Link válido por 10 minutos*\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`
+            );
+            return;
+        }
+
+        if (contextoAtual === 'em_atendimento') {
+            console.log(`${formatarDataHora()} 🤐 Cliente em atendimento humano`);
+            
+            if (atendimentos[chaveAtendimento]) {
+                atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
+                const tempoTimeout = (config.tempo_atendimento_humano || 5) * 60 * 1000;
+                atendimentos[chaveAtendimento].timeout = Date.now() + tempoTimeout;
+                console.log(`${formatarDataHora()} ⏰ Timeout renovado para ${pushName}`);
             }
             return;
-            
-        } else {
-            console.log(`${formatarDataHora()} 📄 ❌ DOCUMENTO INVÁLIDO`);
-            
-            try {
-                let mensagemErro = `❌ ${pushName}, formato inválido.\n\n`;
-                
-                if (doc.length > 0 && !temApenasNumeros) {
-                    mensagemErro += `⚠️ Contém caracteres inválidos.\n`;
-                }
-                
-                mensagemErro += `\n📋 *Formatos aceitos:*\n`;
-                mensagemErro += `• CPF: 11 dígitos (ex: 12345678901)\n`;
-                mensagemErro += `• CNPJ: 14 dígitos (ex: 12345678000199)\n\n`;
-                mensagemErro += `Digite novamente:\n\n`;
-                mensagemErro += `2️⃣  Falar com Atendente  |  9️⃣  Retornar ao Menu`;
-                
-                await enviarMensagemParaUsuario(sock, usuario, mensagemErro);
-                
-            } catch (error) {
-                console.error(`${formatarDataHora()} 📄 ❌ ERRO ao enviar mensagem de erro:`, error);
-            }
         }
         
-        return;
-    }
-    // ============ FIM DO BLOCO AGUARDANDO CPF ============
-
-    // ============ INÍCIO DO BLOCO PÓS PIX ============
-    if (contextoAtual === 'pos_pix') {
-        // 🔥 ATUALIZA ATIVIDADE
-        if (atendimentos[chaveAtendimento]) {
-            atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
-        }
-        
-        await enviarMensagemParaUsuario(sock, usuario, 
-            `PIX já gerado. Acesse o link enviado anteriormente.\n\n⏱️ *Link válido por 10 minutos*\n\n0️⃣  Encerrar  |  9️⃣  Retornar ao Menu`
-        );
-        return;
-    }
-    // ============ FIM DO BLOCO PÓS PIX ============
-
-    // ============ INÍCIO DO BLOCO EM ATENDIMENTO ============
-    if (contextoAtual === 'em_atendimento') {
-        console.log(`${formatarDataHora()} 🤐 Cliente em atendimento humano`);
-        
-        if (atendimentos[chaveAtendimento]) {
-            // 🔥 ATUALIZA ATIVIDADE
-            atendimentos[chaveAtendimento].ultimaAtividade = Date.now();
-            
-            const tempoTimeout = (config.tempo_atendimento_humano || 5) * 60 * 1000;
-            atendimentos[chaveAtendimento].timeout = Date.now() + tempoTimeout;
-            console.log(`${formatarDataHora()} ⏰ Timeout renovado para ${pushName}`);
-        }
-        return;
-    }
-    // ============ FIM DO BLOCO EM ATENDIMENTO ============
-    
-    await enviarMenuPrincipal(sock, usuario, texto);
-});
+        await enviarMenuPrincipal(sock, usuario, texto);
+    });
 }
 
 // ================= INICIALIZAÇÃO =================
 
 console.log('\n' + '='.repeat(70));
-console.log('🤖 BOT WHATSAPP - VERSÃO LID-PROOF ULTRA v6.1');
+console.log('🤖 BOT WHATSAPP - VERSÃO LID-PROOF ULTRA v8.1');
 console.log('✅ 100% AGNÓSTICO A NÚMERO');
 console.log('✅ LID como tipo próprio');
 console.log('✅ Primary Key universal com Stable ID');
@@ -2540,30 +2575,19 @@ console.log('✅ Suporte a JID criptografado rotativo');
 console.log('✅ Gerenciamento profissional de intervalos');
 console.log('✅ Health check e debug integrado');
 console.log('✅ Pronto para futuras mudanças da Meta');
-console.log('✅ Fluxo e mensagens 100% originais');
 console.log('🆕 SISTEMA UNIFICADO DE TIMEOUT v3.0');
-console.log('   • Tempo único configurável no painel');
-console.log('   • Aplica-se a TODOS os contextos');
-console.log('   • Cliente inativo volta ao menu');
-console.log('   • Menu inicial agora é monitorado!');
 console.log('🆕 FILTRO DE MENSAGENS v3.1');
-console.log('   • Ignora mensagens de contexto de grupo');
-console.log('   • Ignora broadcasts não direcionados');
-console.log('   • Processa apenas mensagens diretas');
 console.log('🆕 FERIADO LOCAL PERSONALIZÁVEL v4.0');
-console.log('   • Ative/desative com checkbox no painel');
-console.log('   • Mensagem personalizada para cada situação');
-console.log('   • PIX continua 24/7 normalmente');
 console.log('🆕 NOTIFICAÇÕES TELEGRAM v5.0');
-console.log('   • Monitoramento da conexão do WhatsApp');
-console.log('   • Notificações via Telegram');
-console.log('   • Configurável via painel web');
-console.log('   • Número do atendente identificado');
 console.log('🆕 DETECÇÃO AUTOMÁTICA DE VERSÃO v6.0');
-console.log('   • Versão WhatsApp via fetchLatestBaileysVersion()');
-console.log('   • Versão Baileys lida do package.json');
-console.log('   • Sempre atualizado sem intervenção manual');
-console.log('   • Comando #VERSAO para consultar');
+console.log('🆕 OPÇÃO 3 - NÃO SOU CLIENTE v7.0');
+console.log('🆕 CORREÇÃO DE DESCONEXÃO v8.1');
+console.log('   • Diferencia problemas de rede de desconexão real da Meta');
+console.log('   • Mantém sessão em caso de queda de internet');
+console.log('   • Após loggedOut, NÃO reconecta automaticamente (aguarda QR)');
+console.log('   • ✅ NOTIFICAÇÕES TELEGRAM APENAS PARA CONEXÕES REAIS');
+console.log('   • ✅ NENHUMA NOTIFICAÇÃO para problemas de rede');
+console.log('   • ✅ NENHUMA NOTIFICAÇÃO para reconexões automáticas');
 console.log('='.repeat(70));
 console.log('🚀 INICIANDO BOT...');
 console.log('='.repeat(70));
