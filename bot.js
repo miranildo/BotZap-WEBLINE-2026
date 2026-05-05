@@ -81,10 +81,10 @@
  * ✅ Mantém sessão em caso de queda de internet
  * ✅ Apenas limpa sessão quando Meta realmente deslogar
  * ✅ Após loggedOut, NÃO reconecta automaticamente (aguarda QR)
- * ✅ ✅ NOTIFICAÇÕES TELEGRAM APENAS PARA CONEXÕES REAIS E DESCONEXÕES REAIS
- * ✅ ✅ NENHUMA NOTIFICAÇÃO para problemas de rede ou reconexões automáticas
+ * ✅ NOTIFICAÇÕES TELEGRAM APENAS PARA CONEXÕES REAIS E DESCONEXÕES REAIS
+ * ✅ NENHUMA NOTIFICAÇÃO para problemas de rede ou reconexões automáticas
  * 
- * 🏆 NÍVEL: 10/10 - PREPARADO PARA 2025+
+ * 🏆 NÍVEL: 10/10 - PREPARADO PARA 2026+
  *************************************************/
 
 const {
