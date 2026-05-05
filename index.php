@@ -1,8 +1,8 @@
 <?php
 /***********************************************************
  * SISTEMA UNIFICADO - BOT WHATSAPP + DASHBOARD PIX
- * Versão: 2.0 - Auto-Logout
- * Data: 23/02/2026
+ * Versão: 2.1 - Security Hardened + Global Logout
+ * Data: 04/05/2026
  ***********************************************************/
 
 session_start();
@@ -14,15 +14,30 @@ session_start();
 // Arquivos do sistema
 define('ARQUIVO_USUARIOS', '/var/log/pix_acessos/usuarios.json');
 define('ARQUIVO_LOG_ACESSOS', '/var/log/pix_acessos/acessos_usuarios.log');
+define('ARQUIVO_RATE_LIMIT_DIR', '/var/log/pix_acessos/rate_limit/');
+define('ARQUIVO_CSRF_TOKENS', '/var/log/pix_acessos/csrf_tokens.json');
 
 // Configurações de auto-logout
 define('TEMPO_SESSAO_PADRAO', 1800); // 30 minutos
 define('ARQUIVO_CONFIG_AUTOLOGOUT', '/var/log/pix_acessos/autologout_config.json');
 define('TEMPO_SESSAO', carregarTempoAutologout());
 
+// Configurações de Rate Limiting (anti-DDoS)
+define('RATE_LIMIT_REQUESTS', 120); // 120 requisições por minuto
+define('RATE_LIMIT_WINDOW', 60); // Janela de 60 segundos
+
 // =====================================================================
 // BLOCO 02 - FUNÇÕES UTILITÁRIAS BÁSICAS
 // =====================================================================
+
+/**
+ * Obtém o IP DO CLOUDFLARE do usuário (apenas REMOTE_ADDR por segurança)
+ * @return string IP do usuário
+ */
+//function getRealIp() {
+    // Usar apenas REMOTE_ADDR para evitar spoofing
+    //return $_SERVER['REMOTE_ADDR'] ?? 'desconhecido';
+//}
 
 /**
  * Obtém o IP real do usuário considerando proxies
@@ -45,6 +60,116 @@ function getRealIp() {
 }
 
 /**
+ * Rate Limiting - Previne DDoS e ataques de força bruta
+ * @return bool True se permitido, False se bloqueado
+ */
+function checkRateLimit() {
+    $ip = getRealIp();
+    $sessionId = session_id();
+    $timestamp = time();
+    $windowStart = $timestamp - RATE_LIMIT_WINDOW;
+    
+    // EXCEÇÃO PARA HEARTBEAT E LOGS
+    $isLogOrHeartbeat = isset($_GET['update_session']) || 
+                        isset($_GET['log_session_check']) || 
+                        isset($_GET['get_log']) || 
+                        isset($_GET['tail']) ||
+                        (isset($_GET['aba']) && $_GET['aba'] === 'log');
+    
+    if ($isLogOrHeartbeat) {
+        return true; // Sem limite para requisições da aba de logs
+    }
+    
+    // Criar diretório se não existir
+    if (!is_dir(ARQUIVO_RATE_LIMIT_DIR)) {
+        @mkdir(ARQUIVO_RATE_LIMIT_DIR, 0755, true);
+    }
+    
+    $ipFile = ARQUIVO_RATE_LIMIT_DIR . md5($ip) . '.json';
+    $sessionFile = ARQUIVO_RATE_LIMIT_DIR . 'session_' . md5($sessionId) . '.json';
+    
+    // Limpar arquivos antigos (a cada 100 requisições)
+    if (mt_rand(1, 100) === 1) {
+        $files = glob(ARQUIVO_RATE_LIMIT_DIR . '*.json');
+        foreach ($files as $file) {
+            if (filemtime($file) < $timestamp - 3600) {
+                @unlink($file);
+            }
+        }
+    }
+    
+    // Verificar IP
+    $ipData = file_exists($ipFile) ? json_decode(file_get_contents($ipFile), true) : ['requests' => [], 'total' => 0];
+    $ipData['requests'][] = $timestamp;
+    $ipData['requests'] = array_filter($ipData['requests'], function($time) use ($windowStart) {
+        return $time > $windowStart;
+    });
+    $ipData['total'] = count($ipData['requests']);
+    
+    // Verificar sessão (mais restritivo para ações críticas)
+    $sessionData = file_exists($sessionFile) ? json_decode(file_get_contents($sessionFile), true) : ['requests' => [], 'total' => 0];
+    $sessionData['requests'][] = $timestamp;
+    $sessionData['requests'] = array_filter($sessionData['requests'], function($time) use ($windowStart) {
+        return $time > $windowStart;
+    });
+    $sessionData['total'] = count($sessionData['requests']);
+    
+    // Regras de rate limit:
+    // - IP: máximo 120 requisições por minuto
+    // - Sessão: máximo 60 requisições por minuto (ações críticas)
+    $isCritical = isset($_GET['action']) || isset($_POST['alterar_senha_dashboard']) || isset($_POST['adicionar_usuario']);
+    
+    if ($isCritical) {
+        $allowed = ($sessionData['total'] < 60);
+    } else {
+        $allowed = ($ipData['total'] < RATE_LIMIT_REQUESTS);
+    }
+    
+    // Salvar dados
+    file_put_contents($ipFile, json_encode(['requests' => $ipData['requests'], 'total' => $ipData['total']]));
+    file_put_contents($sessionFile, json_encode(['requests' => $sessionData['requests'], 'total' => $sessionData['total']]));
+    
+    if (!$allowed) {
+        // Registrar tentativa de violação
+        error_log("RATE_LIMIT_VIOLATION: IP={$ip}, Session={$sessionId}, Total={$ipData['total']}");
+        header('HTTP/1.0 429 Too Many Requests');
+        header('Retry-After: 60');
+        
+        if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest') {
+            echo json_encode(['error' => 'Muitas requisições. Aguarde 60 segundos.']);
+            exit;
+        } else {
+            die('<h1>429 - Muitas Requisições</h1><p>Por favor, aguarde 60 segundos antes de continuar.</p>');
+        }
+    }
+    
+    return true;
+}
+
+/**
+ * Gera e salva token CSRF
+ * @return string Token CSRF
+ */
+function generateCsrfToken() {
+    if (!isset($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+/**
+ * Verifica token CSRF
+ * @param string $token Token recebido
+ * @return bool True se válido
+ */
+function verifyCsrfToken($token) {
+    if (!isset($_SESSION['csrf_token'])) {
+        return false;
+    }
+    return hash_equals($_SESSION['csrf_token'], $token);
+}
+
+/**
  * Carrega o tempo de auto-logout configurado
  * @return int Tempo em segundos
  */
@@ -64,7 +189,7 @@ function carregarTempoAutologout() {
  * @return bool Sucesso da operação
  */
 function salvarTempoAutologout($tempo) {
-    $config = ['tempo' => intval($tempo)];
+    $config = ['tempo' => intval($tempo), 'ultima_alteracao' => date('Y-m-d H:i:s'), 'alterado_por' => $_SESSION['usuario'] ?? 'system'];
     return file_put_contents(ARQUIVO_CONFIG_AUTOLOGOUT, json_encode($config)) !== false;
 }
 
@@ -87,7 +212,7 @@ function carregarUsuarios() {
         }
     }
     
-    // Criar admin padrão se arquivo não existir (já com auto_logout)
+    // Criar admin padrão se arquivo não existir
     $usuarios = [
         'admin' => [
             'senha_hash' => '$2y$10$WN/a1/7yFMPbsPyfM6.ysuRtFBqG8RpoAF/DwpyxFTu2tnlo1ekde',
@@ -95,7 +220,7 @@ function carregarUsuarios() {
             'email' => 'admin@sistema.com',
             'nivel' => 'admin',
             'status' => 'ativo',
-            'auto_logout' => true, // CAMPO ADICIONADO: controle individual de auto-logout
+            'auto_logout' => true,
             'data_criacao' => date('Y-m-d H:i:s'),
             'ip_cadastro' => '127.0.0.1',
             'ultimo_acesso' => null,
@@ -179,7 +304,7 @@ function adicionarUsuario($dados) {
         'email' => $dados['email'] ?? '',
         'nivel' => $dados['nivel'] ?? 'usuario',
         'status' => 'ativo',
-        'auto_logout' => true, // CAMPO ADICIONADO: todo novo usuário começa com auto-logout ativado
+        'auto_logout' => true,
         'data_criacao' => date('Y-m-d H:i:s'),
         'ip_cadastro' => getRealIp(),
         'ultimo_acesso' => null,
@@ -276,7 +401,7 @@ function registrarLogAcesso($usuario, $nome, $nivel, $acao, $tempo_ativo = null,
     $hora_brasileira = date('H:i:s', $timestamp);
     $ip = getRealIp();
     
-    if ($tempo_ativo === null && $login_time !== null && in_array($acao, ['LOGOUT', 'LOGOUT_AUTO', 'SESSÃO_EXPIRADA'])) {
+    if ($tempo_ativo === null && $login_time !== null && in_array($acao, ['LOGOUT', 'LOGOUT_AUTO', 'SESSÃO_EXPIRADA', 'LOGOUT_GLOBAL'])) {
         $tempo_ativo_segundos = $timestamp - $login_time;
         $tempo_ativo = $tempo_ativo_segundos > 0 ? gmdate('H:i:s', $tempo_ativo_segundos) : '00:00:00';
     }
@@ -374,6 +499,13 @@ function listarDiasDisponiveis() {
 // BLOCO 06 - ENDPOINTS AJAX (Heartbeat, Session, etc)
 // =====================================================================
 
+// Aplicar rate limiting em todos os endpoints AJAX
+if (isset($_GET['heartbeat']) || isset($_GET['check_session']) || isset($_GET['update_session']) || 
+    isset($_GET['log_session_check']) || isset($_GET['toggle_log_timeout']) || isset($_GET['get_log']) ||
+    isset($_GET['check_status']) || isset($_GET['api_status']) || isset($_GET['testar_telegram'])) {
+    checkRateLimit();
+}
+
 /**
  * Endpoint: Heartbeat para manter sessão ativa
  * Uso: ?heartbeat=1
@@ -388,14 +520,11 @@ if (isset($_GET['heartbeat'])) {
         $auto_logout = $_SESSION['auto_logout'] ?? true;
         
         if ($auto_logout === true) {
-            // Calcular tempo restante baseado no último acesso REAL do servidor
             $ultimo_acesso = $_SESSION['ultimo_acesso'] ?? time();
             $tempo_passado = time() - $ultimo_acesso;
             $timeLeft = max(0, TEMPO_SESSAO - $tempo_passado);
             
-            // Se tempo expirou, forçar logout
             if ($timeLeft <= 0) {
-                // Não fazer logout aqui, apenas informar que expirou
                 $response = [
                     'success' => true,
                     'expired' => true,
@@ -413,7 +542,6 @@ if (isset($_GET['heartbeat'])) {
                 ];
             }
         } else {
-            // Auto-logout desativado - retorna tempo máximo sem expirar
             $response = [
                 'success' => true,
                 'expired' => false,
@@ -464,11 +592,19 @@ if (isset($_GET['update_session'])) {
     header('Content-Type: application/json');
     
     if (isset($_SESSION['logado']) && $_SESSION['logado'] === true) {
-        // SÓ atualiza se auto-logout estiver ativado
+        // ===== CORREÇÃO: Se ignore_log_timeout estiver ativo, SEMPRE atualiza =====
+        if (isset($_SESSION['ignore_log_timeout']) && $_SESSION['ignore_log_timeout'] === true) {
+            $_SESSION['ultimo_acesso'] = time();
+            echo json_encode(['success' => true, 'timestamp' => time(), 'csrf_token' => generateCsrfToken(), 'keep_alive' => true]);
+            exit;
+        }
+        // ===== FIM DA CORREÇÃO =====
+        
+        // Código original continua igual
         if ($_SESSION['auto_logout'] ?? true) {
             $_SESSION['ultimo_acesso'] = time();
         }
-        echo json_encode(['success' => true, 'timestamp' => time()]);
+        echo json_encode(['success' => true, 'timestamp' => time(), 'csrf_token' => generateCsrfToken()]);
     } else {
         echo json_encode(['success' => false, 'error' => 'not_logged_in']);
     }
@@ -476,11 +612,11 @@ if (isset($_GET['update_session'])) {
 }
 
 // =====================================================================
-// BLOCO 07 - ENDPOINTS DA ABA DE LOGS
+// BLOCO 07 - ENDPOINTS DA ABA DE LOGS (COM VERIFICAÇÃO FORÇADA)
 // =====================================================================
 
 /**
- * Endpoint: Verificação especial para aba de logs
+ * Endpoint: Verificação especial para aba de logs (AGORA COM VERIFICAÇÃO NO SERVIDOR)
  * Uso: ?log_session_check=1
  */
 if (isset($_GET['log_session_check'])) {
@@ -491,29 +627,32 @@ if (isset($_GET['log_session_check'])) {
     if (isset($_SESSION['logado']) && $_SESSION['logado'] === true) {
         $ignoreLogTimeout = isset($_SESSION['ignore_log_timeout']) ? $_SESSION['ignore_log_timeout'] : false;
         
-        if ($ignoreLogTimeout) {
+        // VERIFICAÇÃO OBRIGATÓRIA NO SERVIDOR
+        if ($_SESSION['auto_logout'] === true && !$ignoreLogTimeout) {
+            $ultimo_acesso = $_SESSION['ultimo_acesso'] ?? time();
+            $tempo_passado = time() - $ultimo_acesso;
+            
+            if ($tempo_passado > TEMPO_SESSAO) {
+                // Sessão expirou no servidor
+                $response = ['active' => false, 'expired' => true, 'reason' => 'session_expired'];
+                echo json_encode($response);
+                exit;
+            }
+            
+            $timeLeft = max(0, TEMPO_SESSAO - $tempo_passado);
             $response = [
                 'active' => true,
-                'ignore_timeout' => true,
-                'time_left' => TEMPO_SESSAO
+                'ignore_timeout' => $ignoreLogTimeout,
+                'time_left' => $timeLeft,
+                'expired' => false
             ];
         } else {
-            if ($_SESSION['auto_logout'] === true && isset($_SESSION['ultimo_acesso'])) {
-                $timeLeft = max(0, TEMPO_SESSAO - (time() - $_SESSION['ultimo_acesso']));
-                $response = [
-                    'active' => true,
-                    'ignore_timeout' => false,
-                    'time_left' => $timeLeft,
-                    'expired' => ($timeLeft <= 0)
-                ];
-            } else {
-                $response = [
-                    'active' => true,
-                    'ignore_timeout' => false,
-                    'time_left' => TEMPO_SESSAO,
-                    'auto_logout_disabled' => true
-                ];
-            }
+            $response = [
+                'active' => true,
+                'ignore_timeout' => $ignoreLogTimeout,
+                'time_left' => TEMPO_SESSAO,
+                'auto_logout_disabled' => ($_SESSION['auto_logout'] === false)
+            ];
         }
     }
     
@@ -522,13 +661,23 @@ if (isset($_GET['log_session_check'])) {
 }
 
 /**
- * Endpoint: Alternar ignore timeout na aba de logs
- * Uso: ?toggle_log_timeout=1&state=true|false
+ * Endpoint: Alternar ignore timeout na aba de logs (AGORA COM CSRF)
+ * Uso: POST com toggle_log_timeout=1 e csrf_token
  */
-if (isset($_GET['toggle_log_timeout'])) {
+if (isset($_POST['toggle_log_timeout']) || isset($_GET['toggle_log_timeout'])) {
     header('Content-Type: application/json');
     
-    $newState = isset($_GET['state']) ? ($_GET['state'] === 'true') : false;
+    // Verificar CSRF para POST
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (!isset($_POST['csrf_token']) || !verifyCsrfToken($_POST['csrf_token'])) {
+            echo json_encode(['success' => false, 'error' => 'CSRF token inválido']);
+            exit;
+        }
+    }
+    
+    $newState = isset($_POST['state']) ? ($_POST['state'] === 'true') : (isset($_GET['state']) ? ($_GET['state'] === 'true') : false);
+    
+    // VALIDAÇÃO NO SERVIDOR: Verificar se o usuário TEM permissão (todos têm, mas registramos)
     $_SESSION['ignore_log_timeout'] = $newState;
     
     if (isset($_SESSION['usuario'])) {
@@ -545,27 +694,52 @@ if (isset($_GET['toggle_log_timeout'])) {
 }
 
 // =====================================================================
-// BLOCO 08 - PROCESSAMENTO DE LOGIN/LOGOUT
+// BLOCO 08 - PROCESSAMENTO DE LOGIN/LOGOUT (COM CSRF E LOGOUT GLOBAL)
 // =====================================================================
 
 /**
- * Endpoint: Logout manual
- * Uso: ?action=logout
+ * Endpoint: Logout manual (AGORA COM LOGOUT GLOBAL)
+ * Uso: POST com action=logout e csrf_token
  */
-if (isset($_GET['action']) && $_GET['action'] == 'logout') {
+if ((isset($_GET['action']) && $_GET['action'] == 'logout') || (isset($_POST['action']) && $_POST['action'] == 'logout')) {
+    // Verificar CSRF para POST
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (!isset($_POST['csrf_token']) || !verifyCsrfToken($_POST['csrf_token'])) {
+            die('CSRF token inválido');
+        }
+    }
+    
     if (isset($_SESSION['usuario'])) {
         $tempo_ativo = isset($_SESSION['login_time']) ? (time() - $_SESSION['login_time']) : null;
         registrarLogAcesso(
             $_SESSION['usuario'],
             $_SESSION['nome'] ?? 'N/A',
             $_SESSION['nivel'] ?? 'N/A',
-            'LOGOUT',
+            'LOGOUT_GLOBAL',
             $tempo_ativo ? gmdate('H:i:s', $tempo_ativo) : 'N/A',
             time(),
             $_SESSION['login_time'] ?? null
         );
     }
+    
+    // Destruir sessão completamente
+    $_SESSION = [];
+    if (ini_get("session.use_cookies")) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000,
+            $params["path"], $params["domain"],
+            $params["secure"], $params["httponly"]
+        );
+    }
     session_destroy();
+    
+    // Se for AJAX, retornar JSON para logout global
+    if (isset($_SERVER['HTTP_X_REQUESTED_WITH']) && $_SERVER['HTTP_X_REQUESTED_WITH'] === 'XMLHttpRequest') {
+        header('Content-Type: application/json');
+        echo json_encode(['success' => true, 'redirect' => 'index.php']);
+        exit;
+    }
+    
     header('Location: index.php');
     exit;
 }
@@ -604,7 +778,7 @@ $isLogAbaRequest = (isset($_GET['aba']) && $_GET['aba'] === 'log') ||
 
 if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
     
-    // Tratamento especial para aba de logs
+    // Tratamento especial para aba de logs (COM VERIFICAÇÃO NO SERVIDOR)
     if ($isLogAbaRequest) {
         if (isset($_GET['get_log']) || isset($_GET['check_status']) || isset($_GET['api_status'])) {
             header('HTTP/1.0 401 Unauthorized');
@@ -642,8 +816,10 @@ if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
         }
     }
     
-    // Processar login
+    // Processar login (com rate limiting)
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['usuario']) && isset($_POST['senha'])) {
+        checkRateLimit(); // Rate limiting para login
+        
         $usuarioDB = verificarLogin($_POST['usuario'], $_POST['senha']);
         
         if ($usuarioDB) {
@@ -654,9 +830,10 @@ if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
             $_SESSION['login_time'] = time();
             $_SESSION['ultimo_acesso'] = time();
             $_SESSION['ip'] = getRealIp();
-            
-            // CARREGAR PREFERÊNCIA DE AUTO-LOGOUT DO ARQUIVO usuarios.json
             $_SESSION['auto_logout'] = $usuarioDB['auto_logout'] ?? true;
+            
+            // Gerar CSRF token na sessão
+            generateCsrfToken();
             
             atualizarUltimoAcesso($_POST['usuario']);
             registrarLogAcesso($_POST['usuario'], $usuarioDB['nome'], $usuarioDB['nivel'], 'LOGIN');
@@ -669,7 +846,7 @@ if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
         }
     }
     
-    // Mostrar tela de login
+    // Mostrar tela de login (mantida original)
     ?>
     <!DOCTYPE html>
     <html lang="pt-br">
@@ -848,7 +1025,7 @@ if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
 }
 
 // =====================================================================
-// BLOCO 10 - VERIFICAÇÃO DE EXPIRAÇÃO DA SESSÃO
+// BLOCO 10 - VERIFICAÇÃO DE EXPIRAÇÃO DA SESSÃO (COM SEGURANÇA)
 // =====================================================================
 
 if (!isset($_SESSION['auto_logout'])) {
@@ -858,6 +1035,11 @@ if (!isset($_SESSION['auto_logout'])) {
 // Garantir que ultimo_acesso existe
 if (!isset($_SESSION['ultimo_acesso'])) {
     $_SESSION['ultimo_acesso'] = time();
+}
+
+// Garantir que CSRF token existe
+if (!isset($_SESSION['csrf_token'])) {
+    generateCsrfToken();
 }
 
 $isLogRequest = (isset($_GET['aba']) && $_GET['aba'] === 'log') ||
@@ -887,16 +1069,25 @@ if (!$isLogRequest && $_SESSION['auto_logout']) {
 }
 
 // =====================================================================
-// BLOCO 11 - PROCESSAMENTO DE AÇÕES DO DASHBOARD
+// BLOCO 11 - PROCESSAMENTO DE AÇÕES DO DASHBOARD (COM CSRF)
 // =====================================================================
 
 /**
- * Ação: Toggle auto-logout
- * SALVA A PREFERÊNCIA NO ARQUIVO usuarios.json
- * Uso: ?toggle_autologout=on|off
+ * Ação: Toggle auto-logout (AGORA COM CSRF)
+ * Uso: POST com toggle_autologout=on|off e csrf_token
  */
-if (isset($_GET['toggle_autologout'])) {
-    $novo_status = $_GET['toggle_autologout'] == 'on' ? true : false;
+if (isset($_POST['toggle_autologout']) || isset($_GET['toggle_autologout'])) {
+    // Verificar CSRF para POST
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (!isset($_POST['csrf_token']) || !verifyCsrfToken($_POST['csrf_token'])) {
+            die('CSRF token inválido');
+        }
+        $novo_status = $_POST['toggle_autologout'] == 'on' ? true : false;
+    } else {
+        // GET apenas para compatibilidade, mas registramos warning
+        error_log("CSRF_WARNING: toggle_autologout via GET de " . getRealIp());
+        $novo_status = $_GET['toggle_autologout'] == 'on' ? true : false;
+    }
     
     registrarLogAcesso(
         $_SESSION['usuario'],
@@ -907,57 +1098,89 @@ if (isset($_GET['toggle_autologout'])) {
     
     $_SESSION['auto_logout'] = $novo_status;
     
-    // ===== SALVAR NO ARQUIVO usuarios.json =====
+    // Salvar no arquivo usuarios.json
     $usuarios = carregarUsuarios();
     if (isset($usuarios[$_SESSION['usuario']])) {
         $usuarios[$_SESSION['usuario']]['auto_logout'] = $novo_status;
-        
-        // Metadados da alteração (opcional)
         $usuarios[$_SESSION['usuario']]['ultima_alteracao_autologout'] = date('Y-m-d H:i:s');
         $usuarios[$_SESSION['usuario']]['ip_alteracao_autologout'] = getRealIp();
-        
         salvarUsuarios($usuarios);
         error_log("Auto-logout salvo para {$_SESSION['usuario']}: " . ($novo_status ? 'ON' : 'OFF'));
     }
     
-    header('Location: index.php?aba=' . ($abaAtiva ?? 'dashboard'));
+    $abaAtiva = isset($_GET['aba']) ? $_GET['aba'] : 'dashboard';
+    header('Location: index.php?aba=' . $abaAtiva);
     exit;
 }
 
 /**
- * Ação: Alterar tempo de auto-logout (global)
- * Uso: POST com alterar_tempo_autologout
+ * Ação: Salvar configurações de Auto-Logout (tempo + reset por atividade)
+ * Uso: POST com salvar_autologout_config e csrf_token
  */
-if (isset($_POST['alterar_tempo_autologout'])) {
-    $novoTempo = intval($_POST['tempo_autologout'] ?? 1800);
+if (isset($_POST['salvar_autologout_config'])) {
+    // Definir o caminho do config.json
+    $configPath = '/opt/whatsapp-bot/config.json';
     
+    // Verificar CSRF
+    if (!isset($_POST['csrf_token']) || !verifyCsrfToken($_POST['csrf_token'])) {
+        die('CSRF token inválido');
+    }
+    
+    // ===== SALVAR TEMPO =====
+    $novoTempo = (int)$_POST['tempo_autologout'];
     if ($novoTempo < 60) $novoTempo = 60;
     if ($novoTempo > 86400) $novoTempo = 86400;
+    $tempoSalvo = salvarTempoAutologout($novoTempo);
     
-    if (salvarTempoAutologout($novoTempo)) {
-        $_SESSION['mensagem_tempo'] = "Tempo alterado para " . gmdate("H:i:s", $novoTempo);
+    // ===== SALVAR RESET POR ATIVIDADE =====
+    $reset_atividade = ($_POST['reset_atividade'] === 'Sim');
+    
+    // Carregar config atual
+    $configAtual = array();
+    if (file_exists($configPath)) {
+        $configAtual = json_decode(file_get_contents($configPath), true);
+        if (!is_array($configAtual)) $configAtual = array();
+    }
+    
+    $configAtual['reset_timer_on_activity'] = $reset_atividade;
+    
+    // Salvar config
+    $json = json_encode($configAtual, JSON_PRETTY_PRINT);
+    $resetSalvo = file_put_contents($configPath, $json);
+    
+    // Mensagem de feedback
+    if ($tempoSalvo && $resetSalvo !== false) {
+        $_SESSION['mensagem_tempo'] = "Configurações salvas com sucesso! Tempo: " . gmdate("H:i:s", $novoTempo);
         $_SESSION['tipo_mensagem_tempo'] = 'sucesso';
         
         registrarLogAcesso(
             $_SESSION['usuario'],
             $_SESSION['nome'],
             $_SESSION['nivel'],
-            'ALTERAR_TEMPO_AUTOLOGOUT: ' . gmdate("H:i:s", $novoTempo)
+            'ALTERAR_CONFIG_AUTOLOGOUT: Tempo=' . gmdate("H:i:s", $novoTempo) . ', Reset=' . ($reset_atividade ? 'ATIVADO' : 'DESATIVADO')
         );
+        
+        // Atualizar a variável global da configuração
+        $config['reset_timer_on_activity'] = $reset_atividade;
     } else {
-        $_SESSION['mensagem_tempo'] = "Erro ao alterar tempo";
+        $_SESSION['mensagem_tempo'] = "Erro ao salvar configurações!";
         $_SESSION['tipo_mensagem_tempo'] = 'erro';
     }
     
-    header('Location: index.php?aba=' . ($abaAtiva ?? 'config'));
+    header('Location: index.php?aba=config');
     exit;
 }
 
 /**
- * Ação: Alterar senha (própria)
- * Uso: POST com alterar_senha_dashboard
+ * Ação: Alterar senha (própria) - COM CSRF
+ * Uso: POST com alterar_senha_dashboard e csrf_token
  */
 if (isset($_POST['alterar_senha_dashboard'])) {
+    // Verificar CSRF
+    if (!isset($_POST['csrf_token']) || !verifyCsrfToken($_POST['csrf_token'])) {
+        die('CSRF token inválido');
+    }
+    
     $resultado = alterarSenha(
         $_SESSION['usuario'],
         $_POST['senha_atual'] ?? '',
@@ -981,7 +1204,7 @@ if (isset($_POST['alterar_senha_dashboard'])) {
 }
 
 // =====================================================================
-// BLOCO 12 - VARIÁVEIS DO WHATSAPP E CONFIGURAÇÕES (CORRIGIDO)
+// BLOCO 12 - VARIÁVEIS DO WHATSAPP E CONFIGURAÇÕES
 // =====================================================================
 
 $configPath = '/opt/whatsapp-bot/config.json';
@@ -994,8 +1217,8 @@ $mensagem = '';
 $erro = '';
 $abaAtiva = isset($_GET['aba']) ? $_GET['aba'] : 'config';
 
-// Carregar versão do WhatsApp (CORRIGIDO)
-$versao_whatsapp = '1033927531'; // Versão padrão (fallback)
+// Carregar versão do WhatsApp
+$versao_whatsapp = '1033927531';
 $versao_detectada = null;
 $versao_completa = null;
 $fonte_versao = 'desconhecida';
@@ -1003,13 +1226,11 @@ $fonte_versao = 'desconhecida';
 if (file_exists($versaoPath)) {
     $versao_data = json_decode(file_get_contents($versaoPath), true);
     if ($versao_data && is_array($versao_data)) {
-        // NOVA ESTRUTURA (gerada pelo fetchLatestBaileysVersion)
         if (isset($versao_data['versao'])) {
             $versao_whatsapp = $versao_data['versao'];
             $versao_completa = $versao_data['versao_completa'] ?? null;
             $fonte_versao = $versao_data['fonte'] ?? 'desconhecida';
         }
-        // ESTRUTURA ANTIGA (para compatibilidade)
         elseif (isset($versao_data['versao_bot'])) {
             $versao_whatsapp = $versao_data['versao_bot'];
             $versao_detectada = $versao_data['versao_detectada'] ?? null;
@@ -1041,7 +1262,10 @@ $config = [
     'telegram_notificar_qr' => 'Sim',
     'mkauth_url' => 'https://www.SEU_DOMINIO.com.br/api',
     'mkauth_client_id' => '',
-    'mkauth_client_secret' => ''
+    'mkauth_client_secret' => '',
+    'planos_ativos' => 'Sim',
+    'planos_mensagem' => "📶 *100 megas* 💰 R$ 59,90 - FIBRA\n📶 *200 megas* 💰 R$ 69,90 - FIBRA\n📶 *300 megas* 💰 R$ 89,90 - FIBRA\n\n*Taxa de instalação* 💰 R$ 50,00 à vista ou R$ 60,00 no cartão em 2x.\n\n*Tá esperando o que?* 😱\n\n2️⃣ Falar com um Atendente    5️⃣ Assine Já!",
+    'link_assinatura' => 'https://www.weblinetelecom.com.br/cadastro.hhvm'
 ];
 
 // Carregar configurações existentes
@@ -1054,10 +1278,15 @@ if (file_exists($configPath)) {
 }
 
 // =====================================================================
-// BLOCO 13 - PROCESSAMENTO DO FORMULÁRIO DE CONFIGURAÇÃO
+// BLOCO 13 - PROCESSAMENTO DO FORMULÁRIO DE CONFIGURAÇÃO (COM CSRF)
 // =====================================================================
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
+    // Verificar CSRF
+    if (!isset($_POST['csrf_token']) || !verifyCsrfToken($_POST['csrf_token'])) {
+        die('CSRF token inválido');
+    }
+    
     $config['empresa'] = trim($_POST['empresa'] ?? '');
     $config['menu'] = trim($_POST['menu'] ?? '');
     $config['boleto_url'] = trim($_POST['boleto_url'] ?? '');
@@ -1070,29 +1299,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
     $config['telegram_ativado'] = trim($_POST['telegram_ativado'] ?? 'Não');
     $config['telegram_token'] = trim($_POST['telegram_token'] ?? '');
     $config['telegram_chat_id'] = trim($_POST['telegram_chat_id'] ?? '');
-    $config['telegram_notificar_conexao'] = trim($_POST['telegram_notificar_conexao'] ?? 'Sim');
-    $config['telegram_notificar_desconexao'] = trim($_POST['telegram_notificar_desconexao'] ?? 'Sim');
-    $config['telegram_notificar_qr'] = trim($_POST['telegram_notificar_qr'] ?? 'Sim');
+    $config['telegram_notificar_conexao'] = isset($_POST['telegram_notificar_conexao']) ? 'Sim' : 'Não';
+    $config['telegram_notificar_desconexao'] = isset($_POST['telegram_notificar_desconexao']) ? 'Sim' : 'Não';
+    $config['telegram_notificar_qr'] = isset($_POST['telegram_notificar_qr']) ? 'Sim' : 'Não';
     $config['mkauth_url'] = trim($_POST['mkauth_url'] ?? '');
     $config['mkauth_client_id'] = trim($_POST['mkauth_client_id'] ?? '');
     $config['mkauth_client_secret'] = trim($_POST['mkauth_client_secret'] ?? '');
+    $config['planos_ativos'] = trim($_POST['planos_ativos'] ?? 'Sim');
+    $config['planos_mensagem'] = trim($_POST['planos_mensagem'] ?? '');
+    $config['link_assinatura'] = trim($_POST['link_assinatura'] ?? '');
 
     // Validações
     if ($config['tempo_atendimento_humano'] <= 0) $config['tempo_atendimento_humano'] = 30;
     if ($config['tempo_inatividade_global'] <= 0) $config['tempo_inatividade_global'] = 30;
     
-    foreach (['feriados_ativos', 'feriado_local_ativado', 'telegram_ativado', 'telegram_notificar_conexao', 'telegram_notificar_desconexao', 'telegram_notificar_qr'] as $campo) {
+    foreach (['feriados_ativos', 'feriado_local_ativado', 'telegram_ativado', 'telegram_notificar_conexao', 'telegram_notificar_desconexao', 'telegram_notificar_qr', 'planos_ativos'] as $campo) {
         $config[$campo] = in_array($config[$campo], ['Sim', 'Não']) ? $config[$campo] : 'Sim';
     }
     
     if (empty($config['feriado_local_mensagem'])) {
         $config['feriado_local_mensagem'] = "📅 *Comunicado importante:*\nHoje é feriado local e não estamos funcionando.\nRetornaremos amanhã em horário comercial.\n\nO acesso a faturas PIX continua disponível 24/7! 😊";
     }
+    
+    if (empty($config['planos_mensagem'])) {
+        $config['planos_mensagem'] = "📶 *100 megas* 💰 R$ 59,90 - FIBRA\n📶 *200 megas* 💰 R$ 69,90 - FIBRA\n📶 *300 megas* 💰 R$ 89,90 - FIBRA\n\n*Taxa de instalação* 💰 R$ 50,00 à vista ou R$ 60,00 no cartão em 2x.\n\n*Tá esperando o que?* 😱\n\n2️⃣ Falar com um Atendente    5️⃣ Assine Já!";
+    }
+    
+    if (empty($config['link_assinatura'])) {
+        $config['link_assinatura'] = 'https://www.weblinetelecom.com.br/cadastro.hhvm';
+    }
 
     $json = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 
     if (file_put_contents($configPath, $json) !== false) {
-        // Atualizar pix.php se existir
         if (file_exists($pixPath)) {
             $pixContent = file_get_contents($pixPath);
             
@@ -1131,7 +1370,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['salvar_config'])) {
 }
 
 // =====================================================================
-// BLOCO 14 - ENDPOINTS DE TESTE E LOG
+// BLOCO 14 - ENDPOINTS DE TESTE E LOG (COM RATE LIMITING)
 // =====================================================================
 
 /**
@@ -1181,11 +1420,33 @@ if (isset($_GET['testar_telegram'])) {
 }
 
 /**
- * Endpoint: Obter log
+ * Endpoint: Obter log (COM VERIFICAÇÃO DE SESSÃO OBRIGATÓRIA)
  * Uso: ?get_log=1&linhas=500&buscar=termo
  */
 if (isset($_GET['get_log'])) {
     header('Content-Type: text/plain');
+    
+    // VERIFICAÇÃO OBRIGATÓRIA DE SESSÃO
+    if (!isset($_SESSION['logado']) || $_SESSION['logado'] !== true) {
+        header('HTTP/1.0 401 Unauthorized');
+        echo "Sessão expirada";
+        exit;
+    }
+    
+    // Verificar se a sessão expirou (mesmo com ignore_timeout)
+    if ($_SESSION['auto_logout'] === true && !($_SESSION['ignore_log_timeout'] ?? false)) {
+        $tempo_inativo = time() - ($_SESSION['ultimo_acesso'] ?? time());
+        if ($tempo_inativo > TEMPO_SESSAO) {
+            header('HTTP/1.0 401 Unauthorized');
+            echo "Sessão expirada por inatividade";
+            exit;
+        }
+    }
+    
+    // Atualizar último acesso se ignore_timeout estiver ativo
+    if (($_SESSION['ignore_log_timeout'] ?? false) && $_SESSION['auto_logout'] === true) {
+        $_SESSION['ultimo_acesso'] = time();
+    }
     
     if (!file_exists($logPath)) {
         echo "Arquivo de log não encontrado: {$logPath}";
@@ -1256,10 +1517,15 @@ if (isset($_GET['get_log'])) {
 }
 
 /**
- * Ação: Limpar log
- * Uso: POST com acao_log=limpar
+ * Ação: Limpar log (COM CSRF)
+ * Uso: POST com acao_log=limpar e csrf_token
  */
 if (isset($_POST['acao_log']) && $_POST['acao_log'] === 'limpar' && file_exists($logPath)) {
+    // Verificar CSRF
+    if (!isset($_POST['csrf_token']) || !verifyCsrfToken($_POST['csrf_token'])) {
+        die('CSRF token inválido');
+    }
+    
     if (is_writable($logPath)) {
         if (file_put_contents($logPath, "=== Log reiniciado em " . date('d/m/Y H:i:s') . " ===\n") !== false) {
             $mensagem = 'Log limpo com sucesso!';
@@ -1371,6 +1637,9 @@ $nome_empresa = !empty($config['empresa']) ? $config['empresa'] : 'PROVEDOR';
 if (isset($_GET['salvo']) && $_GET['salvo'] == 1) {
     if (empty($mensagem)) $mensagem = 'Configurações salvas com sucesso!';
 }
+
+// Gerar CSRF token para o formulário
+$csrf_token = generateCsrfToken();
 
 // =====================================================================
 // BLOCO 18 - INÍCIO DO HTML
@@ -1595,7 +1864,7 @@ button {
     background: #f3f4f6;
     border: 1px solid #e5e7eb;
     border-radius: 8px;
-    padding: 10px 15px;
+    padding: 12px 15px;
     margin-bottom: 20px;
     display: flex;
     align-items: center;
@@ -1607,7 +1876,7 @@ button {
 .version-info {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 15px;
     flex-wrap: wrap;
 }
 
@@ -1627,21 +1896,64 @@ button {
     color: #1f2937;
 }
 
-.version-fonte {
-    background: #e5e7eb;
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 11px;
-    color: #4b5563;
+.version-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
 }
 
 .version-status .atualizada {
     color: #059669;
     background: #d1fae5;
-    padding: 4px 10px;
+    padding: 4px 8px;
     border-radius: 16px;
     font-weight: 600;
+}
+
+.version-status .desatualizada {
+    color: #b45309;
+    background: #ffedd5;
+    padding: 4px 8px;
+    border-radius: 16px;
+    font-weight: 600;
+}
+
+.version-detectada {
+    color: #6b7280;
     font-size: 12px;
+}
+
+.version-fonte {
+    background: #e5e7eb;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    color: #4b5563;
+    font-weight: 500;
+    display: inline-block;
+    margin-left: 8px;
+    white-space: nowrap;
+}
+
+.version-fonte::before {
+    content: "📡";
+    margin-right: 4px;
+    font-size: 10px;
+}
+
+/* Responsividade para mobile */
+@media (max-width: 700px) {
+    .version-info {
+        gap: 8px;
+    }
+    
+    .version-fonte {
+        margin-left: 0;
+        margin-top: 5px;
+        width: 100%;
+        text-align: center;
+    }
 }
 
 /* ==================== ESTILOS DO TERMINAL ==================== */
@@ -2351,13 +2663,11 @@ tr:hover{ background:#f9f9f9; }
     <span>🤖 Bot WhatsApp - <?= htmlspecialchars($nome_empresa) ?> <?= htmlspecialchars($telefone_formatado) ?></span>
     <div style="display:flex; gap:10px; align-items:center;">
         <span style="font-size:14px; background:#2d3748; padding:5px 10px; border-radius:5px;">
-            👤 <?= htmlspecialchars($_SESSION['usuario']) ?> (<?= $_SESSION['nivel'] ?>)
+            👤 <?= htmlspecialchars($_SESSION['usuario']) ?> (<?= $_SESSION['nivel'] ?>) | IP: <?= htmlspecialchars(getRealIp()) ?>
         </span>
-        <a href="?action=logout"
-           style="background:#dc2626;color:#fff;padding:8px 14px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;"
-           onclick="return confirm('Deseja realmente sair do painel?')">
-           Sair
-        </a>
+        <button onclick="globalLogout()" style="background:#dc2626;color:#fff;padding:8px 14px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none;border:none;cursor:pointer;">
+            Sair
+        </button>
     </div>
 </header>
 
@@ -2374,7 +2684,7 @@ tr:hover{ background:#f9f9f9; }
 </div>
 
 <!-- ===================================================================== -->
-<!-- BLOCO 19 - CONTEÚDO DA ABA CONFIGURAÇÕES (COM VERSÃO DO WHATSAPP)
+<!-- BLOCO 19 - CONTEÚDO DA ABA CONFIGURAÇÕES
 <!-- ===================================================================== -->
 
 <?php if ($abaAtiva === 'config'): ?>
@@ -2389,31 +2699,56 @@ tr:hover{ background:#f9f9f9; }
     </div>
 
     <div class="card">
-        <h2>Configurações</h2>
+    <h2>Configurações</h2>
 
-        <?php if ($mensagem): ?>
-            <div id="msg" class="alert success"><?= $mensagem ?></div>
-        <?php endif; ?>
+    <!-- 1º Mensagem das configurações globais -->
+    <?php if ($mensagem): ?>
+        <div id="msg" class="alert success"><?= $mensagem ?></div>
+    <?php endif; ?>
 
-        <?php if ($erro): ?>
-            <div class="alert error"><?= $erro ?></div>
-        <?php endif; ?>
+    <?php if ($erro): ?>
+        <div class="alert error"><?= $erro ?></div>
+    <?php endif; ?>
 
-<!-- VERSÃO SIMPLIFICADA DO WHATSAPP -->
-<div class="whatsapp-version">
-    <div class="version-info">
-        <span class="version-badge">📱 WhatsApp</span>
-        <span class="version-number"><?= htmlspecialchars($versao_whatsapp) ?></span>
-        <span class="version-fonte">via Baileys</span>
+    <!-- 2º Mensagem do Auto-Logout (movida para o topo) -->
+    <?php if (isset($_SESSION['mensagem_tempo'])): ?>
+    <div class="alert <?= $_SESSION['tipo_mensagem_tempo'] === 'sucesso' ? 'success' : 'error' ?>" style="margin-bottom: 15px;">
+        <?= $_SESSION['mensagem_tempo'] ?>
     </div>
-    <div class="version-status">
-        <span class="atualizada">✅ Atualizada</span>
-    </div>
-</div>
+    <?php 
+        unset($_SESSION['mensagem_tempo']);
+        unset($_SESSION['tipo_mensagem_tempo']);
+    endif; 
+    ?>
 
-        <!-- FORMULÁRIO PRINCIPAL -->
+    <!-- 3º Mensagem do reset (se ainda existir) -->
+    <?php if (isset($_SESSION['mensagem_reset'])): ?>
+    <div class="alert <?= $_SESSION['tipo_mensagem_reset'] === 'sucesso' ? 'success' : 'error' ?>" style="margin-bottom: 15px;">
+        <?= $_SESSION['mensagem_reset'] ?>
+    </div>
+    <?php 
+        unset($_SESSION['mensagem_reset']);
+        unset($_SESSION['tipo_mensagem_reset']);
+    endif; 
+    ?>
+        <!-- ===== FIM DO PASSO 4 ===== -->
+
+        <!-- VERSÃO SIMPLIFICADA DO WHATSAPP -->
+        <div class="whatsapp-version">
+            <div class="version-info">
+                <span class="version-badge">📱 WhatsApp</span>
+                <span class="version-number"><?= htmlspecialchars($versao_whatsapp) ?></span>
+                <span class="version-fonte">via <?= htmlspecialchars($fonte_versao) ?></span>
+            </div>
+            <div class="version-status">
+                <span class="atualizada">✅ Atualizada</span>
+            </div>
+        </div>
+
+        <!-- FORMULÁRIO PRINCIPAL COM CSRF -->
         <form method="post">
             <input type="hidden" name="salvar_config" value="1">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
             
             <label>Empresa</label>
             <input name="empresa" value="<?= htmlspecialchars($config['empresa']) ?>">
@@ -2523,7 +2858,7 @@ tr:hover{ background:#f9f9f9; }
                 </div>
             </div>
 
-            <!-- SEÇÃO: Configurações do Telegram - COMPLETA COM TODAS AS DICAS -->
+            <!-- SEÇÃO: Configurações do Telegram -->
             <div class="config-section" style="border-left-color: #0088cc;">
                 <h3>
                     <span>📱</span> Configurações do Telegram
@@ -2577,7 +2912,6 @@ tr:hover{ background:#f9f9f9; }
                     </label>
                     
                     <div style="display: flex; flex-direction: column; gap: 12px;">
-                        <!-- Checkbox 1 -->
                         <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; width: 100%;">
                             <input type="checkbox" name="telegram_notificar_conexao" value="Sim" 
                                 <?= (isset($config['telegram_notificar_conexao']) && $config['telegram_notificar_conexao'] === 'Sim') ? 'checked' : '' ?>
@@ -2585,7 +2919,6 @@ tr:hover{ background:#f9f9f9; }
                             <span style="font-size: 14px; line-height: 1.4;">✅ Quando conectar</span>
                         </label>
                         
-                        <!-- Checkbox 2 -->
                         <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; width: 100%;">
                             <input type="checkbox" name="telegram_notificar_desconexao" value="Sim" 
                                 <?= (isset($config['telegram_notificar_desconexao']) && $config['telegram_notificar_desconexao'] === 'Sim') ? 'checked' : '' ?>
@@ -2593,7 +2926,6 @@ tr:hover{ background:#f9f9f9; }
                             <span style="font-size: 14px; line-height: 1.4;">❌ Quando desconectar</span>
                         </label>
                         
-                        <!-- Checkbox 3 -->
                         <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; width: 100%;">
                             <input type="checkbox" name="telegram_notificar_qr" value="Sim" 
                                 <?= (isset($config['telegram_notificar_qr']) && $config['telegram_notificar_qr'] === 'Sim') ? 'checked' : '' ?>
@@ -2614,134 +2946,239 @@ tr:hover{ background:#f9f9f9; }
                 <div id="telegramTestResult" style="margin-top: 15px; padding: 10px; border-radius: 6px; font-size: 13px; text-align: center;"></div>
             </div>
 
-<!-- SEÇÃO: Configurações MK-Auth - COMPLETA COM TODAS AS DICAS E OLHINHO -->
-<div class="config-section" style="border-left-color: #3b82f6; margin-top: 20px;">
-    <h3>
-        <span>🔐</span> Configurações MK-Auth (Verificação de Clientes)
-    </h3>
-    <p style="margin-top: 0; font-size: 14px; color: #6b7280; margin-bottom: 20px;">
-        Configurações para verificação de CPF/CNPJ na base de clientes antes de gerar link PIX
-    </p>
+            <!-- SEÇÃO: Configurações MK-Auth -->
+            <div class="config-section" style="border-left-color: #3b82f6; margin-top: 20px;">
+                <h3>
+                    <span>🔐</span> Configurações MK-Auth (Verificação de Clientes)
+                </h3>
+                <p style="margin-top: 0; font-size: 14px; color: #6b7280; margin-bottom: 20px;">
+                    Configurações para verificação de CPF/CNPJ na base de clientes antes de gerar link PIX
+                </p>
 
-    <div style="margin-bottom: 20px;">
-        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">URL do MK-Auth</label>
-        <input 
-            type="url" 
-            name="mkauth_url" 
-            value="<?= htmlspecialchars($config['mkauth_url']) ?>"
-            placeholder="https://www.SEU_DOMINIO.com.br/api"
-            style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; margin-bottom: 5px;"
-        >
-        <small style="display: block; margin-top: 5px; color: #6b7280; font-size: 12px;">
-            URL base do sistema MK-Auth (deve terminar com / se for API completa)
-        </small>
-    </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">URL do MK-Auth</label>
+                    <input 
+                        type="url" 
+                        name="mkauth_url" 
+                        value="<?= htmlspecialchars($config['mkauth_url']) ?>"
+                        placeholder="https://www.SEU_DOMINIO.com.br/api"
+                        style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; margin-bottom: 5px;"
+                    >
+                    <small style="display: block; margin-top: 5px; color: #6b7280; font-size: 12px;">
+                        URL base do sistema MK-Auth (deve terminar com / se for API completa)
+                    </small>
+                </div>
 
-    <div style="margin-bottom: 20px;">
-        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">Client ID</label>
-        <input 
-            type="text" 
-            name="mkauth_client_id" 
-            value="<?= htmlspecialchars($config['mkauth_client_id']) ?>"
-            placeholder="c582c8ede2c9169c64f29cxxxxxxxxxx"
-            style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; margin-bottom: 5px;"
-        >
-        <small style="display: block; margin-top: 5px; color: #6b7280; font-size: 12px;">
-            Identificador do cliente para autenticação na API
-        </small>
-    </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">Client ID</label>
+                    <input 
+                        type="text" 
+                        name="mkauth_client_id" 
+                        value="<?= htmlspecialchars($config['mkauth_client_id']) ?>"
+                        placeholder="c582c8ede2c9169c64f29cxxxxxxxxxx"
+                        style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; margin-bottom: 5px;"
+                    >
+                    <small style="display: block; margin-top: 5px; color: #6b7280; font-size: 12px;">
+                        Identificador do cliente para autenticação na API
+                    </small>
+                </div>
 
-    <div style="margin-bottom: 20px;">
-        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">Client Secret</label>
-        <div style="display: flex; align-items: center; gap: 10px; width: 100%;">
-            <input 
-                type="password" 
-                name="mkauth_client_secret" 
-                id="mkauth_client_secret"
-                value="<?= htmlspecialchars($config['mkauth_client_secret']) ?>"
-                placeholder="9d2367fbf45d2e89d8ee8cb92ca3c0xxxxxxxxxx"
-                style="flex: 1; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; margin: 0;"
-            >
-            <button 
-                type="button" 
-                onclick="toggleClientSecretVisibility()"
-                style="background: #f0f0f0; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer; font-size: 18px; padding: 10px 15px; height: 42px; display: flex; align-items: center; justify-content: center; margin: 0;"
-                title="Mostrar/Esconder Client Secret"
-            >
-                👁️
-            </button>
-        </div>
-        <small style="display: block; margin-top: 5px; color: #6b7280; font-size: 12px;">
-            Senha de acesso à API (chave secreta)
-        </small>
-    </div>
+                <div style="margin-bottom: 20px;">
+                    <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #374151;">Client Secret</label>
+                    <div style="display: flex; align-items: center; gap: 10px; width: 100%;">
+                        <input 
+                            type="password" 
+                            name="mkauth_client_secret" 
+                            id="mkauth_client_secret"
+                            value="<?= htmlspecialchars($config['mkauth_client_secret']) ?>"
+                            placeholder="9d2367fbf45d2e89d8ee8cb92ca3c0xxxxxxxxxx"
+                            style="flex: 1; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; margin: 0;"
+                        >
+                        <button 
+                            type="button" 
+                            onclick="toggleClientSecretVisibility()"
+                            style="background: #f0f0f0; border: 1px solid #d1d5db; border-radius: 8px; cursor: pointer; font-size: 18px; padding: 10px 15px; height: 42px; display: flex; align-items: center; justify-content: center; margin: 0;"
+                            title="Mostrar/Esconder Client Secret"
+                        >
+                            👁️
+                        </button>
+                    </div>
+                    <small style="display: block; margin-top: 5px; color: #6b7280; font-size: 12px;">
+                        Senha de acesso à API (chave secreta)
+                    </small>
+                </div>
 
-    <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 8px; font-size: 13px; margin-top: 15px;">
-        <p style="margin: 0 0 8px 0; color: #92400e; font-weight: 600;">⚠️ Importante:</p>
-        <ul style="margin: 0; padding-left: 20px; color: #92400e;">
-            <li>As credenciais MK-Auth serão sincronizadas automaticamente com o arquivo pix.php</li>
-            <li>Se as credenciais não forem configuradas, o bot NÃO permitirá acesso direto ao PIX</li>
-            <li>Configure corretamente para filtrar apenas clientes da base</li>
-        </ul>
-    </div>
-</div>
+                <div style="background: #fef3c7; border-left: 4px solid #f59e0b; padding: 15px; border-radius: 8px; font-size: 13px; margin-top: 15px;">
+                    <p style="margin: 0 0 8px 0; color: #92400e; font-weight: 600;">⚠️ Importante:</p>
+                    <ul style="margin: 0; padding-left: 20px; color: #92400e;">
+                        <li>As credenciais MK-Auth serão sincronizadas automaticamente com o arquivo pix.php</li>
+                        <li>Se as credenciais não forem configuradas, o bot NÃO permitirá acesso direto ao PIX</li>
+                        <li>Configure corretamente para filtrar apenas clientes da base</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- SEÇÃO: Configurações de Planos e Assinatura -->
+            <div class="config-section" style="border-left-color: #00b894; margin-top: 20px;">
+                <h3>
+                    <span>📶</span> Configurações de Planos (Opção 3 - Não sou Cliente!)
+                </h3>
+                <p style="margin-top: 0; font-size: 14px; color: #6b7280; margin-bottom: 20px;">
+                    Configure os planos e o link de assinatura para a opção 3 do menu
+                </p>
+
+                <label style="margin-top: 5px;">🎯 Ativar opção de planos?</label>
+                <div class="radio-group" style="margin-bottom: 20px;">
+                    <label class="radio-option">
+                        <input type="radio" name="planos_ativos" value="Sim" 
+                            <?= (isset($config['planos_ativos']) && $config['planos_ativos'] === 'Sim') ? 'checked' : '' ?>>
+                        Sim (ativar opção 3)
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="planos_ativos" value="Não"
+                            <?= (!isset($config['planos_ativos']) || $config['planos_ativos'] === 'Não') ? 'checked' : '' ?>>
+                        Não (desativado)
+                    </label>
+                </div>
+
+                <label>📝 Mensagem de Planos:</label>
+                <textarea 
+                    name="planos_mensagem" 
+                    placeholder="Digite os planos e valores no formato desejado..."
+                    style="height: 200px; font-family: monospace;"
+                ><?= htmlspecialchars($config['planos_mensagem'] ?? '📶 *100 megas* 💰 R$ 59,90 - FIBRA\n📶 *200 megas* 💰 R$ 69,90 - FIBRA\n📶 *300 megas* 💰 R$ 89,90 - FIBRA\n\n*Taxa de instalação* 💰 R$ 50,00 à vista ou R$ 60,00 no cartão em 2x.\n\n*Tá esperando o que?* 😱\n\n2️⃣ Falar com um Atendente    5️⃣ Assine Já!') ?></textarea>
+                
+                <small style="display: block; margin-bottom: 15px; color: #6b7280;">
+                    Use \n para quebrar linha. Disponível: *texto* para negrito.
+                </small>
+
+                <label>🔗 Link de Assinatura:</label>
+                <input 
+                    type="url" 
+                    name="link_assinatura" 
+                    value="<?= htmlspecialchars($config['link_assinatura'] ?? 'https://www.weblinetelecom.com.br/cadastro.hhvm') ?>"
+                    placeholder="https://www.seusite.com.br/cadastro"
+                    style="width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; margin-bottom: 5px;"
+                >
+                <small style="display: block; margin-bottom: 15px; color: #6b7280;">
+                    Link para onde o cliente será direcionado ao escolher a opção 5
+                </small>
+
+                <div style="background: #e8f8f5; border-left: 4px solid #00b894; padding: 15px; border-radius: 8px; font-size: 13px;">
+                    <p style="margin: 0 0 8px 0; color: #0b5e4b; font-weight: 600;">📌 Como funciona:</p>
+                    <ul style="margin: 0; padding-left: 20px; color: #0b5e4b;">
+                        <li>O cliente verá os planos configurados acima</li>
+                        <li>Poderá escolher entre "Falar com Atendente" (opção 2) ou "Assinar" (opção 5)</li>
+                        <li>A opção 5 envia o link configurado</li>
+                        <li>Use \n para quebras de linha na mensagem</li>
+                    </ul>
+                </div>
+            </div>
 
             <button type="submit" style="margin-top:20px; padding:12px 18px; background:#2563eb; color:white; border:none; border-radius:10px; font-weight:bold; cursor:pointer; width:100%; font-size:16px;">
                 💾 Salvar Configurações Globais
             </button>
         </form>
 
-        <!-- FORMULÁRIO DE AUTO-LOGOUT -->
-        <div class="config-section" style="border-left-color: #f39c12; margin-top: 20px;">
-            <h3><span>⏰</span> Configurações de Auto-Logout</h3>
-            
-            <?php if (isset($_SESSION['mensagem_tempo'])): ?>
-            <div class="alert <?= $_SESSION['tipo_mensagem_tempo'] === 'sucesso' ? 'success' : 'error' ?>" style="margin-bottom: 15px;">
-                <?= $_SESSION['mensagem_tempo'] ?>
+        <!-- FORMULÁRIO DE AUTO-LOGOUT UNIFICADO -->
+<div class="config-section" style="border-left-color: #f39c12; margin-top: 20px;">
+    <h3><span>⏰</span> Configurações de Auto-Logout</h3>
+
+<!-- ===== SEU CÓDIGO ORIGINAL (mantém igual) ===== -->
+<?php if (isset($_SESSION['mensagem_tempo'])): ?>
+    <div class="alert success" style="margin-bottom: 15px; background: #28a745; color: white; padding: 15px; border-radius: 5px;">
+        ✅ <?= $_SESSION['mensagem_tempo'] ?>
+    </div>
+    <?php 
+        unset($_SESSION['mensagem_tempo']);
+        unset($_SESSION['tipo_mensagem_tempo']);
+    endif; 
+?>
+    
+    <?php if (isset($_SESSION['mensagem_reset'])): ?>
+    <div class="alert <?= $_SESSION['tipo_mensagem_reset'] === 'sucesso' ? 'success' : 'error' ?>" style="margin-bottom: 15px;">
+        <?= $_SESSION['mensagem_reset'] ?>
+    </div>
+    <?php 
+        unset($_SESSION['mensagem_reset']);
+        unset($_SESSION['tipo_mensagem_reset']);
+    endif; 
+    ?>
+    
+    <form method="post" onsubmit="return validarTempoAutologout()">
+        <input type="hidden" name="salvar_autologout_config" value="1">
+        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
+        
+        <!-- Botão de toggle do Auto-logout -->
+        <div style="margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e5e7eb;">
+            <button type="button" onclick="toggleAutoLogout()" class="btn-autologout" style="background: <?= $_SESSION['auto_logout'] ? '#27ae60' : '#dc2626' ?>; padding: 10px 20px; width: auto; min-width: 200px;">
+                <?php if ($_SESSION['auto_logout']): ?>
+                <span style="font-size:16px;">⏰</span> Auto-logout ON
+                <?php else: ?>
+                <span style="font-size:16px;">🔒</span> Auto-logout OFF
+                <?php endif; ?>
+            </button>
+            <div style="margin-top: 10px; font-size: 13px; color: #666;">
+                <p>• <strong>ON:</strong> A sessão expirará automaticamente após o tempo de inatividade</p>
+                <p>• <strong>OFF:</strong> A sessão NUNCA expirará (não recomendado para produção)</p>
             </div>
-            <?php 
-                unset($_SESSION['mensagem_tempo']);
-                unset($_SESSION['tipo_mensagem_tempo']);
-            endif; 
-            ?>
-            
-            <form method="post" onsubmit="return validarTempoAutologout()">
-                <input type="hidden" name="alterar_tempo_autologout" value="1">
-                
-                <label for="tempo_autologout">⏱️ Tempo de inatividade para logout automático:</label>
-                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                    <input 
-                        type="number" 
-                        id="tempo_autologout" 
-                        name="tempo_autologout" 
-                        value="<?= TEMPO_SESSAO ?>"
-                        min="60"
-                        max="86400"
-                        step="60"
-                        style="width: 150px; padding: 8px; border: 1px solid #d1d5db; border-radius: 8px;"
-                        required
-                    >
-                    <span>segundos</span>
-                    <button type="submit" style="margin-top: 0; width: auto; padding: 8px 20px; background:#2563eb; color:white; border:none; border-radius:8px; cursor:pointer;">
-                        💾 Salvar
-                    </button>
-                </div>
-                
-                <div style="margin-top: 10px; font-size: 13px; color: #666;">
-                    <p><strong>Equivalente a:</strong> 
-                        <?php 
-                            $horas = floor(TEMPO_SESSAO / 3600);
-                            $minutos = floor((TEMPO_SESSAO % 3600) / 60);
-                            $segundos = TEMPO_SESSAO % 60;
-                            echo sprintf("%02d:%02d:%02d", $horas, $minutos, $segundos);
-                        ?>
-                    </p>
-                    <p>• Mínimo: 1 minuto (60 segundos)</p>
-                    <p>• Máximo: 24 horas (86400 segundos)</p>
-                    <p>• Esta configuração afeta TODAS as abas do sistema</p>
-                </div>
-            </form>
         </div>
+        
+        <!-- Tempo de inatividade -->
+        <label for="tempo_autologout">⏱️ Tempo de inatividade para logout automático:</label>
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 20px;">
+            <input 
+                type="number" 
+                id="tempo_autologout" 
+                name="tempo_autologout" 
+                value="<?= TEMPO_SESSAO ?>"
+                min="60"
+                max="86400"
+                step="60"
+                style="width: 150px; padding: 8px; border: 1px solid #d1d5db; border-radius: 8px;"
+                required
+            >
+            <span>segundos</span>
+        </div>
+        
+        <!-- Reset por atividade -->
+        <div style="margin-bottom: 20px; padding-top: 10px;">
+            <label>🖱️ Resetar timer quando o usuário interagir?</label>
+            <div class="radio-group" style="margin: 10px 0 15px 0;">
+                <label class="radio-option">
+                    <input type="radio" name="reset_atividade" value="Sim" <?= (isset($config['reset_timer_on_activity']) && $config['reset_timer_on_activity'] === true) ? 'checked' : 'checked' ?>>
+                    Sim (resetar ao mover mouse, clicar, digitar, etc)
+                </label>
+                <label class="radio-option">
+                    <input type="radio" name="reset_atividade" value="Não" <?= (isset($config['reset_timer_on_activity']) && $config['reset_timer_on_activity'] === false) ? 'checked' : '' ?>>
+                    Não (não resetar, sessão expira após tempo fixo)
+                </label>
+            </div>
+            
+            <div style="background: #fef9e7; padding: 10px; border-radius: 6px; font-size: 13px; margin-bottom: 15px;">
+                <p style="margin: 0;"><strong>ℹ️ Como funciona:</strong></p>
+                <p style="margin: 5px 0 0 0;">• <strong>Sim:</strong> A cada movimento do mouse, clique ou tecla, o timer é resetado</p>
+                <p style="margin: 2px 0 0 0;">• <strong>Não:</strong> O timer nunca é resetado, a sessão expira após o tempo configurado independente de atividade</p>
+            </div>
+        </div>
+        
+        <button type="submit" style="margin-top:0; width:100%; padding:12px; background:#2563eb; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">
+            💾 Salvar Configurações de Logout
+        </button>
+    </form>
+    
+    <div style="margin-top: 15px; font-size: 13px; color: #666;">
+        <p><strong>Equivalente a:</strong> 
+            <?php 
+                $horas = floor(TEMPO_SESSAO / 3600);
+                $minutos = floor((TEMPO_SESSAO % 3600) / 60);
+                $segundos = TEMPO_SESSAO % 60;
+                echo sprintf("%02d:%02d:%02d", $horas, $minutos, $segundos);
+            ?>
+        </p>
+        <p>• Mínimo: 1 minuto (60 segundos)</p>
+        <p>• Máximo: 24 horas (86400 segundos)</p>
+        <p>• Esta configuração afeta TODAS as abas do sistema</p>
     </div>
 </div>
 
@@ -2754,10 +3191,17 @@ tr:hover{ background:#f9f9f9; }
 <?php endif; ?>
 
 <!-- ===================================================================== -->
-<!-- BLOCO 20 - CONTEÚDO DA ABA LOG
+<!-- BLOCO 20 - CONTEÚDO DA ABA LOG (VERSÃO SIMPLIFICADA E LIMPA) -->
 <!-- ===================================================================== -->
 
 <?php elseif ($abaAtiva === 'log'): ?>
+
+<?php if ($_SESSION['auto_logout']): ?>
+<div class="session-timer" id="sessionTimer">
+    <div style="font-size: 10px; opacity: 0.8;">Auto-logout em:</div>
+    <div style="font-size: 14px; font-weight: bold;" id="sessionTime"><?= gmdate("H:i:s", TEMPO_SESSAO) ?></div>
+</div>
+<?php endif; ?>
 
 <div class="tabs-container">
     <div class="terminal-container">
@@ -2800,47 +3244,105 @@ tr:hover{ background:#f9f9f9; }
                 <label for="autoRefresh">Auto-atualizar (2s)</label>
             </div>
         </div>
-        
-        <!-- Controle de auto-logout na aba de logs -->
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 15px; border-top: 1px solid #2d3748;">
-            <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="color: #7CFC00; font-size: 13px;">⏰ Auto-logout nesta aba:</span>
-                    <button 
-                        onclick="toggleLogAutoLogout()" 
-                        id="logAutoLogoutBtn"
-                        style="background: <?= $_SESSION['auto_logout'] ? '#27ae60' : '#95a5a6' ?>; color: white; border: none; border-radius: 20px; padding: 5px 15px; font-size: 12px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 5px; margin: 0;"
-                    >
-                        <span class="status-dot" style="background: white; width: 8px; height: 8px; border-radius: 50%;"></span>
-                        <span id="logAutoLogoutStatus">ATIVADO</span>
-                    </button>
-                </div>
-                <div id="sessionTimerLog" style="display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,0.5); padding: 5px 12px; border-radius: 20px; border: 1px solid #7CFC00;">
-                    <span style="color: #ffffff; font-size: 11px;">⏳ Expira em:</span>
-                    <span style="color: white; font-family: monospace; font-size: 14px; font-weight: bold;" id="sessionTimeLog">00:00</span>
-                </div>
-            </div>
-            <div style="color: #666; font-size: 11px;">
-                <span>💡 Clique para ativar/desativar o auto-logout nesta aba</span>
-            </div>
-        </div>
     </div>
 </div>
 
 <script>
-// Script da aba de logs
+// Script da aba de logs - VERSÃO UNIFICADA
 (function() {
     let autoRefreshInterval;
     let ultimoTamanhoArquivo = 0;
     let buscandoAtivo = false;
     let linhasSelecionadas = 500;
     let buscaAtiva = '';
-    let logTimerEnabled = true;
-    let logTimerInterval;
-    let logSessionTimeLeft = <?= TEMPO_SESSAO ?>;
-    const globalAutoLogout = <?= $_SESSION['auto_logout'] ? 'true' : 'false' ?>;
     let wakeLock = null;
-
+    let csrfToken = '<?= htmlspecialchars($csrf_token) ?>';
+    
+    // Timer unificado (igual às outras abas)
+    let sessionTimeLeft = <?= TEMPO_SESSAO ?>;
+    let timerInterval = null;
+    let heartbeatInterval = null;
+    
+    function formatTime(seconds) {
+        if (seconds < 0) seconds = 0;
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        return [hours.toString().padStart(2, '0'), minutes.toString().padStart(2, '0'), secs.toString().padStart(2, '0')].join(':');
+    }
+    
+    function updateTimerDisplay() {
+        const timerElement = document.getElementById('sessionTimer');
+        const timeElement = document.getElementById('sessionTime');
+        if (!timerElement || !timeElement) return;
+        
+        timerElement.style.display = 'block';
+        timeElement.textContent = formatTime(sessionTimeLeft);
+        
+        if (sessionTimeLeft < 60) {
+            timerElement.style.background = 'rgba(231, 76, 60, 0.95)';
+            timerElement.style.borderLeft = '4px solid #c0392b';
+        } else if (sessionTimeLeft < 300) {
+            timerElement.style.background = 'rgba(241, 196, 15, 0.95)';
+            timerElement.style.borderLeft = '4px solid #f39c12';
+            timeElement.style.color = '#000';
+        } else {
+            timerElement.style.background = 'rgba(46, 204, 113, 0.9)';
+            timerElement.style.borderLeft = '4px solid #27ae60';
+            timeElement.style.color = '#fff';
+        }
+    }
+    
+    // Carregar configuração de reset por atividade
+    let resetOnActivity = <?= isset($config['reset_timer_on_activity']) && $config['reset_timer_on_activity'] === true ? 'true' : 'false' ?>;
+    
+    function resetTimerOnActivity() {
+        if (!resetOnActivity) return;
+        
+        if (sessionTimeLeft > 0) {
+            sessionTimeLeft = <?= TEMPO_SESSAO ?>;
+            updateTimerDisplay();
+            
+            fetch('index.php?update_session=1&t=' + Date.now())
+                .catch(error => console.error('Erro ao resetar sessão:', error));
+        }
+    }
+    
+    function syncWithServer() {
+        fetch('index.php?heartbeat=1&t=' + Date.now())
+            .then(response => response.json())
+            .then(data => {
+                if (data.expired) {
+                    window.location.href = 'index.php?expired=true';
+                    return;
+                }
+                if (data.time_left !== undefined) {
+                    sessionTimeLeft = data.time_left;
+                    updateTimerDisplay();
+                }
+            })
+            .catch(error => console.error('Erro no heartbeat:', error));
+    }
+    
+    function initTimer() {
+        if (timerInterval) clearInterval(timerInterval);
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        
+        timerInterval = setInterval(() => {
+            if (sessionTimeLeft > 0) {
+                sessionTimeLeft--;
+                updateTimerDisplay();
+                if (sessionTimeLeft <= 0) {
+                    window.location.href = 'index.php?expired=true';
+                }
+            }
+        }, 1000);
+        
+        heartbeatInterval = setInterval(syncWithServer, 30000);
+        syncWithServer();
+    }
+    
+    // ===== FUNÇÕES DE WAKE LOCK =====
     async function ativarWakeLock() {
         if ('wakeLock' in navigator) {
             try {
@@ -2854,7 +3356,7 @@ tr:hover{ background:#f9f9f9; }
             }
         }
     }
-
+    
     function desativarWakeLock() {
         if (wakeLock !== null) {
             wakeLock.release().then(() => {
@@ -2863,118 +3365,8 @@ tr:hover{ background:#f9f9f9; }
             });
         }
     }
-
-    function formatTime(seconds) {
-        if (seconds === '∞') return '∞';
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const secs = seconds % 60;
-        return [
-            hours.toString().padStart(2, '0'),
-            minutes.toString().padStart(2, '0'),
-            secs.toString().padStart(2, '0')
-        ].join(':');
-    }
-
-    function updateLogAutoLogoutUI() {
-        const btn = document.getElementById('logAutoLogoutBtn');
-        const status = document.getElementById('logAutoLogoutStatus');
-        const timerDiv = document.getElementById('sessionTimerLog');
-        const timeElement = document.getElementById('sessionTimeLog');
-        
-        if (!btn || !status || !timerDiv || !timeElement) return;
-        
-        if (!globalAutoLogout) {
-            btn.style.background = '#95a5a6';
-            btn.style.opacity = '0.5';
-            btn.style.cursor = 'not-allowed';
-            status.textContent = 'GLOBAL OFF';
-            timerDiv.style.display = 'none';
-            btn.title = 'Auto-logout global está desativado';
-            return;
-        }
-        
-        btn.style.opacity = '1';
-        btn.style.cursor = 'pointer';
-        btn.style.background = logTimerEnabled ? '#27ae60' : '#dc2626';
-        status.textContent = logTimerEnabled ? 'ATIVADO' : 'DESATIVADO';
-        
-        if (logTimerEnabled) {
-            timerDiv.style.display = 'flex';
-            timeElement.textContent = formatTime(logSessionTimeLeft);
-            
-            if (logSessionTimeLeft < 60) {  // 1 minuto - VERMELHO
-                timerDiv.style.background = 'rgba(231, 76, 60, 0.9)';
-                timerDiv.style.borderColor = '#c0392b';
-            } else if (logSessionTimeLeft < 300) {  // 5 minutos - AMARELO
-                timerDiv.style.background = 'rgba(241, 196, 15, 0.9)';
-                timerDiv.style.borderColor = '#f39c12';
-                timeElement.style.color = '#000';
-            } else {  // VERDE
-                timerDiv.style.background = 'rgba(46, 204, 113, 0.9)';
-                timerDiv.style.borderColor = '#27ae60';
-            }       
-        } else {
-            timerDiv.style.display = 'none';
-        }
-    }
-
-    window.toggleLogAutoLogout = function() {
-        if (!globalAutoLogout) {
-            alert('⚠️ Ative o auto-logout global primeiro!');
-            return;
-        }
-        
-        logTimerEnabled = !logTimerEnabled;
-        localStorage.setItem('logAutoLogout', logTimerEnabled);
-        
-        if (logTimerEnabled) {
-            logSessionTimeLeft = <?= TEMPO_SESSAO ?>;
-            localStorage.setItem('logTimeLeft', logSessionTimeLeft);
-            if (!logTimerInterval) startLogTimer();
-        } else {
-            logSessionTimeLeft = '∞';
-            localStorage.removeItem('logTimeLeft');
-            if (logTimerInterval) {
-                clearInterval(logTimerInterval);
-                logTimerInterval = null;
-            }
-        }
-        
-        updateLogAutoLogoutUI();
-    };
-
-    function startLogTimer() {
-        if (logTimerInterval) clearInterval(logTimerInterval);
-        
-        logTimerInterval = setInterval(function() {
-            if (!logTimerEnabled || !globalAutoLogout || typeof logSessionTimeLeft !== 'number') return;
-            
-            logSessionTimeLeft--;
-            localStorage.setItem('logTimeLeft', logSessionTimeLeft);
-            
-            if (logSessionTimeLeft <= 0) {
-                clearInterval(logTimerInterval);
-                logTimerInterval = null;
-                localStorage.removeItem('logAutoLogout');
-                localStorage.removeItem('logTimeLeft');
-                alert('⏰ Sessão expirada por inatividade!');
-                window.location.href = 'index.php?expired=true';
-                return;
-            }
-            
-            updateLogAutoLogoutUI();
-        }, 1000);
-    }
-
-    function resetLogTimer() {
-        if (logTimerEnabled && globalAutoLogout && typeof logSessionTimeLeft === 'number') {
-            logSessionTimeLeft = <?= TEMPO_SESSAO ?>;
-            localStorage.setItem('logTimeLeft', logSessionTimeLeft);
-            updateLogAutoLogoutUI();
-        }
-    }
-
+    
+    // ===== FUNÇÕES DE LOG =====
     function extrairMetadata(conteudo) {
         const linhas = conteudo.split('\n');
         if (linhas[0] && linhas[0].startsWith('=== METADATA:')) {
@@ -2987,18 +3379,13 @@ tr:hover{ background:#f9f9f9; }
                 };
             }
         }
-        return {
-            tamanho: 0,
-            modificacao: 0,
-            conteudo: conteudo
-        };
+        return { tamanho: 0, modificacao: 0, conteudo: conteudo };
     }
-
-    function carregarLog(forcarCompleto = false) {
+    
+    async function carregarLog(forcarCompleto = false) {
         const terminal = document.getElementById('terminalContent');
         const buscar = document.getElementById('buscarLog')?.value || '';
         const linhas = parseInt(document.getElementById('linhasLog')?.value || 500);
-        
         if (!terminal || buscandoAtivo) return;
         
         const scrollPos = terminal.scrollTop;
@@ -3010,7 +3397,6 @@ tr:hover{ background:#f9f9f9; }
         }
         
         let url = `?get_log=1&linhas=${linhasSelecionadas}`;
-        
         if (!forcarCompleto && ultimoTamanhoArquivo > 0 && buscaAtiva === '') {
             url += `&tail=1&ultimo_tamanho=${ultimoTamanhoArquivo}`;
         } else if (buscaAtiva !== '') {
@@ -3020,14 +3406,16 @@ tr:hover{ background:#f9f9f9; }
         buscandoAtivo = true;
         
         fetch(url + '&t=' + Date.now())
-            .then(response => response.text())
+            .then(response => {
+                if (response.status === 401) {
+                    window.location.href = 'index.php?expired=true';
+                    throw new Error('Unauthorized');
+                }
+                return response.text();
+            })
             .then(conteudo => {
                 buscandoAtivo = false;
-                
-                if (conteudo === '=== NO_UPDATE ===') {
-                    return;
-                }
-                
+                if (conteudo === '=== NO_UPDATE ===') return;
                 if (conteudo === '=== LOG_RESET ===' || conteudo.includes('=== METADATA:0:')) {
                     ultimoTamanhoArquivo = 0;
                     terminal.innerHTML = '';
@@ -3040,116 +3428,95 @@ tr:hover{ background:#f9f9f9; }
                 const conteudoReal = metadata.conteudo;
                 
                 if (!forcarCompleto && ultimoTamanhoArquivo > 0 && buscaAtiva === '' && conteudoReal.trim()) {
-                    const linhasNovas = conteudoReal.split('\n').filter(l => l.trim() !== '').map(linha => 
-                        `<div class="log-line">${linha}</div>`
-                    ).join('');
-                    
+                    const linhasNovas = conteudoReal.split('\n').filter(l => l.trim() !== '').map(linha => `<div class="log-line">${linha}</div>`).join('');
                     if (linhasNovas) {
                         if (terminal.innerHTML.includes('Nenhuma entrada') || terminal.innerHTML.trim() === '') {
                             terminal.innerHTML = linhasNovas;
                         } else {
                             terminal.insertAdjacentHTML('beforeend', linhasNovas);
                         }
-                        if (estavaNoFinal) {
-                            terminal.scrollTop = terminal.scrollHeight;
-                        }
+                        if (estavaNoFinal) terminal.scrollTop = terminal.scrollHeight;
                     }
                 } else {
-                    const linhasFormatadas = conteudoReal.split('\n').filter(l => l.trim() !== '').map(linha => 
-                        `<div class="log-line">${linha}</div>`
-                    ).join('');
-                    
+                    const linhasFormatadas = conteudoReal.split('\n').filter(l => l.trim() !== '').map(linha => `<div class="log-line">${linha}</div>`).join('');
                     terminal.innerHTML = linhasFormatadas || '<div style="color: #888; text-align: center; padding: 20px;">📭 Nenhuma entrada no log</div>';
-                    
                     if (ultimoTamanhoArquivo === 0 || buscaAtiva !== '') {
                         terminal.scrollTop = terminal.scrollHeight;
                     } else {
                         terminal.scrollTop = scrollPos;
                     }
                 }
-                
                 ultimoTamanhoArquivo = tamanhoAtual;
                 
                 const linhasCountEl = document.getElementById('linhasCount');
                 const tamanhoLogEl = document.getElementById('tamanhoLog');
                 const dataAtualizacaoEl = document.getElementById('dataAtualizacao');
-                
                 if (linhasCountEl) linhasCountEl.textContent = terminal.querySelectorAll('.log-line').length;
                 if (tamanhoLogEl) tamanhoLogEl.textContent = Math.round(tamanhoAtual / 1024) + ' KB';
                 if (dataAtualizacaoEl) dataAtualizacaoEl.textContent = new Date().toLocaleTimeString('pt-BR');
             })
             .catch(error => {
-                console.error('Erro:', error);
-                buscandoAtivo = false;
-                terminal.innerHTML = `<div style="color: #FF5F5F; text-align: center; padding: 20px;">❌ Erro ao carregar log: ${error.message}</div>`;
+                if (error.message !== 'Unauthorized') {
+                    console.error('Erro:', error);
+                    buscandoAtivo = false;
+                    terminal.innerHTML = `<div style="color: #FF5F5F; text-align: center; padding: 20px;">❌ Erro ao carregar log: ${error.message}</div>`;
+                }
             });
     }
-
-    window.atualizarLog = function() {
-        carregarLog(true);
-    };
-
+    
+    window.atualizarLog = function() { carregarLog(true); };
+    
     function toggleAutoRefresh() {
         if (autoRefreshInterval) {
             clearInterval(autoRefreshInterval);
             autoRefreshInterval = null;
         }
-        
         const autoRefresh = document.getElementById('autoRefresh');
         if (autoRefresh && autoRefresh.checked) {
             autoRefreshInterval = setInterval(() => carregarLog(false), 2000);
         }
     }
-
-    window.confirmarLimparLog = function() {
+    
+    window.confirmarLimparLog = async function() {
         if (!confirm('⚠️ Deseja realmente LIMPAR TODO o arquivo de log?\n\nEsta ação é PERMANENTE!')) return;
         if (!confirm('🚨 CONFIRMAÇÃO FINAL: Tem CERTEZA?')) return;
-        
         if (autoRefreshInterval) {
             clearInterval(autoRefreshInterval);
             autoRefreshInterval = null;
         }
-        
-        fetch('index.php?aba=log', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-            body: 'acao_log=limpar'
-        }).then(() => {
+        try {
+            const formData = new FormData();
+            formData.append('acao_log', 'limpar');
+            formData.append('csrf_token', csrfToken);
+            await fetch('index.php?aba=log', { method: 'POST', body: formData });
             ultimoTamanhoArquivo = 0;
             carregarLog(true);
             toggleAutoRefresh();
             alert('✅ Log limpo com sucesso!');
-        });
+        } catch (error) {
+            console.error('Erro ao limpar log:', error);
+            alert('❌ Erro ao limpar log!');
+        }
     };
-
+    
     window.toggleAutoRefresh = toggleAutoRefresh;
-
-    document.addEventListener('DOMContentLoaded', function() {
+    
+    // ===== DOMContentLoaded =====
+    document.addEventListener('DOMContentLoaded', async function() {
         if (!window.location.search.includes('aba=log')) return;
-        
         console.log('📋 Inicializando aba de logs...');
         
-        const savedState = localStorage.getItem('logAutoLogout');
-        if (savedState !== null) {
-            logTimerEnabled = savedState === 'true';
-        }
-        
-        const savedTime = localStorage.getItem('logTimeLeft');
-        if (savedTime !== null) {
-            logSessionTimeLeft = parseInt(savedTime);
-        }
-        
-        updateLogAutoLogoutUI();
+        initTimer();
         ativarWakeLock();
         
-        if (logTimerEnabled && globalAutoLogout) {
-            startLogTimer();
-        }
-        
-        const resetEvents = ['mousemove', 'keypress', 'click', 'scroll'];
-        resetEvents.forEach(event => {
-            document.addEventListener(event, resetLogTimer, { passive: true });
+        // Resetar timer quando usuário interagir
+        const activityEvents = ['mousemove', 'keypress', 'click', 'scroll', 'touchstart'];
+        activityEvents.forEach(event => {
+            document.addEventListener(event, resetTimerOnActivity, { passive: true });
         });
+        
+        document.getElementById('autoRefresh')?.addEventListener('change', toggleAutoRefresh);
+        toggleAutoRefresh();
         
         const lsLinhas = localStorage.getItem('log_linhas');
         const lsBusca = localStorage.getItem('log_busca');
@@ -3160,16 +3527,12 @@ tr:hover{ background:#f9f9f9; }
             select.value = lsLinhas;
             linhasSelecionadas = parseInt(lsLinhas);
         }
-        
         if (lsBusca && input) {
             input.value = lsBusca;
             buscaAtiva = lsBusca;
         }
         
         carregarLog(true);
-        
-        document.getElementById('autoRefresh')?.addEventListener('change', toggleAutoRefresh);
-        toggleAutoRefresh();
         
         if (input) {
             let timeout;
@@ -3201,14 +3564,12 @@ tr:hover{ background:#f9f9f9; }
             }
         });
     });
-
+    
     window.addEventListener('beforeunload', function() {
         if (autoRefreshInterval) clearInterval(autoRefreshInterval);
-        if (logTimerInterval) clearInterval(logTimerInterval);
+        if (timerInterval) clearInterval(timerInterval);
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
         desativarWakeLock();
-        if (typeof logSessionTimeLeft === 'number') {
-            localStorage.setItem('logTimeLeft', logSessionTimeLeft);
-        }
     });
 })();
 </script>
@@ -3227,7 +3588,7 @@ tr:hover{ background:#f9f9f9; }
 </div>
 <?php endif; ?>
 
-<!-- Mensagens de alteração de senha -->
+<!-- Mensagens de alteração de senha (agora só aparece se vier do processamento) -->
 <?php if (isset($_SESSION['mensagem_senha'])): ?>
 <div class="mensagem-senha mensagem-<?= $_SESSION['tipo_mensagem_senha'] ?>" id="mensagemSenha">
     <?= htmlspecialchars($_SESSION['mensagem_senha']) ?>
@@ -3238,80 +3599,10 @@ tr:hover{ background:#f9f9f9; }
 endif; 
 ?>
 
-<!-- Modal para alterar senha -->
-<div id="modalAlterarSenhaDashboard" class="modal-dashboard">
-    <div class="modal-content-dashboard">
-        <div class="modal-header-dashboard">
-            <h3>🔑 Alterar Minha Senha</h3>
-            <button class="close-modal-dashboard" onclick="fecharModalAlterarSenhaDashboard()">&times;</button>
-        </div>
-        <form method="POST" action="index.php?aba=dashboard" onsubmit="return validarSenhaDashboard()">
-            <div class="form-group-modal">
-                <label for="senha_atual">Senha Atual *</label>
-                <input type="password" id="senha_atual" name="senha_atual" class="form-control-modal" 
-                       required placeholder="Digite sua senha atual">
-            </div>
-            
-            <div class="form-group-modal">
-                <label for="nova_senha">Nova Senha * (mínimo 6 caracteres)</label>
-                <input type="password" id="nova_senha" name="nova_senha" class="form-control-modal" 
-                       required minlength="6" placeholder="Digite a nova senha">
-            </div>
-            
-            <div class="form-group-modal">
-                <label for="confirmar_nova_senha">Confirmar Nova Senha *</label>
-                <input type="password" id="confirmar_nova_senha" name="confirmar_nova_senha" 
-                       class="form-control-modal" required placeholder="Confirme a nova senha">
-            </div>
-            
-            <div style="display: flex; gap: 10px; margin-top: 25px;">
-                <button type="button" class="btn-modal btn-modal-cancelar" onclick="fecharModalAlterarSenhaDashboard()">
-                    Cancelar
-                </button>
-                <button type="submit" name="alterar_senha_dashboard" class="btn-modal btn-modal-alterar">
-                    <span>🔑</span> Alterar Senha
-                </button>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Header do Dashboard PIX -->
+<!-- Header do Dashboard PIX - SIMPLIFICADO -->
 <div class="header-dashboard">
     <div class="dashboard-title">
         <h1>📊 Dashboard Consultas Fatura</h1>
-    </div>
-    
-    <div class="dashboard-controls">
-        <div class="user-info">
-            <div>
-                👤 <b><?= htmlspecialchars($_SESSION['usuario'] ?? 'Usuário') ?></b>
-                <span class="user-nivel"><?= strtoupper($_SESSION['nivel']) ?></span><br>
-                <small>IP: <?= htmlspecialchars(getRealIp()) ?></small>
-            </div>
-            <div class="status-indicator">
-                <span class="status-dot"></span>
-                Auto-logout: <?= $_SESSION['auto_logout'] ? 'ON' : 'OFF' ?>
-            </div>
-        </div>
-        
-        <button onclick="abrirModalAlterarSenhaDashboard()" class="btn-alterar-senha" title="Alterar minha senha">
-            <span style="font-size:16px;">🔑</span> Alterar Senha
-        </button>
-        
-        <?php if ($_SESSION['nivel'] === 'admin'): ?>
-        <a href="?aba=usuarios" class="btn-admin">
-            👥 Gerenciar Usuários
-        </a>
-        <?php endif; ?>
-        
-        <button onclick="toggleAutoLogout()" class="btn-autologout" title="<?= $_SESSION['auto_logout'] ? 'Desativar' : 'Ativar' ?> logout automático">
-            <?php if ($_SESSION['auto_logout']): ?>
-            <span style="font-size:16px;">⏰</span> Auto-logout ON
-            <?php else: ?>
-            <span style="font-size:16px;">🔒</span> Auto-logout OFF
-            <?php endif; ?>
-        </button>
     </div>
 </div>
 
@@ -3540,10 +3831,7 @@ if ($_SESSION['nivel'] === 'admin') {
 <?php endif; ?>
 
 <div class="footer-dashboard">
-    WebLine Telecom - Dashboard Pix | 
-    Usuário: <?= htmlspecialchars($_SESSION['usuario']) ?> (<?= $_SESSION['nivel'] ?>) | 
-    Sessão iniciada: <?= date('d/m/Y H:i:s', $_SESSION['login_time'] ?? time()) ?> | 
-    Auto-logout: <?= $_SESSION['auto_logout'] ? '✅ ATIVADO' : '❌ DESATIVADO' ?>
+    WebLine Telecom - Dashboard Pix
 </div>
 
 <!-- ===================================================================== -->
@@ -3552,10 +3840,25 @@ if ($_SESSION['nivel'] === 'admin') {
 
 <?php elseif ($abaAtiva === 'usuarios' && $_SESSION['nivel'] === 'admin'): ?>
 
+<!-- Timer de sessão para aba Usuários -->
+<?php if ($_SESSION['auto_logout']): ?>
+<div class="session-timer" id="sessionTimer">
+    <div style="font-size: 10px; opacity: 0.8;">Auto-logout em:</div>
+    <div style="font-size: 14px; font-weight: bold;" id="sessionTime"><?= gmdate("H:i:s", TEMPO_SESSAO) ?></div>
+</div>
+<?php endif; ?>
+
 <?php
-// Processar ações de gerenciamento
+// Processar ações de gerenciamento (COM CSRF)
 $mensagem_usuario = '';
 $tipo_mensagem_usuario = '';
+
+// Verificar CSRF para todas ações POST
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!isset($_POST['csrf_token']) || !verifyCsrfToken($_POST['csrf_token'])) {
+        die('CSRF token inválido');
+    }
+}
 
 // Adicionar usuário
 if (isset($_POST['adicionar_usuario'])) {
@@ -3581,9 +3884,12 @@ if (isset($_POST['adicionar_usuario'])) {
     }
 }
 
-// Excluir usuário
+// Excluir usuário (apenas GET, mas verificado)
 if (isset($_GET['excluir'])) {
     $usuario_excluir = $_GET['excluir'];
+    
+    // Registrar tentativa (log)
+    error_log("DELETE_USER_ATTEMPT: User={$_SESSION['usuario']}, Target={$usuario_excluir}, IP=" . getRealIp());
     
     if ($usuario_excluir != $_SESSION['usuario'] && $usuario_excluir != 'admin') {
         $usuarios = carregarUsuarios();
@@ -3612,6 +3918,12 @@ if (isset($_GET['excluir'])) {
     } else {
         $mensagem_usuario = 'Você não pode excluir este usuário!';
         $tipo_mensagem_usuario = 'erro';
+        registrarLogAcesso(
+            $_SESSION['usuario'],
+            $_SESSION['nome'],
+            $_SESSION['nivel'],
+            'TENTATIVA_EXCLUIR_USUÁRIO_PROTEGIDO: ' . $usuario_excluir
+        );
     }
 }
 
@@ -3640,7 +3952,7 @@ if (isset($_GET['reset_senha'])) {
     }
 }
 
-// Alterar senha (admin alterando para outro usuário)
+// Alterar senha (admin alterando para outro usuário) - JÁ COM CSRF VERIFICADO
 if (isset($_POST['alterar_senha_admin'])) {
     $resultado = alterarSenhaAdmin(
         $_SESSION['usuario'],
@@ -3667,6 +3979,12 @@ if (isset($_GET['limpar_logs_acesso']) && $_GET['limpar_logs_acesso'] == '1') {
         file_put_contents(ARQUIVO_LOG_ACESSOS, '');
         $mensagem_usuario = 'Logs de acesso limpos com sucesso!';
         $tipo_mensagem_usuario = 'sucesso';
+        registrarLogAcesso(
+            $_SESSION['usuario'],
+            $_SESSION['nome'],
+            $_SESSION['nivel'],
+            'LIMPAR_LOGS_ACESSO'
+        );
     }
 }
 
@@ -3689,7 +4007,6 @@ if (file_exists(ARQUIVO_LOG_ACESSOS)) {
     <!-- Header -->
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px; background:white; padding:20px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.1); flex-wrap:wrap; gap:15px;">
         <h1 style="color:#2c3e50; display:flex; align-items:center; gap:10px;">👥 Gerenciamento de Usuários</h1>
-        <a href="?aba=dashboard" style="padding:12px 20px; background:#95a5a6; color:white; text-decoration:none; border-radius:6px; font-weight:bold; transition:all 0.3s;">⬅ Voltar ao Dashboard</a>
     </div>
     
     <!-- Mensagens -->
@@ -3723,11 +4040,12 @@ if (file_exists(ARQUIVO_LOG_ACESSOS)) {
         </div>
     </div>
     
-    <!-- Formulário de adição -->
+    <!-- Formulário de adição COM CSRF -->
     <div style="background:white; border-radius:10px; padding:20px; margin-bottom:25px; box-shadow:0 2px 10px rgba(0,0,0,0.1);">
         <h2 style="color:#2c3e50; margin-bottom:20px; padding-bottom:10px; border-bottom:2px solid #00b894; display:flex; align-items:center; gap:10px;">➕ Adicionar Novo Usuário</h2>
         
         <form method="POST" onsubmit="return validarFormularioUsuario()">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
             <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:15px; margin-bottom:20px;">
                 <div style="margin-bottom:15px;">
                     <label style="display:block; margin-bottom:6px; color:#555; font-weight:600; font-size:13px;">Usuário *</label>
@@ -3926,7 +4244,7 @@ if (file_exists(ARQUIVO_LOG_ACESSOS)) {
     </div>
 </div>
 
-<!-- Modal para alterar senha (admin) -->
+<!-- Modal para alterar senha (admin) COM CSRF -->
 <div id="modalAlterarSenhaUsuario" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:2000; justify-content:center; align-items:center; padding:20px;">
     <div style="background:white; padding:30px; border-radius:10px; max-width:500px; width:100%; box-shadow:0 10px 30px rgba(0,0,0,0.2);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:25px; padding-bottom:15px; border-bottom:2px solid #3498db;">
@@ -3935,6 +4253,7 @@ if (file_exists(ARQUIVO_LOG_ACESSOS)) {
         </div>
         
         <form method="POST" onsubmit="return validarSenhaUsuario()">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf_token) ?>">
             <input type="hidden" id="usuario_alvo_modal" name="usuario_alvo">
             
             <div style="margin-bottom:20px;">
@@ -4025,11 +4344,11 @@ document.addEventListener('keydown', function(e) {
 <?php endif; ?>
 
 <!-- ===================================================================== -->
-<!-- BLOCO 23 - SCRIPTS JS PRINCIPAIS (CORRIGIDO)
+<!-- BLOCO 23 - SCRIPTS JS PRINCIPAIS (COM LOGOUT GLOBAL E CSRF) -->
 <!-- ===================================================================== -->
 
 <script>
-// ==================== SCRIPT PRINCIPAL - AUTO-LOGOUT CORRIGIDO ====================
+// ==================== SCRIPT PRINCIPAL - COM LOGOUT GLOBAL ====================
 (function() {
     // ==================== VARIÁVEIS GLOBAIS ====================
     let autoLogoutEnabled = <?= $_SESSION['auto_logout'] ? 'true' : 'false' ?>;
@@ -4041,44 +4360,132 @@ document.addEventListener('keydown', function(e) {
     let lastServerSync = 0;
     let lastUserActivity = Date.now();
     let isLogAba = (currentAba === 'log');
+    let csrfToken = '<?= htmlspecialchars($csrf_token) ?>';
+    let heartbeatKeepAlive = null;
+    let syncing = false;
+
+    // ===== CARREGAR CONFIGURAÇÃO DE RESET =====
+    let resetOnActivity = <?= isset($config['reset_timer_on_activity']) && $config['reset_timer_on_activity'] === true ? 'true' : 'false' ?>;
+
+    // ===== FUNÇÃO RESET TIMER =====
+    function resetTimerOnActivity() {
+        if (!resetOnActivity) return;
+        
+        if (sessionTimeLeft > 0) {
+            sessionTimeLeft = <?= TEMPO_SESSAO ?>;
+            updateTimerDisplay();
+            lastUserActivity = Date.now();
+            
+            fetch('index.php?update_session=1&t=' + Date.now())
+                .catch(error => console.error('Erro ao resetar sessão:', error));
+        }
+    }
+
+    // ==================== BROADCAST CHANNEL ====================
+    let broadcastChannel = null;
+    
+    function initBroadcastChannel() {
+        if (!window.BroadcastChannel) {
+            console.warn('BroadcastChannel não suportado neste navegador');
+            return;
+        }
+        
+        broadcastChannel = new BroadcastChannel('session_channel');
+        
+        broadcastChannel.addEventListener('message', (event) => {
+            if (event.data.tabId === currentTabId) return;
+            
+            switch (event.data.type) {
+                case 'FORCE_LOGOUT':
+                    if (event.data.sourceTab !== currentTabId) {
+                        if (timerInterval) clearInterval(timerInterval);
+                        if (heartbeatInterval) clearInterval(heartbeatInterval);
+                        window.location.href = 'index.php?expired=true';
+                    }
+                    break;
+                    
+                case 'USER_ACTIVITY':
+                    if (!isLogAba && autoLogoutEnabled) {
+                        sessionTimeLeft = <?= TEMPO_SESSAO ?>;
+                        updateTimerDisplay();
+                    }
+                    break;
+                    
+                case 'AUTOLOGOUT_TOGGLED':
+                    autoLogoutEnabled = event.data.enabled;
+                    updateAutoLogoutButton(event.data.enabled);
+                    
+                    if (isLogAba) {
+                        location.reload();
+                    } else {
+                        if (event.data.enabled) {
+                            sessionTimeLeft = <?= TEMPO_SESSAO ?>;
+                            initTimer();
+                        } else {
+                            stopTimer();
+                        }
+                    }
+                    break;
+            }
+        });
+    }
 
     // ==================== FUNÇÕES DE TIMER ====================
     
-    /**
-     * Inicia o timer apenas se estiver na aba correta e auto-logout ativado
-     */
-    function initTimer() {
-        if (isLogAba) {
-            console.log('📋 Aba de logs - usando timer próprio');
-            return;
+    function updateTimerDisplay() {
+        const timerElement = document.getElementById('sessionTimer');
+        const timeElement = document.getElementById('sessionTime');
+        
+        if (!timerElement || !timeElement) return;
+        
+        timerElement.style.display = 'block';
+        timeElement.textContent = formatTime(sessionTimeLeft);
+        
+        if (sessionTimeLeft < 60) {
+            timerElement.style.background = 'rgba(231, 76, 60, 0.95)';
+            timerElement.style.borderLeft = '4px solid #c0392b';
+        } else if (sessionTimeLeft < 300) {
+            timerElement.style.background = 'rgba(241, 196, 15, 0.95)';
+            timerElement.style.borderLeft = '4px solid #f39c12';
+            timeElement.style.color = '#000';
+        } else {
+            timerElement.style.background = 'rgba(46, 204, 113, 0.9)';
+            timerElement.style.borderLeft = '4px solid #27ae60';
+            timeElement.style.color = '#fff';
         }
+    }
+    
+    function formatTime(seconds) {
+        if (seconds < 0) seconds = 0;
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
+        return [
+            hours.toString().padStart(2, '0'),
+            minutes.toString().padStart(2, '0'),
+            secs.toString().padStart(2, '0')
+        ].join(':');
+    }
+    
+    function initTimer() {
+        if (isLogAba) return;
         
         if (!autoLogoutEnabled) {
             stopTimer();
             return;
         }
         
-        // Sincronizar com o servidor imediatamente
-        syncWithServer();
-        
-        // Iniciar heartbeat a cada 30 segundos
         if (!heartbeatInterval) {
             heartbeatInterval = setInterval(syncWithServer, 30000);
         }
         
-        // Iniciar timer visual apenas se não existir
         if (!timerInterval) {
             timerInterval = setInterval(updateVisualTimer, 1000);
-            console.log('⏰ Timer visual iniciado');
         }
         
-        // Configurar listeners de atividade do usuário
-        setupActivityListeners();
+        syncWithServer();
     }
     
-    /**
-     * Para todos os timers
-     */
     function stopTimer() {
         if (timerInterval) {
             clearInterval(timerInterval);
@@ -4096,76 +4503,53 @@ document.addEventListener('keydown', function(e) {
         }
     }
     
-    /**
-     * Sincroniza com o servidor via heartbeat
-     */
-    function syncWithServer() {
+    async function syncWithServer() {
         if (isLogAba || !autoLogoutEnabled) return;
         
-        fetch('index.php?heartbeat=1&t=' + Date.now(), {
-            method: 'GET',
-            cache: 'no-store',
-            headers: {'Cache-Control': 'no-cache'}
-        })
-        .then(response => response.json())
-        .then(data => {
+        try {
+            const response = await fetch('index.php?heartbeat=1&t=' + Date.now());
+            const data = await response.json();
+            
             if (data.expired) {
-                // Servidor diz que a sessão expirou
                 forceLogout('Sessão expirada pelo servidor');
                 return;
             }
             
-            // Atualizar tempo restante com base no servidor
             if (data.time_left !== undefined) {
-                sessionTimeLeft = data.time_left;
-                lastServerSync = Date.now();
-                updateTimerDisplay();
+                if (resetOnActivity) {
+                    sessionTimeLeft = data.time_left;
+                    lastServerSync = Date.now();
+                    updateTimerDisplay();
+                }
             }
-        })
-        .catch(error => {
+        } catch (error) {
             console.error('Erro no heartbeat:', error);
-        });
+        }
     }
     
-    /**
-     * Atualiza o timer visual a cada segundo
-     */
     function updateVisualTimer() {
         if (isLogAba || !autoLogoutEnabled) return;
         
-        // Decrementar visualmente
         sessionTimeLeft--;
         
-        // Se chegou a zero, verificar com servidor antes de deslogar
         if (sessionTimeLeft <= 0) {
-            // Verificar com servidor se realmente expirou
             fetch('index.php?check_session=1&t=' + Date.now())
                 .then(response => response.text())
                 .then(status => {
                     if (status === 'expired') {
                         forceLogout('Tempo esgotado');
                     } else {
-                        // Servidor diz que ainda está ativo, resetar timer
                         syncWithServer();
                     }
                 })
-                .catch(() => {
-                    // Se erro na comunicação, deslogar por segurança
-                    forceLogout('Erro de comunicação');
-                });
+                .catch(() => forceLogout('Erro de comunicação'));
             return;
         }
         
         updateTimerDisplay();
     }
     
-    /**
-     * Força logout e redireciona
-     */
     function forceLogout(reason) {
-        console.log('🔒 Logout forçado:', reason);
-        
-        // Notificar service worker se existir
         if (navigator.serviceWorker && navigator.serviceWorker.controller) {
             navigator.serviceWorker.controller.postMessage({
                 type: 'SESSION_EXPIRED',
@@ -4173,59 +4557,9 @@ document.addEventListener('keydown', function(e) {
             });
         }
         
-        // Redirecionar
-        window.location.href = 'index.php?auto_logout=1&expired=true';
+        window.location.href = 'index.php?action=logout';
     }
     
-    /**
-     * Formata tempo em HH:MM:SS
-     */
-    function formatTime(seconds) {
-        if (seconds < 0) seconds = 0;
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const secs = seconds % 60;
-        return [
-            hours.toString().padStart(2, '0'),
-            minutes.toString().padStart(2, '0'),
-            secs.toString().padStart(2, '0')
-        ].join(':');
-    }
-    
-    /**
-     * Atualiza o display do timer na interface
-     */
-    function updateTimerDisplay() {
-        const timerElement = document.getElementById('sessionTimer');
-        const timeElement = document.getElementById('sessionTime');
-        
-        if (!timerElement || !timeElement) return;
-        
-        timerElement.style.display = 'block';
-        timeElement.textContent = formatTime(sessionTimeLeft);
-        
-        // Mudar cor conforme tempo restante
-        if (sessionTimeLeft < 60) { // Menos de 1 minuto
-            timerElement.style.background = 'rgba(231, 76, 60, 0.95)';
-            timerElement.style.borderLeft = '4px solid #c0392b';
-            timerElement.style.boxShadow = '0 0 20px rgba(231, 76, 60, 0.8)';
-            timerElement.style.color = '#fff';
-        } else if (sessionTimeLeft < 300) { // Menos de 5 minutos
-            timerElement.style.background = 'rgba(241, 196, 15, 0.95)';
-            timerElement.style.borderLeft = '4px solid #f39c12';
-            timerElement.style.boxShadow = '0 0 20px rgba(241, 196, 15, 0.8)';
-            timerElement.style.color = '#000';
-        } else {
-            timerElement.style.background = 'rgba(46, 204, 113, 0.9)';
-            timerElement.style.borderLeft = '4px solid #27ae60';
-            timerElement.style.boxShadow = '0 0 15px rgba(46, 204, 113, 0.5)';
-            timerElement.style.color = '#fff';
-        }
-    }
-    
-    /**
-     * Configura listeners para detectar atividade do usuário
-     */
     function setupActivityListeners() {
         if (isLogAba) return;
         
@@ -4235,104 +4569,70 @@ document.addEventListener('keydown', function(e) {
         function handleUserActivity() {
             if (!autoLogoutEnabled) return;
             
-            // Debounce para não enviar muitas requisições
             if (activityTimeout) clearTimeout(activityTimeout);
             
             activityTimeout = setTimeout(() => {
-                // Atualizar último acesso no servidor
-                fetch('index.php?update_session=1&t=' + Date.now(), {
-                    method: 'GET',
-                    cache: 'no-store'
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Resetar timer visual para o tempo cheio
-                        sessionTimeLeft = <?= TEMPO_SESSAO ?>;
-                        updateTimerDisplay();
-                        lastUserActivity = Date.now();
-                        
-                        // Notificar outras abas
-                        if (window.BroadcastChannel) {
-                            const channel = new BroadcastChannel('session_channel');
-                            channel.postMessage({ 
-                                type: 'USER_ACTIVITY',
-                                tabId: currentTabId,
-                                timestamp: Date.now()
-                            });
-                            channel.close();
-                        }
-                    }
-                })
-                .catch(error => console.error('Erro ao atualizar sessão:', error));
-            }, 200); // Aguarda entre 100ms e 500ms após última atividade do mouse para reiniciar a contagem do logout
+                resetTimerOnActivity();
+            }, 200);
         }
         
-        // Remover listeners antigos e adicionar novos
         activityEvents.forEach(event => {
             document.removeEventListener(event, handleUserActivity);
             document.addEventListener(event, handleUserActivity, { passive: true });
         });
     }
     
-    // ==================== COMUNICAÇÃO ENTRE ABAS ====================
-    if (window.BroadcastChannel) {
-        const channel = new BroadcastChannel('session_channel');
-        
-        channel.addEventListener('message', event => {
-            // Ignorar mensagens da própria aba
-            if (event.data.tabId === currentTabId) return;
-            
-            if (event.data.type === 'USER_ACTIVITY') {
-                console.log('📡 Atividade detectada em outra aba');
-                
-                // Se atividade em outra aba, resetar timer
-                if (!isLogAba && autoLogoutEnabled) {
-                    sessionTimeLeft = <?= TEMPO_SESSAO ?>;
-                    updateTimerDisplay();
-                }
-            }
-            
-            if (event.data.type === 'AUTOLOGOUT_TOGGLED') {
-                console.log('📡 Auto-logout global mudou para:', event.data.enabled ? 'ATIVADO' : 'DESATIVADO');
-                autoLogoutEnabled = event.data.enabled;
-                
-                // Atualizar botões na interface
-                updateAutoLogoutButton(event.data.enabled);
-                
-                // Se estiver na aba de logs, recarregar
-                if (isLogAba) {
-                    location.reload();
-                } else {
-                    if (event.data.enabled) {
-                        // Re-iniciar timer
-                        sessionTimeLeft = <?= TEMPO_SESSAO ?>;
-                        initTimer();
-                    } else {
-                        // Parar timer
-                        stopTimer();
-                    }
-                }
-            }
-        });
+    function sendGlobalLogout() {
+        if (broadcastChannel) {
+            broadcastChannel.postMessage({
+                type: 'FORCE_LOGOUT',
+                tabId: currentTabId,
+                sourceTab: currentTabId,
+                timestamp: Date.now()
+            });
+        }
     }
     
-    // ==================== FUNÇÕES DE INTERFACE ====================
+    function sendAutoLogoutToggle(enabled) {
+        if (broadcastChannel) {
+            broadcastChannel.postMessage({
+                type: 'AUTOLOGOUT_TOGGLED',
+                enabled: enabled,
+                tabId: currentTabId,
+                timestamp: Date.now()
+            });
+        }
+    }
     
-    /**
-     * Atualiza botões de auto-logout na interface
-     */
+    window.globalLogout = async function() {
+        if (!confirm('Deseja realmente sair do sistema?')) return;
+        
+        try {
+            const formData = new FormData();
+            formData.append('action', 'logout');
+            formData.append('csrf_token', csrfToken);
+            
+            await fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            });
+            
+            sendGlobalLogout();
+            window.location.href = 'index.php';
+        } catch (error) {
+            window.location.href = 'index.php?action=logout';
+        }
+    };
+    
     window.updateAutoLogoutButton = function(enabled) {
         const buttons = document.querySelectorAll('.btn-autologout');
         buttons.forEach(button => {
             if (enabled) {
                 button.style.background = '#27ae60';
                 button.innerHTML = '<span style="font-size:16px;">⏰</span> Auto-logout ON';
-                button.title = 'Desativar logout automático';
             } else {
                 button.style.background = '#dc2626';
                 button.innerHTML = '<span style="font-size:16px;">🔒</span> Auto-logout OFF';
-                button.title = 'Ativar logout automático';
             }
         });
         
@@ -4354,92 +4654,12 @@ document.addEventListener('keydown', function(e) {
         });
     };
     
-    // ==================== INICIALIZAÇÃO ====================
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log('🚀 Inicializando sistema com auto-logout:', autoLogoutEnabled ? 'ATIVADO' : 'DESATIVADO');
-        
-        // Iniciar timer se não for aba de logs
-        if (!isLogAba) {
-            initTimer();
-        }
-        
-        // Configurar verificações de status do WhatsApp (apenas na aba config)
-        const statusDiv = document.querySelector('.status');
-        if (statusDiv && currentAba === 'config') {
-            monitorWhatsAppStatus();
-        }
-        
-        // Se veio com parâmetro salvo, limpar URL
-        if (window.location.search.includes('salvo=1')) {
-            const params = new URLSearchParams(window.location.search);
-            const newUrl = window.location.pathname + (params.get('aba') ? '?aba=' + params.get('aba') : '');
-            window.history.replaceState({}, document.title, newUrl);
-        }
-        
-        // Auto-remover mensagens de sucesso após 3 segundos
-        const msg = document.getElementById('msg');
-        if (msg) {
-            setTimeout(() => {
-                msg.style.opacity = '0';
-                setTimeout(() => msg.remove(), 500);
-            }, 3000);
-        }
-    });
-    
-    /**
-     * Monitora status do WhatsApp
-     */
-    function monitorWhatsAppStatus() {
-        console.log('🔍 Monitorando status do WhatsApp...');
-        
-        let statusAtual = document.querySelector('.status')?.classList.contains('online') ? 'online' : 
-                         document.querySelector('.status')?.classList.contains('qr') ? 'qr' : 'offline';
-        
-        const intervalo = setInterval(() => {
-            fetch('?api_status=1&t=' + Date.now())
-                .then(r => r.text())
-                .then(novoStatus => {
-                    if (novoStatus !== statusAtual) {
-                        console.log('✅ Status mudou de', statusAtual, 'para', novoStatus);
-                        clearInterval(intervalo);
-                        location.reload();
-                    }
-                })
-                .catch(() => console.log('Erro na verificação'));
-        }, 3000);
-        
-        // Se estiver em modo QR, atualizar imagem a cada 3 segundos
-        if (statusAtual === 'qr') {
-            setInterval(() => {
-                const img = document.getElementById('qrImg');
-                if (img && img.src.includes('qrcode_view.php')) {
-                    img.src = 'qrcode_view.php?t=' + Date.now();
-                }
-            }, 3000);
-        }
-    }
-    
-    // ==================== LIMPEZA AO SAIR ====================
-    window.addEventListener('beforeunload', function() {
-        if (timerInterval) clearInterval(timerInterval);
-        if (heartbeatInterval) clearInterval(heartbeatInterval);
-    });
-    
-    // ==================== EXPOR FUNÇÕES GLOBAIS ====================
     window.toggleAutoLogout = function() {
         const currentState = <?= $_SESSION['auto_logout'] ? 'true' : 'false' ?>;
         const newState = currentState ? 'off' : 'on';
         
         if (confirm('Deseja ' + (currentState ? 'DESATIVAR' : 'ATIVAR') + ' o auto-logout?')) {
-            if (window.BroadcastChannel) {
-                const channel = new BroadcastChannel('session_channel');
-                channel.postMessage({ 
-                    type: 'AUTOLOGOUT_TOGGLED', 
-                    enabled: !currentState
-                });
-                channel.close();
-            }
-            
+            sendAutoLogoutToggle(!currentState);
             window.location.href = 'index.php?toggle_autologout=' + newState + '&aba=' + currentAba;
         }
     };
@@ -4457,16 +4677,81 @@ document.addEventListener('keydown', function(e) {
             return false;
         }
         
-        return confirm('Deseja alterar o tempo de auto-logout para ' + formatTime(parseInt(tempo)) + '?');
+        return true;
     };
     
+    function monitorWhatsAppStatus() {
+        let statusAtual = document.querySelector('.status')?.classList.contains('online') ? 'online' : 
+                         document.querySelector('.status')?.classList.contains('qr') ? 'qr' : 'offline';
+        
+        const intervalo = setInterval(() => {
+            fetch('?api_status=1&t=' + Date.now())
+                .then(r => r.text())
+                .then(novoStatus => {
+                    if (novoStatus !== statusAtual) {
+                        clearInterval(intervalo);
+                        location.reload();
+                    }
+                })
+                .catch(() => {});
+        }, 3000);
+        
+        if (statusAtual === 'qr') {
+            setInterval(() => {
+                const img = document.getElementById('qrImg');
+                if (img && img.src.includes('qrcode_view.php')) {
+                    img.src = 'qrcode_view.php?t=' + Date.now();
+                }
+            }, 3000);
+        }
+    }
+    
+    // ==================== INICIALIZAÇÃO ====================
+    document.addEventListener('DOMContentLoaded', function() {
+        initBroadcastChannel();
+        
+        if (!isLogAba) {
+            initTimer();
+        }
+        
+        const statusDiv = document.querySelector('.status');
+        if (statusDiv && currentAba === 'config') {
+            monitorWhatsAppStatus();
+        }
+        
+        if (window.location.search.includes('salvo=1')) {
+            const params = new URLSearchParams(window.location.search);
+            const newUrl = window.location.pathname + (params.get('aba') ? '?aba=' + params.get('aba') : '');
+            window.history.replaceState({}, document.title, newUrl);
+        }
+        
+        const msg = document.getElementById('msg');
+        if (msg) {
+            setTimeout(() => {
+                msg.style.opacity = '0';
+                setTimeout(() => msg.remove(), 500);
+            }, 3000);
+        }
+        
+        setupActivityListeners();
+    });
+    
+    window.addEventListener('beforeunload', function() {
+        if (timerInterval) clearInterval(timerInterval);
+        if (heartbeatInterval) clearInterval(heartbeatInterval);
+        if (broadcastChannel) broadcastChannel.close();
+    });
+    
+    // ==================== FUNÇÕES GLOBAIS EXPORTADAS ====================
     window.abrirModalAlterarSenhaDashboard = function() {
-        document.getElementById('modalAlterarSenhaDashboard').style.display = 'flex';
-        document.getElementById('senha_atual').focus();
+        const modal = document.getElementById('modalAlterarSenhaDashboard');
+        if (modal) modal.style.display = 'flex';
+        document.getElementById('senha_atual')?.focus();
     };
     
     window.fecharModalAlterarSenhaDashboard = function() {
-        document.getElementById('modalAlterarSenhaDashboard').style.display = 'none';
+        const modal = document.getElementById('modalAlterarSenhaDashboard');
+        if (modal) modal.style.display = 'none';
         document.getElementById('senha_atual').value = '';
         document.getElementById('nova_senha').value = '';
         document.getElementById('confirmar_nova_senha').value = '';
@@ -4500,35 +4785,40 @@ document.addEventListener('keydown', function(e) {
     
     window.testarTelegram = function() {
         const resultDiv = document.getElementById('telegramTestResult');
-        resultDiv.innerHTML = '⏳ Enviando...';
-        resultDiv.style.color = '#666';
+        if (resultDiv) {
+            resultDiv.innerHTML = '⏳ Enviando...';
+            resultDiv.style.color = '#666';
+        }
         
         fetch('?testar_telegram=1&t=' + Date.now())
             .then(response => response.json())
             .then(data => {
-                resultDiv.innerHTML = data.sucesso ? '✅ ' + data.mensagem : '❌ ' + data.mensagem;
-                resultDiv.style.color = data.sucesso ? '#28a745' : '#dc3545';
+                if (resultDiv) {
+                    resultDiv.innerHTML = data.sucesso ? '✅ ' + data.mensagem : '❌ ' + data.mensagem;
+                    resultDiv.style.color = data.sucesso ? '#28a745' : '#dc3545';
+                }
             })
             .catch(error => {
-                resultDiv.innerHTML = '❌ Erro ao testar: ' + error.message;
-                resultDiv.style.color = '#dc3545';
+                if (resultDiv) {
+                    resultDiv.innerHTML = '❌ Erro ao testar: ' + error.message;
+                    resultDiv.style.color = '#dc3545';
+                }
             });
     };
-
-    // ==================== FUNÇÃO DO OLHINHO MK-AUTH ====================
+    
     window.toggleClientSecretVisibility = function() {
         const secretField = document.getElementById('mkauth_client_secret');
         const button = event.currentTarget;
-    
-    if (secretField.type === 'password') {
-        secretField.type = 'text';
-        button.innerHTML = '🙈';
-        button.title = 'Esconder Client Secret';
-    } else {
-        secretField.type = 'password';
-        button.innerHTML = '👁️';
-        button.title = 'Mostrar Client Secret';
-    }
+        
+        if (secretField.type === 'password') {
+            secretField.type = 'text';
+            button.innerHTML = '🙈';
+            button.title = 'Esconder Client Secret';
+        } else {
+            secretField.type = 'password';
+            button.innerHTML = '👁️';
+            button.title = 'Mostrar Client Secret';
+        }
     };
     
     window.exportarCSV = function() {
@@ -4544,7 +4834,7 @@ document.addEventListener('keydown', function(e) {
         const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = 'pix_acessos_<?= $diaSelecionado ?>.csv';
+        link.download = 'pix_acessos_<?= $diaSelecionado ?? date('Y-m-d') ?>.csv';
         link.click();
     };
     
