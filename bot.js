@@ -76,7 +76,7 @@
  * ✅ Opções 2 (Atendente) e 5 (Assinar) no submenu
  * ✅ Totalmente customizável
  * 
- * 🆕 CORREÇÃO DE DESCONEXÃO v2.0 - 02/05/2026
+ * 🆕 CORREÇÃO DE DESCONEXÃO v2.0 - 06/05/2026
  * ✅ Diferencia problemas de rede de desconexão real da Meta
  * ✅ Mantém sessão em caso de queda de internet
  * ✅ Apenas limpa sessão quando Meta realmente deslogar
@@ -1800,7 +1800,7 @@ async function startBot() {
                         `⭕️ *Bot:* ${empresa}\n` +
                         `📞 *Número:* ${numeroAtendente}\n` +
                         `👤 *Atendente:* ${pushName}\n` +
-                        `📋 *Versão Software:* 2.1 (06/05/2026)\n` +
+                        `📋 *Versão Software:* 2.0 (06/05/2026)\n` +
                         `📱 *Versão WhatsApp:* ${global.WHATSAPP_VERSION}\n` +
                         `⚙️ *Baileys:* ${global.VERSAO_BAILEYS}\n` +
                         `⏰ ${formatarDataHora()}`,
@@ -1869,7 +1869,7 @@ async function startBot() {
                     `⭕️ *Bot:* ${empresa}\n` +
                     `📞 *Número:* ${numeroAtendente}\n` +
                     `🔐 Desconexão da Meta detectada (LoggedOut).\n` +
-                    `📋 *Versão Software:* 2.1 (06/05/2026)\n` +
+                    `📋 *Versão Software:* 2.0 (06/05/2026)\n` +
                     `📱 *Versão WhatsApp:* ${global.WHATSAPP_VERSION}\n` +
                     `✅ Um novo QR Code será gerado em instantes.\n` +
                     `⏰ ${formatarDataHora()}`,
