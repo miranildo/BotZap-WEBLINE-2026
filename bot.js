@@ -1693,7 +1693,7 @@ async function startBot() {
                 console.log(`${formatarDataHora()} 🔧 Chamando notificação de QR CODE...`);
                 enviarNotificacaoTelegram(
                     `📱 *QR CODE GERADO*\n\n` +
-                    `📱 *Bot:* ${empresa}\n` +
+                    `⭕️ *Bot:* ${empresa}\n` +
                     `📞 *Número:* ${numeroAtendente}\n` +
                     `🆕 Um novo QR Code foi gerado.\n` +
                     `⏰ ${formatarDataHora()}\n\n` +
@@ -1797,11 +1797,12 @@ async function startBot() {
                     console.log(`${formatarDataHora()} 🔧 Enviando notificação de CONEXÃO (conexão real)...`);
                     enviarNotificacaoTelegram(
                         `✅ *WHATSAPP CONECTADO*\n\n` +
-                        `📱 *Bot:* ${empresa}\n` +
+                        `⭕️ *Bot:* ${empresa}\n` +
                         `📞 *Número:* ${numeroAtendente}\n` +
                         `👤 *Atendente:* ${pushName}\n` +
+                        `📋 *Versão Software:* 2.1 (06/05/2026)\n` +
                         `📱 *Versão WhatsApp:* ${global.WHATSAPP_VERSION}\n` +
-                        `📱 *Baileys:* ${global.VERSAO_BAILEYS}\n` +
+                        `⚙️ *Baileys:* ${global.VERSAO_BAILEYS}\n` +
                         `⏰ ${formatarDataHora()}`,
                         'conexao'
                     ).then(resultado => {
@@ -1865,9 +1866,10 @@ async function startBot() {
                 
                 enviarNotificacaoTelegram(
                     `⚠️ *WHATSAPP DESCONECTADO*\n\n` +
-                    `📱 *Bot:* ${empresa}\n` +
+                    `⭕️ *Bot:* ${empresa}\n` +
                     `📞 *Número:* ${numeroAtendente}\n` +
-                    `🔐 Desconexão real da Meta detectada (LoggedOut).\n` +
+                    `🔐 Desconexão da Meta detectada (LoggedOut).\n` +
+                    `📋 *Versão Software:* 2.1 (06/05/2026)\n` +
                     `📱 *Versão WhatsApp:* ${global.WHATSAPP_VERSION}\n` +
                     `✅ Um novo QR Code será gerado em instantes.\n` +
                     `⏰ ${formatarDataHora()}`,
