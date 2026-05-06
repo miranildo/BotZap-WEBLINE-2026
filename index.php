@@ -1,8 +1,8 @@
 <?php
 /***********************************************************
  * SISTEMA UNIFICADO - BOT WHATSAPP + DASHBOARD PIX
- * Versão: 2.1 - Security Hardened + Global Logout
- * Data: 04/05/2026
+ * Versão: 2.0 - Security Hardened + Global Logout
+ * Data: 06/05/2026
  ***********************************************************/
 
 session_start();
@@ -3248,7 +3248,7 @@ tr:hover{ background:#f9f9f9; }
 </div>
 
 <script>
-// Script da aba de logs - VERSÃO UNIFICADA
+// Script da aba de logs - VERSÃO UNIFICADA COM TIMER COMPARTILHADO
 (function() {
     let autoRefreshInterval;
     let ultimoTamanhoArquivo = 0;
@@ -3262,6 +3262,50 @@ tr:hover{ background:#f9f9f9; }
     let sessionTimeLeft = <?= TEMPO_SESSAO ?>;
     let timerInterval = null;
     let heartbeatInterval = null;
+    
+    // ===== FUNÇÕES DE SINCRONIZAÇÃO DE TIMER ENTRE ABAS =====
+    function carregarTimerCompartilhado() {
+    const timerSalvo = localStorage.getItem('timer_compartilhado');
+    if (timerSalvo) {
+        try {
+            const dados = JSON.parse(timerSalvo);
+            const agora = Date.now();
+            const tempoPassado = Math.floor((agora - dados.timestamp) / 1000);
+            let tempoRestante = dados.tempo - tempoPassado;
+            
+            if (tempoRestante > 0 && tempoRestante <= <?= TEMPO_SESSAO ?>) {
+                sessionTimeLeft = tempoRestante;
+            } else if (tempoRestante <= 0) {
+                sessionTimeLeft = 0;
+            } else {
+                sessionTimeLeft = <?= TEMPO_SESSAO ?>;
+            }
+            updateTimerDisplay();
+            console.log('📡 Timer carregado do localStorage:', sessionTimeLeft);
+        } catch(e) {}
+    }
+    
+    // Também buscar do servidor para garantir sincronia
+    fetch('index.php?heartbeat=1&t=' + Date.now())
+        .then(response => response.json())
+        .then(data => {
+            if (data.time_left !== undefined) {
+                sessionTimeLeft = data.time_left;
+                updateTimerDisplay();
+                salvarTimerCompartilhado();
+                console.log('📡 Timer sincronizado com servidor:', sessionTimeLeft);
+            }
+        })
+        .catch(error => console.error('Erro ao sincronizar timer:', error));
+}
+
+    function salvarTimerCompartilhado() {
+        const dados = {
+            tempo: sessionTimeLeft,
+            timestamp: Date.now()
+        };
+        localStorage.setItem('timer_compartilhado', JSON.stringify(dados));
+    }
     
     function formatTime(seconds) {
         if (seconds < 0) seconds = 0;
@@ -3302,6 +3346,7 @@ tr:hover{ background:#f9f9f9; }
         if (sessionTimeLeft > 0) {
             sessionTimeLeft = <?= TEMPO_SESSAO ?>;
             updateTimerDisplay();
+            salvarTimerCompartilhado();
             
             fetch('index.php?update_session=1&t=' + Date.now())
                 .catch(error => console.error('Erro ao resetar sessão:', error));
@@ -3319,6 +3364,7 @@ tr:hover{ background:#f9f9f9; }
                 if (data.time_left !== undefined) {
                     sessionTimeLeft = data.time_left;
                     updateTimerDisplay();
+                    salvarTimerCompartilhado();
                 }
             })
             .catch(error => console.error('Erro no heartbeat:', error));
@@ -3332,6 +3378,7 @@ tr:hover{ background:#f9f9f9; }
             if (sessionTimeLeft > 0) {
                 sessionTimeLeft--;
                 updateTimerDisplay();
+                salvarTimerCompartilhado();
                 if (sessionTimeLeft <= 0) {
                     window.location.href = 'index.php?expired=true';
                 }
@@ -3506,6 +3553,9 @@ tr:hover{ background:#f9f9f9; }
         if (!window.location.search.includes('aba=log')) return;
         console.log('📋 Inicializando aba de logs...');
         
+        // Carregar timer compartilhado entre abas
+        carregarTimerCompartilhado();
+        
         initTimer();
         ativarWakeLock();
         
@@ -3570,6 +3620,7 @@ tr:hover{ background:#f9f9f9; }
         if (timerInterval) clearInterval(timerInterval);
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         desativarWakeLock();
+        salvarTimerCompartilhado();
     });
 })();
 </script>
@@ -4367,6 +4418,62 @@ document.addEventListener('keydown', function(e) {
     // ===== CARREGAR CONFIGURAÇÃO DE RESET =====
     let resetOnActivity = <?= isset($config['reset_timer_on_activity']) && $config['reset_timer_on_activity'] === true ? 'true' : 'false' ?>;
 
+    // ===== FUNÇÕES DE SINCRONIZAÇÃO DE TIMER ENTRE ABAS =====
+    function carregarTimerCompartilhado() {
+    // Verificar se tem um timestamp recente (menos de 5 minutos)
+    const timerSalvo = localStorage.getItem('timer_compartilhado');
+    if (timerSalvo) {
+        try {
+            const dados = JSON.parse(timerSalvo);
+            const agora = Date.now();
+            const diferenca = Math.floor((agora - dados.timestamp) / 1000);
+            
+            // Se o timer foi salvo há mais de 5 minutos, ignorar (sessão nova)
+            if (diferenca > 300) {
+                console.log('📡 Timer antigo ignorado (>5min), resetando para', <?= TEMPO_SESSAO ?>);
+                sessionTimeLeft = <?= TEMPO_SESSAO ?>;
+                updateTimerDisplay();
+                salvarTimerCompartilhado();
+                return;
+            }
+            
+            const tempoPassado = Math.floor((agora - dados.timestamp) / 1000);
+            let tempoRestante = dados.tempo - tempoPassado;
+            
+            if (tempoRestante > 0 && tempoRestante <= <?= TEMPO_SESSAO ?>) {
+                sessionTimeLeft = tempoRestante;
+            } else if (tempoRestante <= 0) {
+                sessionTimeLeft = 0;
+            } else {
+                sessionTimeLeft = <?= TEMPO_SESSAO ?>;
+            }
+            updateTimerDisplay();
+            console.log('📡 Timer carregado do localStorage:', sessionTimeLeft);
+        } catch(e) {}
+    }
+    
+    // Buscar do servidor para garantir sincronia
+    fetch('index.php?heartbeat=1&t=' + Date.now())
+        .then(response => response.json())
+        .then(data => {
+            if (data.time_left !== undefined) {
+                sessionTimeLeft = data.time_left;
+                updateTimerDisplay();
+                salvarTimerCompartilhado();
+                console.log('📡 Timer sincronizado com servidor:', sessionTimeLeft);
+            }
+        })
+        .catch(error => console.error('Erro ao sincronizar timer:', error));
+}
+
+    function salvarTimerCompartilhado() {
+        const dados = {
+            tempo: sessionTimeLeft,
+            timestamp: Date.now()
+        };
+        localStorage.setItem('timer_compartilhado', JSON.stringify(dados));
+    }
+
     // ===== FUNÇÃO RESET TIMER =====
     function resetTimerOnActivity() {
         if (!resetOnActivity) return;
@@ -4374,6 +4481,7 @@ document.addEventListener('keydown', function(e) {
         if (sessionTimeLeft > 0) {
             sessionTimeLeft = <?= TEMPO_SESSAO ?>;
             updateTimerDisplay();
+            salvarTimerCompartilhado();
             lastUserActivity = Date.now();
             
             fetch('index.php?update_session=1&t=' + Date.now())
@@ -4401,13 +4509,6 @@ document.addEventListener('keydown', function(e) {
                         if (timerInterval) clearInterval(timerInterval);
                         if (heartbeatInterval) clearInterval(heartbeatInterval);
                         window.location.href = 'index.php?expired=true';
-                    }
-                    break;
-                    
-                case 'USER_ACTIVITY':
-                    if (!isLogAba && autoLogoutEnabled) {
-                        sessionTimeLeft = <?= TEMPO_SESSAO ?>;
-                        updateTimerDisplay();
                     }
                     break;
                     
@@ -4444,13 +4545,17 @@ document.addEventListener('keydown', function(e) {
         if (sessionTimeLeft < 60) {
             timerElement.style.background = 'rgba(231, 76, 60, 0.95)';
             timerElement.style.borderLeft = '4px solid #c0392b';
+            timerElement.style.boxShadow = '0 0 20px rgba(231, 76, 60, 0.8)';
+            timerElement.style.color = '#fff';
         } else if (sessionTimeLeft < 300) {
             timerElement.style.background = 'rgba(241, 196, 15, 0.95)';
             timerElement.style.borderLeft = '4px solid #f39c12';
+            timerElement.style.boxShadow = '0 0 20px rgba(241, 196, 15, 0.8)';
             timeElement.style.color = '#000';
         } else {
             timerElement.style.background = 'rgba(46, 204, 113, 0.9)';
             timerElement.style.borderLeft = '4px solid #27ae60';
+            timerElement.style.boxShadow = '0 0 15px rgba(46, 204, 113, 0.5)';
             timeElement.style.color = '#fff';
         }
     }
@@ -4468,23 +4573,28 @@ document.addEventListener('keydown', function(e) {
     }
     
     function initTimer() {
-        if (isLogAba) return;
-        
-        if (!autoLogoutEnabled) {
-            stopTimer();
-            return;
-        }
-        
-        if (!heartbeatInterval) {
-            heartbeatInterval = setInterval(syncWithServer, 30000);
-        }
-        
-        if (!timerInterval) {
-            timerInterval = setInterval(updateVisualTimer, 1000);
-        }
-        
-        syncWithServer();
+    if (timerInterval) clearInterval(timerInterval);
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    
+    // Garantir que o timer está correto antes de iniciar
+    if (sessionTimeLeft <= 0 || sessionTimeLeft > <?= TEMPO_SESSAO ?>) {
+        sessionTimeLeft = <?= TEMPO_SESSAO ?>;
     }
+    
+    timerInterval = setInterval(() => {
+        if (sessionTimeLeft > 0) {
+            sessionTimeLeft--;
+            updateTimerDisplay();
+            salvarTimerCompartilhado();
+            if (sessionTimeLeft <= 0) {
+                window.location.href = 'index.php?expired=true';
+            }
+        }
+    }, 1000);
+    
+    heartbeatInterval = setInterval(syncWithServer, 30000);
+    syncWithServer();
+}
     
     function stopTimer() {
         if (timerInterval) {
@@ -4520,6 +4630,7 @@ document.addEventListener('keydown', function(e) {
                     sessionTimeLeft = data.time_left;
                     lastServerSync = Date.now();
                     updateTimerDisplay();
+                    salvarTimerCompartilhado();
                 }
             }
         } catch (error) {
@@ -4531,6 +4642,7 @@ document.addEventListener('keydown', function(e) {
         if (isLogAba || !autoLogoutEnabled) return;
         
         sessionTimeLeft--;
+        salvarTimerCompartilhado();
         
         if (sessionTimeLeft <= 0) {
             fetch('index.php?check_session=1&t=' + Date.now())
@@ -4550,15 +4662,18 @@ document.addEventListener('keydown', function(e) {
     }
     
     function forceLogout(reason) {
-        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({
-                type: 'SESSION_EXPIRED',
-                reason: reason
-            });
-        }
-        
-        window.location.href = 'index.php?action=logout';
+    // Limpar timer compartilhado ao fazer logout
+    localStorage.removeItem('timer_compartilhado');
+    
+    if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+            type: 'SESSION_EXPIRED',
+            reason: reason
+        });
     }
+    
+    window.location.href = 'index.php?action=logout';
+}
     
     function setupActivityListeners() {
         if (isLogAba) return;
@@ -4605,24 +4720,27 @@ document.addEventListener('keydown', function(e) {
     }
     
     window.globalLogout = async function() {
-        if (!confirm('Deseja realmente sair do sistema?')) return;
+    if (!confirm('Deseja realmente sair do sistema?')) return;
+    
+    // Limpar timer compartilhado ao fazer logout
+    localStorage.removeItem('timer_compartilhado');
+    
+    try {
+        const formData = new FormData();
+        formData.append('action', 'logout');
+        formData.append('csrf_token', csrfToken);
         
-        try {
-            const formData = new FormData();
-            formData.append('action', 'logout');
-            formData.append('csrf_token', csrfToken);
-            
-            await fetch(window.location.href, {
-                method: 'POST',
-                body: formData
-            });
-            
-            sendGlobalLogout();
-            window.location.href = 'index.php';
-        } catch (error) {
-            window.location.href = 'index.php?action=logout';
-        }
-    };
+        await fetch(window.location.href, {
+            method: 'POST',
+            body: formData
+        });
+        
+        sendGlobalLogout();
+        window.location.href = 'index.php';
+    } catch (error) {
+        window.location.href = 'index.php?action=logout';
+    }
+};
     
     window.updateAutoLogoutButton = function(enabled) {
         const buttons = document.querySelectorAll('.btn-autologout');
@@ -4708,6 +4826,9 @@ document.addEventListener('keydown', function(e) {
     
     // ==================== INICIALIZAÇÃO ====================
     document.addEventListener('DOMContentLoaded', function() {
+        // Carregar timer compartilhado entre abas
+        carregarTimerCompartilhado();
+        
         initBroadcastChannel();
         
         if (!isLogAba) {
@@ -4740,6 +4861,7 @@ document.addEventListener('keydown', function(e) {
         if (timerInterval) clearInterval(timerInterval);
         if (heartbeatInterval) clearInterval(heartbeatInterval);
         if (broadcastChannel) broadcastChannel.close();
+        salvarTimerCompartilhado();
     });
     
     // ==================== FUNÇÕES GLOBAIS EXPORTADAS ====================
@@ -4845,6 +4967,3 @@ document.addEventListener('keydown', function(e) {
     };
 })();
 </script>
-
-</body>
-</html>
