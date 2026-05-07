@@ -462,7 +462,7 @@ cat > "$BOT_DIR/config.json" <<'CFGEOF'
     "mkauth_client_secret": "",
     "planos_ativos": "Sim",
     "planos_mensagem": "*Planos Disponíveis*\r\n\r\n📶 *100 mega* 💰 R$ 59,90 - FIBRA\r\n📶 *200 mega* 💰 R$ 69,90 - FIBRA\r\n📶 *300 mega* 💰 R$ 89,90 - FIBRA\r\n\r\n*Taxa de instalação* 💰 R$ 50,00 à vista ou R$ 60,00 no cartão em 2x.\r\n\r\n*Tá esperando o que?* 😱\r\n\r\n2️⃣ Falar com Atendente    5️⃣ Assine Já!  0️⃣  Encerrar",
-    "link_assinatura": "https://www.SEU_DOMINIOm.com.br/cadastro.hhvm",
+    "link_assinatura": "https://www.SEU_DOMINIO.com.br/cadastro.hhvm",
     "reset_timer_on_activity": false
 }
 CFGEOF
