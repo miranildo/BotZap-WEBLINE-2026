@@ -2,7 +2,7 @@
 /***********************************************************
  * SISTEMA UNIFICADO - BOT WHATSAPP + DASHBOARD PIX
  * Versão: 2.0 - Security Hardened + Global Logout
- * Data: 06/05/20260
+ * Data: 06/05/2026
  ***********************************************************/
 
 session_start();
