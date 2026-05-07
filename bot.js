@@ -1,5 +1,5 @@
 /*************************************************
- * ✅ BOT WHATSAPP - ÍNICIO DO PROJETO EM ‎Segunda-feira, ‎2‎ de ‎fevereiro‎ de ‎2026, ‏‎19:12:50 por MIRANILDO DE LIMA SANTOS
+ * ✅ BOT WHATSAPP - ÍNICIO DO PROJETO EM ‎Segunda-feira, ‎2‎ de ‎fevereiro‎ de ‎2026, ‏‎19:12:50 por MIRANILDO DE LIMA SANTOSS
  *    BOT WHATSAPP - VERSÃO COMPLETA COM FERIADOS v1.0
  * ✅ Controle de feriados via painel web
  * ✅ CORRIGIDO: Bloqueia grupos (@g.us), permite listas (@lid) e individuais (@s.whatsapp.net)
